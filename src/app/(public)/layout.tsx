@@ -2,6 +2,7 @@
 
 // Public layout for company profile pages
 import Link from "next/link";
+import Image from "next/image";
 import { useState } from "react";
 import { usePathname } from "next/navigation";
 
@@ -40,9 +41,13 @@ export default function PublicLayout({
                     <div className="flex h-16 items-center justify-between">
                         {/* Logo */}
                         <Link href="/" className="flex items-center gap-3 group">
-                            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-accent flex items-center justify-center text-white font-bold text-lg shadow-sm group-hover:scale-105 transition-transform">
-                                SWI
-                            </div>
+                            <Image
+                                src="/logo-swi.png"
+                                alt="Logo SWI"
+                                width={44}
+                                height={44}
+                                className="group-hover:scale-105 transition-transform"
+                            />
                             <div className="hidden sm:block">
                                 <span className="font-bold text-lg block leading-none">Sensasi Wangi</span>
                                 <span className="text-xs text-muted-foreground">Indonesia</span>
@@ -141,9 +146,12 @@ export default function PublicLayout({
                         {/* Company Info */}
                         <div className="space-y-4">
                             <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-accent flex items-center justify-center text-white font-bold text-lg">
-                                    SWI
-                                </div>
+                                <Image
+                                    src="/logo-swi.png"
+                                    alt="Logo SWI"
+                                    width={44}
+                                    height={44}
+                                />
                                 <div>
                                     <span className="font-bold block">Sensasi Wangi</span>
                                     <span className="text-xs text-muted-foreground">Indonesia</span>

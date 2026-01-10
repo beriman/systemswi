@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useSearchParams } from "next/navigation";
 import { Suspense } from "react";
+import Image from "next/image";
 
 function LoginContent() {
     const searchParams = useSearchParams();
@@ -17,6 +18,9 @@ function LoginContent() {
         <div className="min-h-screen flex items-center justify-center bg-background p-4">
             <Card className="w-full max-w-md">
                 <CardHeader className="text-center">
+                    <div className="flex justify-center mb-4">
+                        <Image src="/logo-swi.png" alt="Logo SWI" width={64} height={64} />
+                    </div>
                     <CardTitle className="text-2xl font-bold">System SWI</CardTitle>
                     <CardDescription>
                         Login untuk mengakses dashboard

@@ -5,7 +5,7 @@ export const COMPANY_INFO: CompanyInfo = {
     name: "PT. Sensasi Wangi Indonesia",
     tagline: "Fragrance Ecosystem",
     description: "Sensasi Wangi Indonesia adalah functional holding company yang beroperasi di bidang events, digital platforms, dan fragrance production/incubation. Kami membangun ekosistem parfum Indonesia yang lengkap dari edukasi, produksi, hingga distribusi.",
-    logo: "/images/logo.png",
+    logo: "/logo-swi.png",
     address: "Jl. GADING KIRANA TIMUR A.11/15, Kelapa Gading Barat, Jakarta Utara",
     phone: "+62 811-855-6688",
     email: "sensasiwangi.id@gmail.com",

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { usePermissions } from "@/hooks/use-permissions";
 import { cn } from "@/lib/utils";
@@ -45,8 +46,14 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
             {/* Logo/Brand */}
             <div className="h-16 flex items-center justify-between px-4 border-b">
                 {!collapsed && (
-                    <Link href="/dashboard" className="font-bold text-lg">
-                        System SWI
+                    <Link href="/dashboard" className="flex items-center gap-2">
+                        <Image src="/logo-swi.png" alt="Logo SWI" width={32} height={32} />
+                        <span className="font-bold text-lg">System SWI</span>
+                    </Link>
+                )}
+                {collapsed && (
+                    <Link href="/dashboard">
+                        <Image src="/logo-swi.png" alt="Logo SWI" width={32} height={32} />
                     </Link>
                 )}
                 <button
