@@ -42,9 +42,9 @@ export const TEAM_MEMBERS: TeamMember[] = [
     {
         id: "3",
         name: "Muhamad Malsiaf",
-        role: "Chief Financial Officer (CFO)",
-        photo: "/images/team/cfo.jpg",
-        bio: "Overseeing financial strategy at the holding level",
+        role: "Komisaris",
+        photo: "/images/team/komisaris.jpg",
+        bio: "Strategic oversight and governance",
     },
 ];
 
