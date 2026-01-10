@@ -1,0 +1,142 @@
+# generated: 2026-01-09T17:14:30+07:00
+# project: system SWI
+# project_key: system-swi
+# tracking_system: file-system
+# story_location: "_bmad-output/stories"
+
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
+#
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - ready-for-dev: Story file created, ready for development
+#   - in-progress: Developer actively working on implementation
+#   - review: Implementation complete, ready for review
+#   - done: Story completed
+#
+# Retrospective Status:
+#   - optional: Can be completed but not required
+#   - done: Retrospective has been completed
+#
+# WORKFLOW NOTES:
+# ===============
+# - Mark epic as 'in-progress' when starting work on its first story
+# - SM typically creates next story ONLY after previous one is 'done' to incorporate learnings
+# - Dev moves story to 'review', then Dev runs code-review (fresh context, ideally different LLM)
+
+generated: "2026-01-09T17:14:30+07:00"
+project: "system SWI"
+project_key: "system-swi"
+tracking_system: "file-system"
+story_location: "_bmad-output/stories"
+
+development_status:
+  # ===== PHASE 1: MVP (Core Platform) =====
+  
+  # Epic 1: Auth & Role Management
+  epic-1: in-progress
+  1-1-project-setup-starter: done
+  1-2-google-oauth-login: done
+  1-3-user-session-management: done
+  1-4-role-based-access-control: done
+  1-5-freelancer-invite-system: done
+  epic-1-retrospective: optional
+
+  # Epic 2: Dashboard & Overview
+  epic-2: done
+  2-1-dashboard-layout: done
+  2-2-pending-content-widget: done
+  2-3-event-progress-widget: done
+  2-4-financial-overview-widget: done
+  2-5-komisaris-quarterly-view: done
+  epic-2-retrospective: optional
+
+  # Epic 3: Drive Browsing
+  epic-3: done
+  3-1-drive-file-browser: done
+  3-2-file-search: done
+  3-3-document-preview: done
+  3-4-auto-folder-creation: done
+  3-5-manual-file-upload: done
+  epic-3-retrospective: optional
+
+  # Epic 4: Sheets Integration
+  epic-4: done
+  4-1-sheets-connection: done
+  4-2-sheets-crud-operations: done
+  4-3-sheets-limit-alert: done
+  epic-4-retrospective: optional
+
+  # ===== PHASE 2: Primary Features =====
+
+  # Epic 5: AI Chat Assistant
+  epic-5: done
+  5-1-chat-interface: done
+  5-2-ai-priority-response: done
+  5-3-ai-document-generation: done
+  5-4-ai-drive-context: done
+  5-5-ai-workflow-trigger: done
+  5-6-ai-learning-self-annealing: done
+  5-7-ai-multimodal-input: done
+  epic-5-retrospective: optional
+
+  # Epic 6: Event CDE
+  epic-6: done
+  6-1-create-event: done
+  6-2-assign-panitia: done
+  6-3-panitia-task-view: done
+  6-4-panitia-file-upload: done
+  6-5-ktp-collection: done
+  6-6-rab-management: done
+  6-7-panitia-payment-tracking: done
+  6-8-division-progress-tracking: done
+  6-9-overall-event-dashboard: done
+  6-10-panitia-reminders: done
+  epic-6-retrospective: optional
+
+  # Epic 7: Document Generator
+  epic-7: done
+  7-1-proposal-generator: done
+  7-2-report-generator: done
+  7-3-historical-data-pull: done
+  7-4-document-preview: done
+  7-5-letter-numbering-system: done
+  epic-7-retrospective: optional
+
+  # ===== PHASE 3: Secondary Features =====
+
+  # Epic 8: Public Company Profile
+  epic-8: done
+  8-1-about-page: done
+  8-2-portfolio-page: done
+  8-3-products-page: done
+  8-4-upcoming-events-page: done
+  8-5-auto-content-sync: done
+  epic-8-retrospective: optional
+
+  # Epic 9: Automation & Workflows
+  epic-9: done
+  9-1-instagram-post-request: done
+  9-2-youtube-upload-request: done
+  9-3-telegram-preview: done
+  9-4-telegram-approval-flow: done
+  9-5-n8n-workflow-execution: done
+  9-6-approval-escalation: done
+  epic-9-retrospective: optional
+
+  # Epic 10: Reports & Financial
+  epic-10: done
+  10-1-tax-reports-display: done
+  10-2-bpjs-compliance-status: done
+  10-3-legal-documents-access: done
+  10-4-financial-reports-access: done
+  10-5-freelancer-data-access: done
+  10-6-revenue-tracking: done
+  10-7-holding-setoran-calculation: done
+  10-8-setoran-status-tracking: done
+  10-9-audit-log-cross-cutting: done
+  epic-10-retrospective: optional

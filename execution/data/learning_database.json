@@ -1,0 +1,305 @@
+{
+    "version": "1.0.2",
+    "last_updated": "2026-01-10T09:33:00+07:00",
+    "error_patterns": [
+        {
+            "id": "EP001",
+            "pattern": "shadcn init creates subfolder instead of using current directory",
+            "context": "Running npx shadcn@latest init when package.json has invalid npm name",
+            "solution": "Ensure package.json name is kebab-case valid before running shadcn init, or copy files from subfolder to root",
+            "confidence": 95,
+            "occurrences": 1
+        },
+        {
+            "id": "EP002",
+            "pattern": "src/lib created as file instead of directory",
+            "context": "Manual file creation or shadcn misconfiguration",
+            "solution": "Remove file, create directory, add utils.ts inside",
+            "confidence": 90,
+            "occurrences": 1
+        },
+        {
+            "id": "EP003",
+            "pattern": "Next.js middleware deprecation warning",
+            "context": "Using middleware.ts in Next.js 16+",
+            "solution": "Warning only - middleware still works. Consider migrating to 'proxy' pattern in future",
+            "confidence": 85,
+            "occurrences": 1
+        },
+        {
+            "id": "EP004",
+            "pattern": "Partial replacement causes JSX syntax errors",
+            "context": "Using replace_file_content on complex JSX",
+            "solution": "Use write_to_file with Overwrite when JSX structure is complex",
+            "confidence": 90,
+            "occurrences": 1
+        },
+        {
+            "id": "EP005",
+            "pattern": "Feature type not assignable after adding new feature",
+            "context": "Adding new feature to permissions.ts Feature type",
+            "solution": "TypeScript cache stale - re-run build after type changes",
+            "confidence": 85,
+            "occurrences": 1
+        }
+    ],
+    "automated_fixes": [
+        {
+            "id": "AF001",
+            "trigger": "shadcn creates subfolder",
+            "action": "Copy components.json, lib/utils.ts, and merge package.json from subfolder to root",
+            "auto_applicable": false
+        }
+    ],
+    "success_patterns": [
+        {
+            "id": "SP001",
+            "pattern": "Google OAuth native implementation",
+            "context": "Auth without NextAuth dependency",
+            "components": [
+                "lib/auth/index.ts",
+                "api/auth/google",
+                "api/auth/callback/google"
+            ],
+            "benefits": "Less dependencies, more control over flow"
+        },
+        {
+            "id": "SP002",
+            "pattern": "RBAC with Zustand + RoleGate",
+            "context": "Role-based access control",
+            "components": [
+                "lib/auth/permissions.ts",
+                "components/auth/role-gate.tsx",
+                "hooks/use-permissions.ts"
+            ],
+            "benefits": "Clean separation, easy to extend"
+        },
+        {
+            "id": "SP003",
+            "pattern": "JWT session with httpOnly cookies",
+            "context": "Session management",
+            "components": [
+                "lib/auth/index.ts (createSessionToken, verifySessionToken)"
+            ],
+            "benefits": "Stateless, secure, no database required"
+        },
+        {
+            "id": "SP004",
+            "pattern": "Reusable StatCard component",
+            "context": "Dashboard widgets",
+            "components": [
+                "components/widgets/stat-card.tsx"
+            ],
+            "benefits": "Single component for all dashboard stat widgets, supports variants"
+        },
+        {
+            "id": "SP005",
+            "pattern": "Centralized data fetching hook",
+            "context": "Dashboard data",
+            "components": [
+                "lib/dashboard/hooks.ts",
+                "lib/dashboard/mock-data.ts"
+            ],
+            "benefits": "Single hook for all dashboard data, easy to swap mock for real API"
+        },
+        {
+            "id": "SP006",
+            "pattern": "Mock data first development",
+            "context": "Drive browsing",
+            "components": [
+                "lib/drive/mock-data.ts",
+                "lib/drive/types.ts"
+            ],
+            "benefits": "Build UI without API dependency, easy to test"
+        },
+        {
+            "id": "SP007",
+            "pattern": "Inline child components for use client",
+            "context": "Next.js App Router serialization",
+            "components": [
+                "components/drive/file-browser.tsx"
+            ],
+            "benefits": "Avoid 'Props must be serializable' warnings"
+        },
+        {
+            "id": "SP008",
+            "pattern": "Folder template system",
+            "context": "Event folder auto-creation",
+            "components": [
+                "lib/drive/folder-templates.ts"
+            ],
+            "benefits": "Consistent folder structure for new events"
+        },
+        {
+            "id": "SP009",
+            "pattern": "Expandable card list",
+            "context": "Sheets spreadsheet list",
+            "components": [
+                "components/sheets/spreadsheet-list.tsx"
+            ],
+            "benefits": "Click to expand details, clean UI"
+        },
+        {
+            "id": "SP010",
+            "pattern": "Usage limit tracking",
+            "context": "Google Sheets API limits",
+            "components": [
+                "lib/sheets/types.ts",
+                "components/sheets/limit-alert.tsx"
+            ],
+            "benefits": "Warn users before hitting API limits"
+        },
+        {
+            "id": "SP011",
+            "pattern": "Keyword-based AI routing",
+            "context": "AI Chat responses",
+            "components": [
+                "lib/ai/mock-responses.ts"
+            ],
+            "benefits": "Simple AI response matching without ML"
+        },
+        {
+            "id": "SP012",
+            "pattern": "Cross-module context injection",
+            "context": "AI + Drive + Sheets integration",
+            "components": [
+                "lib/ai/drive-context.ts"
+            ],
+            "benefits": "AI has awareness of user data"
+        },
+        {
+            "id": "SP013",
+            "pattern": "Self-annealing learning store",
+            "context": "AI improvement tracking",
+            "components": [
+                "lib/ai/learning.ts"
+            ],
+            "benefits": "Track feedback to improve responses"
+        },
+        {
+            "id": "SP014",
+            "pattern": "Division-based organization",
+            "context": "Event panitia management",
+            "components": [
+                "lib/event/types.ts",
+                "components/event/panitia-list.tsx"
+            ],
+            "benefits": "Clear Sie structure for large teams"
+        },
+        {
+            "id": "SP015",
+            "pattern": "RAB table format",
+            "context": "Budget management",
+            "components": [
+                "components/event/rab-table.tsx"
+            ],
+            "benefits": "Category → Item → Total breakdown"
+        },
+        {
+            "id": "SP016",
+            "pattern": "Priority-based reminders",
+            "context": "Task notifications",
+            "components": [
+                "components/event/reminders-card.tsx"
+            ],
+            "benefits": "Visual urgency with color-coded borders"
+        },
+        {
+            "id": "SP017",
+            "pattern": "Template-Field Architecture",
+            "context": "Document generator",
+            "components": [
+                "lib/document/templates.ts",
+                "components/document/document-form.tsx"
+            ],
+            "benefits": "Dynamic forms from template definitions"
+        },
+        {
+            "id": "SP018",
+            "pattern": "Letter Numbering System",
+            "context": "Official documents",
+            "components": [
+                "lib/document/generator.ts",
+                "lib/document/persistence.ts"
+            ],
+            "benefits": "Format 001/SWI/I/2026 with persistent counter"
+        },
+        {
+            "id": "SP019",
+            "pattern": "Document State Machine",
+            "context": "Document generation flow",
+            "components": [
+                "app/(workspace)/documents/page.tsx"
+            ],
+            "benefits": "Clean list → form → preview transitions"
+        },
+        {
+            "id": "SP020",
+            "pattern": "Print-to-PDF Pattern",
+            "context": "PDF export",
+            "components": [
+                "lib/document/pdf-export.ts"
+            ],
+            "benefits": "A4 print styling as MVP alternative to jsPDF"
+        },
+        {
+            "id": "SP021",
+            "pattern": "Route Group Separation",
+            "context": "Public vs authenticated pages",
+            "components": [
+                "app/(public)",
+                "app/(workspace)"
+            ],
+            "benefits": "Separate layouts for different user contexts"
+        },
+        {
+            "id": "SP022",
+            "pattern": "Mobile Hamburger Menu",
+            "context": "Responsive navigation",
+            "components": [
+                "app/(public)/layout.tsx"
+            ],
+            "benefits": "Client-side toggle with useState"
+        },
+        {
+            "id": "SP023",
+            "pattern": "Placeholder Image Strategy",
+            "context": "Mock images",
+            "components": [
+                "app/(public)/portfolio/page.tsx"
+            ],
+            "benefits": "picsum.photos with category-based seeds"
+        },
+        {
+            "id": "SP024",
+            "pattern": "WhatsApp Deep Links",
+            "context": "Contact integration",
+            "components": [
+                "app/(public)/products/page.tsx"
+            ],
+            "benefits": "Pre-filled messages via wa.me"
+        },
+        {
+            "id": "SP025",
+            "pattern": "SEO Metadata Module",
+            "context": "Public pages optimization",
+            "components": [
+                "lib/public/metadata.ts"
+            ],
+            "benefits": "Centralized OpenGraph/Twitter card generators"
+        }
+    ],
+    "statistics": {
+        "total_errors_logged": 5,
+        "total_auto_fixes_applied": 0,
+        "fix_success_rate": 100,
+        "epic_1_completed": true,
+        "epic_2_completed": true,
+        "epic_3_completed": true,
+        "epic_4_completed": true,
+        "epic_5_completed": true,
+        "epic_6_completed": true,
+        "epic_7_completed": true,
+        "epic_8_completed": true
+    }
+}
