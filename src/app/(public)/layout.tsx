@@ -28,6 +28,14 @@ export default function PublicLayout({
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
     const pathname = usePathname();
 
+    // Hide header/footer untuk login page
+    const isLoginPage = pathname === "/login";
+
+    // Jika login page, render children saja tanpa header/footer
+    if (isLoginPage) {
+        return <div className="min-h-screen">{children}</div>;
+    }
+
     const isActiveLink = (href: string) => {
         if (href === "/") return pathname === "/";
         return pathname.startsWith(href);
@@ -61,8 +69,8 @@ export default function PublicLayout({
                                     key={link.href}
                                     href={link.href}
                                     className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${isActiveLink(link.href)
-                                            ? "bg-primary text-primary-foreground"
-                                            : "hover:bg-muted text-foreground"
+                                        ? "bg-primary text-primary-foreground"
+                                        : "hover:bg-muted text-foreground"
                                         }`}
                                 >
                                     {link.label}
@@ -102,8 +110,8 @@ export default function PublicLayout({
                                     key={link.href}
                                     href={link.href}
                                     className={`block px-4 py-3 text-sm font-medium rounded-lg transition-colors ${isActiveLink(link.href)
-                                            ? "bg-primary text-primary-foreground"
-                                            : "hover:bg-muted"
+                                        ? "bg-primary text-primary-foreground"
+                                        : "hover:bg-muted"
                                         }`}
                                     onClick={() => setMobileMenuOpen(false)}
                                 >

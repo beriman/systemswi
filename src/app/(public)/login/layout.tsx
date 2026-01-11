@@ -4,5 +4,7 @@ export default function LoginLayout({
 }: {
     children: React.ReactNode;
 }) {
-    return <>{children}</>;
+    // This layout overrides the parent (public) layout
+    // to show login page without header/footer
+    return <div className="min-h-screen">{children}</div>;
 }
