@@ -10,6 +10,9 @@
 !.yarn/releases
 !.yarn/versions
 
+# lockfiles - use pnpm-lock.yaml only
+package-lock.json
+
 # testing
 /coverage
 

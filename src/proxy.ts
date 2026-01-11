@@ -1,4 +1,5 @@
-// Next.js Middleware for Route Protection
+// Next.js Proxy for Route Protection (Next.js 16+)
+// Migrated from middleware.ts to proxy.ts
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { jwtVerify } from "jose";
@@ -54,7 +55,7 @@ async function verifyToken(token: string): Promise<boolean> {
     }
 }
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
     const { pathname } = request.nextUrl;
 
     // Skip middleware for static files and API routes (except protected ones)

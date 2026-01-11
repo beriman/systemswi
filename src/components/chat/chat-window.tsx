@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { LoadingDots } from "@/components/ui/loading";
 import { ChatMessage } from "./chat-message";
 import { ChatInput } from "./chat-input";
 import {
@@ -169,8 +170,9 @@ export function ChatWindow() {
                 ))}
                 {isLoading && (
                     <div className="flex justify-start mb-4">
-                        <div className="bg-muted rounded-lg p-4">
-                            <span className="animate-pulse">AI sedang mengetik...</span>
+                        <div className="bg-muted rounded-lg p-4 flex items-center gap-2">
+                            <span className="text-sm text-muted-foreground">AI sedang mengetik</span>
+                            <LoadingDots />
                         </div>
                     </div>
                 )}
