@@ -15,7 +15,7 @@ interface ChatMessage {
 }
 
 // Configuration
-const N8N_WEBHOOK_URL = process.env.NEXT_PUBLIC_N8N_CHAT_WEBHOOK_URL || "";
+const N8N_WEBHOOK_URL = process.env.NEXT_PUBLIC_N8N_CHAT_WEBHOOK_URL || "https://n8n.srv1206623.hstgr.cloud/webhook/swi-chat";
 const SESSION_KEY = "swi_chat_session";
 
 // Generate unique ID
@@ -185,8 +185,8 @@ export function FloatingChatWidget() {
                                 {/* Avatar */}
                                 <div
                                     className={`w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center ${message.role === "user"
-                                            ? "bg-primary"
-                                            : "bg-gradient-to-br from-amber-500 to-orange-600"
+                                        ? "bg-primary"
+                                        : "bg-gradient-to-br from-amber-500 to-orange-600"
                                         }`}
                                 >
                                     {message.role === "user" ? (
@@ -199,8 +199,8 @@ export function FloatingChatWidget() {
                                 {/* Message Bubble */}
                                 <div
                                     className={`max-w-[75%] rounded-2xl px-4 py-2 ${message.role === "user"
-                                            ? "bg-primary text-primary-foreground rounded-tr-sm"
-                                            : "bg-muted rounded-tl-sm"
+                                        ? "bg-primary text-primary-foreground rounded-tr-sm"
+                                        : "bg-muted rounded-tl-sm"
                                         }`}
                                 >
                                     <p className="text-sm whitespace-pre-wrap">{message.content}</p>
@@ -268,8 +268,8 @@ export function FloatingChatWidget() {
             <button
                 onClick={() => setIsOpen(!isOpen)}
                 className={`fixed bottom-6 right-6 z-50 w-14 h-14 rounded-full shadow-lg transition-all duration-300 hover:scale-110 flex items-center justify-center ${isOpen
-                        ? "bg-muted text-muted-foreground"
-                        : "bg-gradient-to-br from-amber-500 to-orange-600 text-white"
+                    ? "bg-muted text-muted-foreground"
+                    : "bg-gradient-to-br from-amber-500 to-orange-600 text-white"
                     }`}
                 title={isOpen ? "Tutup chat" : "Chat dengan kami"}
             >
