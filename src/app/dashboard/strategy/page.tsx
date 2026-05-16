@@ -40,7 +40,7 @@ export default function StrategySimulator() {
 
   return (
     <div className="p-6">
-      <h1 className="text-2xl font-bold text-gray-800 mb-2">Strategic Simulator: "The 4 Million Challenge"</h1>
+      <h1 className="text-2xl font-bold text-gray-800 mb-2">Strategic Simulator: &quot;The 4 Million Challenge&quot;</h1>
       <p className="text-gray-600 mb-6">Analisis alokasi modal terbatas (IDR 4.000.000) untuk dampak maksimal di 2026.</p>
 
       <div className="grid grid-cols-1 gap-6">
@@ -87,7 +87,7 @@ export default function StrategySimulator() {
       <div className="mt-8 bg-gray-800 text-white p-6 rounded-lg">
         <h2 className="text-lg font-bold mb-4">🤖 Osmo Strategic Recommendation</h2>
         <p className="mb-4">
-          Dengan modal <strong>Rp 4.000.000</strong>, strategi "All-In" ke produksi fisik terlalu berisiko karena menghabiskan likuiditas.
+          Dengan modal <strong>Rp 4.000.000</strong>, strategi &quot;All-In&quot; ke produksi fisik terlalu berisiko karena menghabiskan likuiditas.
           Strategi terbaik adalah <strong>Hybrid Approach</strong>:
         </p>
         <ol className="list-decimal list-inside space-y-2 text-gray-300">
@@ -98,7 +98,7 @@ export default function StrategySimulator() {
             <strong className="text-white">Pre-Order Queen Rosa (Rp 1jt - Ads/Sample):</strong> Jangan produksi massal dulu. Buat sample, foto estetik (pakai Manggo), lalu buka PO. Gunakan uang DP customer untuk produksi.
           </li>
           <li>
-            <strong className="text-white">Sisa Kas (Rp 2.5jt):</strong> Simpan sebagai "Safety Net" atau cicil hutang modal pendiri.
+            <strong className="text-white">Sisa Kas (Rp 2.5jt):</strong> Simpan sebagai &quot;Safety Net&quot; atau cicil hutang modal pendiri.
           </li>
         </ol>
       </div>

@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
 import { DashboardLayout } from "@/components/layout";
 
@@ -9,6 +11,13 @@ export default function WorkspaceLayout({
     children: React.ReactNode;
 }) {
     const { user, isLoading } = useAuth();
+    const router = useRouter();
+
+    useEffect(() => {
+        if (!isLoading && !user) {
+            router.replace("/login");
+        }
+    }, [isLoading, router, user]);
 
     // Show loading state
     if (isLoading) {
@@ -19,11 +28,7 @@ export default function WorkspaceLayout({
         );
     }
 
-    // Redirect to login if not authenticated
     if (!user) {
-        if (typeof window !== "undefined") {
-            window.location.href = "/login";
-        }
         return null;
     }
 

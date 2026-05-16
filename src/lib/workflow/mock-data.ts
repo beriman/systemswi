@@ -2,7 +2,7 @@
 import type { WorkflowRequest, TelegramMessage } from "./types";
 
 // In-memory workflow store
-let WORKFLOW_REQUESTS: WorkflowRequest[] = [
+const WORKFLOW_REQUESTS: WorkflowRequest[] = [
     {
         id: "wf-001",
         type: "instagram_post",
@@ -57,7 +57,7 @@ let WORKFLOW_REQUESTS: WorkflowRequest[] = [
     },
 ];
 
-let TELEGRAM_MESSAGES: TelegramMessage[] = [
+const TELEGRAM_MESSAGES: TelegramMessage[] = [
     {
         id: "tg-001",
         workflowRequestId: "wf-001",

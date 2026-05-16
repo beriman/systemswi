@@ -20,16 +20,27 @@ interface SheetViewerProps {
 }
 
 export function SheetViewer({ sheet, onBack }: SheetViewerProps) {
-    const [data, setData] = useState<SheetData | null>(null);
-    const [isLoading, setIsLoading] = useState(true);
+    const [sheetState, setSheetState] = useState<{ sheetId: string; data: SheetData | null }>({
+        sheetId: "",
+        data: null,
+    });
 
     useEffect(() => {
-        setIsLoading(true);
+        let isCurrent = true;
+
         fetchSheetData(sheet.id).then((result) => {
-            setData(result);
-            setIsLoading(false);
+            if (isCurrent) {
+                setSheetState({ sheetId: sheet.id, data: result });
+            }
         });
+
+        return () => {
+            isCurrent = false;
+        };
     }, [sheet.id]);
+
+    const isLoading = sheetState.sheetId !== sheet.id;
+    const data = isLoading ? null : sheetState.data;
 
     if (isLoading) {
         return (

@@ -1,9 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { TemplateCard, DocumentForm, DocumentPreview, DocumentHistory } from "@/components/document";
 import { RoleGate } from "@/components/auth/role-gate";
-import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
     getAllTemplates,
@@ -27,15 +26,10 @@ export default function DocumentsPage() {
     const [generatedContent, setGeneratedContent] = useState("");
     const [letterNumber, setLetterNumber] = useState("");
     const [currentDocument, setCurrentDocument] = useState<GeneratedDocument | null>(null);
-    const [history, setHistory] = useState<GeneratedDocument[]>([]);
+    const [history, setHistory] = useState<GeneratedDocument[]>(() => getDocumentHistory());
     const [activeTab, setActiveTab] = useState("create");
 
     const templates = getAllTemplates();
-
-    // Load history on mount
-    useEffect(() => {
-        setHistory(getDocumentHistory());
-    }, []);
 
     const handleSelectTemplate = (template: DocumentTemplate) => {
         setSelectedTemplate(template);

@@ -1,296 +1,264 @@
-// Home Page - SWI Public Landing Page
 import { Metadata } from "next";
 import Link from "next/link";
-import { COMPANY_INFO, BRAND_PORTFOLIO, BUSINESS_PILLARS, UPCOMING_EVENTS } from "@/lib/public";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import Image from "next/image";
+import {
+  ArrowRight,
+  Building2,
+  CalendarDays,
+  ChartNoAxesCombined,
+  CheckCircle2,
+  Database,
+  Factory,
+  Landmark,
+  LineChart,
+  ShoppingBag,
+  Sparkles,
+  Store,
+} from "lucide-react";
+import { COMPANY_INFO } from "@/lib/public";
+import { holdingDivisions, publicHighlights } from "@/lib/swi-overview";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 export const metadata: Metadata = {
-    title: "Sensasi Wangi Indonesia | Fragrance Ecosystem",
-    description: "Membangun Ekosistem Wewangian Nusantara. Rumah bagi berbagai brand parfum, platform digital, komunitas kreator wewangian, serta penyelenggara event parfum terbesar di Indonesia.",
-    keywords: ["parfum Indonesia", "fragrance", "wewangian", "Fragrantions", "workshop parfum"],
-    openGraph: {
-        title: "Sensasi Wangi Indonesia",
-        description: "Membangun Ekosistem Wewangian Nusantara",
-        type: "website",
-    },
+  title: "PT Sensasi Wangi Indonesia | Company Profile",
+  description:
+    "Company profile PT Sensasi Wangi Indonesia, holding parfum Indonesia untuk SWI Store, Fragrantions, brand parfum, produksi, marketplace, dan sistem digital.",
+  keywords: [
+    "PT Sensasi Wangi Indonesia",
+    "SWI Store",
+    "Fragrantions",
+    "sensasiwangi.id",
+    "parfum Indonesia",
+    "investor parfum",
+  ],
+  openGraph: {
+    title: "PT Sensasi Wangi Indonesia",
+    description: "Holding parfum Indonesia yang menghubungkan store, event, brand, produksi, marketplace, dan data.",
+    type: "website",
+  },
 };
 
-// Icon components
-const SparklesIcon = () => (
-    <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
-    </svg>
-);
-
-const LayersIcon = () => (
-    <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
-    </svg>
-);
-
-const ShoppingBagIcon = () => (
-    <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
-    </svg>
-);
-
-const ArrowRightIcon = () => (
-    <svg className="ml-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
-    </svg>
-);
-
-const Building2Icon = () => (
-    <svg className="w-16 h-16 mx-auto mb-6 opacity-90" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-    </svg>
-);
-
-const divisions = [
-    {
-        icon: SparklesIcon,
-        title: "Event & Experience",
-        description: "Menghadirkan pengalaman parfum yang menyentuh indra dan emosi.",
-        bullets: ["Fragrantions", "Workshop & Kelas", "B2B Event"],
-        color: "from-amber-500 to-orange-600",
-    },
-    {
-        icon: LayersIcon,
-        title: "Digital & Platform",
-        description: "SensasiWangi.id – marketplace parfum premium, forum, dan kelas online.",
-        bullets: ["Marketplace", "Forum Komunitas", "Online Class"],
-        color: "from-blue-500 to-indigo-600",
-    },
-    {
-        icon: ShoppingBagIcon,
-        title: "Production & Brands",
-        description: "R&D, formulasi, laboratorium, dan rumah bagi brand-brand unggulan SWI.",
-        bullets: ["R&D & Formulasi", "Produksi Parfum", "Brand Incubation"],
-        color: "from-purple-500 to-pink-600",
-    },
-];
+const divisionIcons = [Landmark, Store, CalendarDays, Factory, ShoppingBag, Database];
 
 export default function HomePage() {
-    return (
-        <div className="flex flex-col">
-            {/* Hero Section */}
-            <section className="relative gradient-hero text-white">
-                <div className="container mx-auto px-4 py-24 md:py-32">
-                    <div className="max-w-3xl mx-auto text-center space-y-6">
-                        <h1 className="text-4xl md:text-6xl font-bold leading-tight animate-fade-in">
-                            Membangun Ekosistem Wewangian Nusantara.
-                        </h1>
-                        <p className="text-lg md:text-xl text-white/90 animate-slide-in-delay-1">
-                            Kami adalah rumah bagi berbagai brand parfum, platform digital, komunitas kreator wewangian, serta penyelenggara event parfum terbesar di Indonesia. Dari riset aroma, edukasi, hingga produksi — semua kami kemas menjadi sebuah pengalaman wangi yang holistik.
-                        </p>
-                        <div className="flex flex-col sm:flex-row gap-4 justify-center pt-4 animate-slide-in-delay-2">
-                            <Link href="/about">
-                                <Button size="lg" variant="secondary" className="w-full sm:w-auto">
-                                    Lihat Tentang Kami
-                                    <ArrowRightIcon />
-                                </Button>
-                            </Link>
-                            <Link href="/portfolio">
-                                <Button size="lg" variant="outline" className="w-full sm:w-auto bg-white/10 hover:bg-white/20 text-white border-white/30">
-                                    Lihat Portfolio
-                                </Button>
-                            </Link>
-                        </div>
-                    </div>
+  return (
+    <div className="flex flex-col">
+      <section className="border-b bg-gradient-to-b from-white via-slate-50 to-white">
+        <div className="container mx-auto grid gap-12 px-4 py-16 lg:grid-cols-[1.08fr_0.92fr] lg:items-center lg:py-24">
+          <div className="space-y-7">
+            <Badge variant="secondary" className="w-fit border border-primary/10 bg-primary/5 text-primary">
+              PT Sensasi Wangi Indonesia
+            </Badge>
+            <div className="space-y-5">
+              <h1 className="max-w-4xl text-4xl font-bold leading-tight text-slate-950 md:text-6xl">
+                Holding parfum Indonesia untuk experience, brand, event, marketplace, dan customer data.
+              </h1>
+              <p className="max-w-2xl text-lg leading-8 text-muted-foreground">
+                SWI menghubungkan SWI Store, Fragrantions, production and brands, serta marketplace sensasiwangi.id
+                menjadi ekosistem fragrance yang mudah dipahami customer, partner, vendor, dan calon investor.
+              </p>
+            </div>
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <Button asChild size="lg">
+                <Link href="#investor">
+                  Lihat peluang investor
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
+              </Button>
+              <Button asChild size="lg" variant="outline">
+                <Link href="/about">Pelajari company profile</Link>
+              </Button>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-3">
+              {publicHighlights.map((item) => (
+                <div key={item.label} className="rounded-lg border bg-white p-4 shadow-sm">
+                  <p className="font-semibold text-slate-950">{item.label}</p>
+                  <p className="mt-2 text-sm leading-6 text-muted-foreground">{item.copy}</p>
                 </div>
-                <div className="absolute bottom-0 left-0 right-0 h-24 bg-gradient-to-t from-background to-transparent"></div>
-            </section>
+              ))}
+            </div>
+          </div>
 
-            {/* About SWI Section */}
-            <section className="py-20 bg-background">
-                <div className="container mx-auto px-4 max-w-5xl">
-                    <div className="text-center mb-12">
-                        <h2 className="text-3xl md:text-4xl font-bold mb-6">Tentang SWI</h2>
-                        <p className="text-lg text-muted-foreground max-w-3xl mx-auto leading-relaxed">
-                            Didirikan pada tahun 2021, PT Sensasi Wangi Indonesia hadir sebagai pelopor ekosistem parfum di Indonesia. Kami tidak hanya menciptakan wangi — kami membangun ruang bagi komunitas, kreator, dan pecinta parfum untuk bertumbuh bersama.
-                        </p>
-                    </div>
-
-                    <div className="mt-16">
-                        <h3 className="text-2xl font-bold mb-8 text-center">4 Pilar Bisnis SWI</h3>
-                        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
-                            <Card className="border-none shadow-md hover:shadow-elegant transition-smooth">
-                                <CardHeader>
-                                    <CardTitle className="text-lg">Media</CardTitle>
-                                </CardHeader>
-                                <CardContent>
-                                    <p className="text-sm text-muted-foreground">Youtube, Edukasi, dan Narasi wewangian</p>
-                                </CardContent>
-                            </Card>
-                            <Card className="border-none shadow-md hover:shadow-elegant transition-smooth">
-                                <CardHeader>
-                                    <CardTitle className="text-lg">Komunitas</CardTitle>
-                                </CardHeader>
-                                <CardContent>
-                                    <p className="text-sm text-muted-foreground">Marketplace, forum, dan perfumer tools</p>
-                                </CardContent>
-                            </Card>
-                            <Card className="border-none shadow-md hover:shadow-elegant transition-smooth">
-                                <CardHeader>
-                                    <CardTitle className="text-lg">Event</CardTitle>
-                                </CardHeader>
-                                <CardContent>
-                                    <p className="text-sm text-muted-foreground">Penyelenggara acara bertema parfum dan lifestyle</p>
-                                </CardContent>
-                            </Card>
-                            <Card className="border-none shadow-md hover:shadow-elegant transition-smooth">
-                                <CardHeader>
-                                    <CardTitle className="text-lg">Retail</CardTitle>
-                                </CardHeader>
-                                <CardContent>
-                                    <p className="text-sm text-muted-foreground">Produksi & distribusi brand parfum artisan</p>
-                                </CardContent>
-                            </Card>
-                        </div>
-                    </div>
+          <div className="rounded-xl border bg-white p-6 shadow-elegant">
+            <div className="flex items-center gap-4 border-b pb-5">
+              <div className="flex h-16 w-16 items-center justify-center rounded-lg bg-slate-50">
+                <Image src={COMPANY_INFO.logo} alt="Logo PT Sensasi Wangi Indonesia" width={52} height={52} />
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Company profile</p>
+                <h2 className="text-2xl font-bold text-slate-950">SWI ecosystem map</h2>
+              </div>
+            </div>
+            <div className="mt-5 grid gap-3">
+              {[
+                ["SWI Store", "Offline experience, kelas, booking, racik parfum"],
+                ["Fragrantions", "Event, komunitas, tenant, sponsor, media"],
+                ["Production & Brands", "R&D, formula, SKU, QC, brand portfolio"],
+                ["sensasiwangi.id", "Marketplace, checkout, CRM, repeat order"],
+              ].map(([title, copy]) => (
+                <div key={title} className="flex gap-3 rounded-lg bg-slate-50 p-4">
+                  <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
+                  <div>
+                    <p className="font-semibold text-slate-950">{title}</p>
+                    <p className="text-sm text-muted-foreground">{copy}</p>
+                  </div>
                 </div>
-            </section>
-
-            {/* Unit Bisnis Kami */}
-            <section className="py-20 bg-muted/30">
-                <div className="container mx-auto px-4">
-                    <div className="text-center mb-12">
-                        <h2 className="text-3xl md:text-4xl font-bold mb-4">Unit Bisnis Kami</h2>
-                        <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-                            Tiga pilar utama yang menopang ekosistem SWI
-                        </p>
-                    </div>
-
-                    <div className="grid md:grid-cols-3 gap-6 max-w-6xl mx-auto">
-                        {divisions.map((division, index) => (
-                            <Card
-                                key={index}
-                                className="group hover:shadow-elegant transition-smooth border-2 hover:border-accent flex flex-col"
-                            >
-                                <CardHeader>
-                                    <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${division.color} flex items-center justify-center mb-4 group-hover:scale-110 transition-smooth`}>
-                                        <division.icon />
-                                    </div>
-                                    <CardTitle className="text-xl">{division.title}</CardTitle>
-                                </CardHeader>
-                                <CardContent className="flex-grow">
-                                    <CardDescription className="text-base mb-4">
-                                        {division.description}
-                                    </CardDescription>
-                                    <ul className="space-y-2">
-                                        {division.bullets.map((bullet, i) => (
-                                            <li key={i} className="flex items-center text-sm text-muted-foreground">
-                                                <div className="w-1.5 h-1.5 rounded-full bg-primary mr-2" />
-                                                {bullet}
-                                            </li>
-                                        ))}
-                                    </ul>
-                                </CardContent>
-                                <div className="p-6 pt-0 mt-auto">
-                                    <Link href="/about" className="text-primary hover:underline text-sm font-medium flex items-center">
-                                        Pelajari Lebih Lanjut <ArrowRightIcon />
-                                    </Link>
-                                </div>
-                            </Card>
-                        ))}
-                    </div>
-                </div>
-            </section>
-
-            {/* Brand Kami */}
-            <section className="py-20 bg-background">
-                <div className="container mx-auto px-4">
-                    <div className="text-center mb-12">
-                        <h2 className="text-3xl md:text-4xl font-bold mb-4">Brand Kami</h2>
-                        <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-                            Perjalanan aroma dari hati Indonesia.
-                        </p>
-                    </div>
-
-                    <div className="grid md:grid-cols-3 gap-8 max-w-6xl mx-auto">
-                        <Card className="overflow-hidden hover:shadow-elegant transition-smooth">
-                            <div className="h-48 bg-gradient-to-br from-purple-900 via-purple-700 to-pink-600"></div>
-                            <CardHeader>
-                                <CardTitle>L&apos;Arc~en~Scent</CardTitle>
-                                <CardDescription>Luxury Artisan Perfume</CardDescription>
-                            </CardHeader>
-                            <CardContent>
-                                <p className="text-sm text-muted-foreground">
-                                    Elegan, eksklusif, crafted dengan presisi.
-                                </p>
-                            </CardContent>
-                        </Card>
-
-                        <Card className="overflow-hidden hover:shadow-elegant transition-smooth">
-                            <div className="h-48 bg-gradient-to-br from-cyan-600 via-blue-600 to-purple-600"></div>
-                            <CardHeader>
-                                <CardTitle>Pixel Potion</CardTitle>
-                                <CardDescription>Gamer-Inspired Fragrance</CardDescription>
-                            </CardHeader>
-                            <CardContent>
-                                <p className="text-sm text-muted-foreground">
-                                    Wangi yang hidup di dunia virtual dan nyata.
-                                </p>
-                            </CardContent>
-                        </Card>
-
-                        <Card className="overflow-hidden hover:shadow-elegant transition-smooth">
-                            <div className="h-48 bg-gradient-to-br from-amber-700 via-orange-600 to-red-600"></div>
-                            <CardHeader>
-                                <CardTitle>NUScentZa</CardTitle>
-                                <CardDescription>Aroma Indonesia</CardDescription>
-                            </CardHeader>
-                            <CardContent>
-                                <p className="text-sm text-muted-foreground">
-                                    Membawa keindahan Nusantara dalam setiap semprotan.
-                                </p>
-                            </CardContent>
-                        </Card>
-                    </div>
-
-                    <div className="text-center mt-12">
-                        <Link href="/products">
-                            <Button variant="outline" size="lg">
-                                Jelajahi Brand Kami
-                            </Button>
-                        </Link>
-                    </div>
-                </div>
-            </section>
-
-            {/* Event & Community */}
-            <section className="py-20 bg-muted/30">
-                <div className="container mx-auto px-4 text-center">
-                    <h2 className="text-3xl md:text-4xl font-bold mb-6">Event & Community</h2>
-                    <p className="text-lg text-muted-foreground max-w-3xl mx-auto mb-12 leading-relaxed">
-                        Kami membangun ruang bagi kreativitas, edukasi, dan kolaborasi. Mulai dari Road to Fragrantions hingga Fragrantions, event kami selalu menjadi tempat berkumpulnya para kreator dan pecinta parfum.
-                    </p>
-                    <Link href="/upcoming-events">
-                        <Button size="lg" variant="default">
-                            Lihat Event
-                        </Button>
-                    </Link>
-                </div>
-            </section>
-
-            {/* CTA Section */}
-            <section className="py-20 bg-primary text-primary-foreground">
-                <div className="container mx-auto px-4 text-center">
-                    <Building2Icon />
-                    <h2 className="text-3xl md:text-4xl font-bold mb-4">
-                        Ajak Kami Berkolaborasi
-                    </h2>
-                    <p className="text-lg text-primary-foreground/90 max-w-2xl mx-auto mb-8">
-                        Mari bersama membangun masa depan wewangian Indonesia. Kerja sama event, brand, edukasi, maupun inovasi parfum.
-                    </p>
-                    <Link href="/about">
-                        <Button size="lg" variant="secondary">
-                            Hubungi Kami
-                        </Button>
-                    </Link>
-                </div>
-            </section>
+              ))}
+            </div>
+          </div>
         </div>
-    );
+      </section>
+
+      <section id="about" className="py-20">
+        <div className="container mx-auto grid gap-10 px-4 lg:grid-cols-[0.9fr_1.1fr] lg:items-start">
+          <div className="space-y-4">
+            <Badge variant="outline" className="w-fit">Tentang holding</Badge>
+            <h2 className="text-3xl font-bold leading-tight md:text-4xl">
+              SWI dibangun sebagai operating holding, bukan hanya brand parfum tunggal.
+            </h2>
+          </div>
+          <div className="grid gap-5 text-muted-foreground">
+            <p className="text-lg leading-8">
+              PT Sensasi Wangi Indonesia mengembangkan bisnis fragrance dari beberapa sisi: retail offline,
+              pengalaman customer, edukasi, event, produksi, brand portfolio, marketplace, dan sistem digital.
+            </p>
+            <p className="text-lg leading-8">
+              Model ini membuat setiap unit saling memberi traffic dan data. Customer bisa datang dari event,
+              landing page, QR, shareable link, store visit, atau marketplace, lalu diarahkan ke pengalaman yang
+              terukur dan bisa diikuti dengan repeat order.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section id="divisions" className="border-y bg-muted/30 py-20">
+        <div className="container mx-auto px-4">
+          <div className="mb-10 max-w-3xl">
+            <Badge variant="outline" className="mb-4">Divisi SWI</Badge>
+            <h2 className="text-3xl font-bold md:text-4xl">Struktur holding yang bisa dikembangkan bertahap.</h2>
+            <p className="mt-4 text-lg text-muted-foreground">
+              Setiap divisi punya fungsi bisnis jelas, tetapi tetap terhubung dalam satu funnel customer dan satu
+              sistem monitoring internal.
+            </p>
+          </div>
+          <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+            {holdingDivisions.map((division, index) => {
+              const Icon = divisionIcons[index] ?? Building2;
+              return (
+                <Card key={division.name} className="h-full border-none shadow-sm">
+                  <CardHeader>
+                    <div className="mb-2 flex h-11 w-11 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                      <Icon className="h-5 w-5" />
+                    </div>
+                    <CardTitle className="text-xl">{division.name}</CardTitle>
+                    <CardDescription className="text-sm leading-6">{division.summary}</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <ul className="space-y-2 text-sm text-muted-foreground">
+                      {division.focus.map((item) => (
+                        <li key={item} className="flex gap-2">
+                          <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
+                          {item}
+                        </li>
+                      ))}
+                    </ul>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      <section id="marketplace" className="py-20">
+        <div className="container mx-auto grid gap-10 px-4 lg:grid-cols-[1fr_1fr] lg:items-center">
+          <div className="space-y-5">
+            <Badge variant="outline" className="w-fit">sensasiwangi.id</Badge>
+            <h2 className="text-3xl font-bold leading-tight md:text-4xl">
+              Marketplace menjadi pusat katalog, booking, checkout, dan data customer SWI.
+            </h2>
+            <p className="text-lg leading-8 text-muted-foreground">
+              Kanal digital perlu dirancang sebagai business engine: dari discovery, booking kelas atau store
+              experience, checkout produk, customer support, hingga analytics untuk repeat order.
+            </p>
+            <Button asChild variant="outline">
+              <Link href="/products">Lihat layanan dan brand</Link>
+            </Button>
+          </div>
+          <div className="grid gap-4">
+            {[
+              ["Catalog and brand pages", "Produk SWI Store, Larc-en-Scent, Nuscentza, Pixel Potion, dan brand lain."],
+              ["Booking and checkout", "Kelas, visit store, racik parfum, event, pembayaran, dan fulfillment."],
+              ["CRM and analytics", "Traffic source, conversion, AOV, feedback, scent profile, dan repeat order."],
+            ].map(([title, copy]) => (
+              <div key={title} className="rounded-lg border bg-white p-5 shadow-sm">
+                <p className="font-semibold text-slate-950">{title}</p>
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">{copy}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section id="investor" className="border-y bg-slate-950 py-20 text-white">
+        <div className="container mx-auto px-4">
+          <div className="grid gap-10 lg:grid-cols-[0.9fr_1.1fr] lg:items-start">
+            <div className="space-y-5">
+              <Badge variant="secondary" className="w-fit bg-white/10 text-white">Investor friendly</Badge>
+              <h2 className="text-3xl font-bold leading-tight md:text-4xl">
+                Investor dapat membaca SWI sebagai ekosistem, bukan hanya toko atau event.
+              </h2>
+              <p className="text-lg leading-8 text-white/75">
+                Narasi investasi perlu menunjukkan bagaimana store, event, brand, produksi, marketplace, dan data
+                customer saling menguatkan revenue stream.
+              </p>
+              <Button asChild size="lg" variant="secondary">
+                <Link href="/dashboard">
+                  Buka dashboard internal
+                  <LineChart className="h-4 w-4" />
+                </Link>
+              </Button>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              {[
+                ["Multi-channel revenue", "Retail store, kelas, event, brand, B2B, marketplace, dan repeat order."],
+                ["Experience-led moat", "Customer tidak hanya membeli produk, tetapi mengalami proses memilih dan meracik aroma."],
+                ["Data advantage", "AI Mix dan scent profile dapat menjadi dasar CRM dan rekomendasi produk."],
+                ["Governance path", "Dashboard internal membantu legal, finance, HKI, vendor, dan investor readiness lebih transparan."],
+              ].map(([title, copy]) => (
+                <div key={title} className="rounded-lg border border-white/10 bg-white/5 p-5">
+                  <ChartNoAxesCombined className="mb-4 h-6 w-6 text-amber-300" />
+                  <p className="font-semibold">{title}</p>
+                  <p className="mt-2 text-sm leading-6 text-white/70">{copy}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="py-20">
+        <div className="container mx-auto px-4 text-center">
+          <Sparkles className="mx-auto mb-6 h-12 w-12 text-primary" />
+          <h2 className="mx-auto max-w-3xl text-3xl font-bold leading-tight md:text-4xl">
+            Siap dikembangkan menjadi company profile, investor room, dan operating dashboard.
+          </h2>
+          <p className="mx-auto mt-5 max-w-2xl text-lg leading-8 text-muted-foreground">
+            Tahap berikutnya adalah melengkapi foto, angka aktual, legal/HKI, vendor list, partner pipeline, dan
+            financial model agar materi publik dan internal semakin kuat.
+          </p>
+          <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
+            <Button asChild size="lg">
+              <Link href="/about">Lihat detail perusahaan</Link>
+            </Button>
+            <Button asChild size="lg" variant="outline">
+              <Link href="/dashboard">Masuk dashboard</Link>
+            </Button>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
 }

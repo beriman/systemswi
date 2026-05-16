@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Event } from "@/lib/event";
 import { StatCard } from "@/components/widgets/stat-card";
@@ -9,12 +10,13 @@ interface EventDashboardProps {
 }
 
 export function EventDashboard({ event }: EventDashboardProps) {
+    const [now] = useState(() => Date.now());
     const budgetUsage = event.budget > 0
         ? Math.round((event.spentBudget / event.budget) * 100)
         : 0;
 
     const daysUntilEvent = Math.ceil(
-        (new Date(event.date).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
+        (new Date(event.date).getTime() - now) / (1000 * 60 * 60 * 24)
     );
 
     return (

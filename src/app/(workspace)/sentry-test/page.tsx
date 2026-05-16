@@ -93,7 +93,7 @@ export default function SentryTestPage() {
             <div className="mb-6">
                 <h1 className="text-3xl font-bold mb-2">Sentry Error Tracking Test</h1>
                 <p className="text-muted-foreground">
-                    Test different types of errors and verify they're being sent to Sentry.
+                    Test different types of errors and verify they&apos;re being sent to Sentry.
                 </p>
             </div>
 
@@ -171,7 +171,7 @@ export default function SentryTestPage() {
                         {showError && <ErrorComponent />}
                         {!showError && (
                             <p className="text-sm text-muted-foreground">
-                                Click "Test Error Boundary" above to trigger component error
+                                Click &quot;Test Error Boundary&quot; above to trigger component error
                             </p>
                         )}
                     </ErrorBoundary>
@@ -189,7 +189,7 @@ export default function SentryTestPage() {
                     <p>3. Navigate to: <strong>Issues</strong> tab</p>
                     <p>4. You should see errors with tags: <code className="bg-muted px-1 rounded">test</code></p>
                     <p className="text-muted-foreground">
-                        Note: In production mode, errors are sent to Sen try. In development, they're logged to console.
+                        Note: In production mode, errors are sent to Sentry. In development, they&apos;re logged to console.
                     </p>
                 </CardContent>
             </Card>

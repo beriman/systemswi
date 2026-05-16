@@ -26,7 +26,7 @@ export default function Error({
                 <CardHeader>
                     <CardTitle className="text-red-600">Oops! Something went wrong</CardTitle>
                     <CardDescription>
-                        We're sorry, but something unexpected happened. Our team has been notified.
+                        We&apos;re sorry, but something unexpected happened. Our team has been notified.
                     </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">

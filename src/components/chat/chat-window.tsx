@@ -15,32 +15,32 @@ import {
     getChatSessions,
     createChatSession,
     addMessageToSession,
-    ChatSession,
     isOpenRouterConfigured,
     getOpenRouterResponse,
 } from "@/lib/ai";
 
 export function ChatWindow() {
-    const [sessionId, setSessionId] = useState<string>("");
-    const [messages, setMessages] = useState<ChatMessageType[]>([INITIAL_MESSAGE]);
-    const [isLoading, setIsLoading] = useState(false);
-    const [useRealAI, setUseRealAI] = useState(false);
-    const messagesEndRef = useRef<HTMLDivElement>(null);
-
-    // Initialize session on mount
-    useEffect(() => {
+    const [initialChatState] = useState(() => {
         const sessions = getChatSessions();
         if (sessions.length > 0) {
             const lastSession = sessions[0];
-            setSessionId(lastSession.id);
-            if (lastSession.messages.length > 0) {
-                setMessages(lastSession.messages);
-            }
-        } else {
-            const newSession = createChatSession();
-            setSessionId(newSession.id);
+            return {
+                sessionId: lastSession.id,
+                messages: lastSession.messages.length > 0 ? lastSession.messages : [INITIAL_MESSAGE],
+            };
         }
-    }, []);
+
+        const newSession = createChatSession();
+        return {
+            sessionId: newSession.id,
+            messages: [INITIAL_MESSAGE],
+        };
+    });
+    const [sessionId, setSessionId] = useState<string>(initialChatState.sessionId);
+    const [messages, setMessages] = useState<ChatMessageType[]>(initialChatState.messages);
+    const [isLoading, setIsLoading] = useState(false);
+    const [useRealAI, setUseRealAI] = useState(false);
+    const messagesEndRef = useRef<HTMLDivElement>(null);
 
     // Scroll to bottom on new messages
     useEffect(() => {

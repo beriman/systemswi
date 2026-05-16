@@ -15,13 +15,15 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
-    { label: "Overview", href: "/dashboard", icon: "📊", feature: "dashboard:overview" },
-    { label: "Events", href: "/events", icon: "📅", feature: "event-cde" },
-    { label: "Media", href: "/media", icon: "🖼️", feature: "media" },
-    { label: "Drive", href: "/drive", icon: "📁", feature: "drive" },
-    { label: "AI Chat", href: "/ai-chat", icon: "🤖", feature: "ai-features" },
-    { label: "Users", href: "/users", icon: "👥", feature: "user-management" },
-    { label: "Settings", href: "/settings", icon: "⚙️", feature: "settings" },
+    { label: "Overview", href: "/workspace-dashboard", icon: "OV", feature: "dashboard:overview" },
+    { label: "Events", href: "/events", icon: "EV", feature: "events" },
+    { label: "Documents", href: "/documents", icon: "DO", feature: "documents" },
+    { label: "Reports", href: "/reports", icon: "RP", feature: "reports" },
+    { label: "Drive", href: "/drive", icon: "DR", feature: "drive" },
+    { label: "Sheets", href: "/sheets", icon: "SH", feature: "drive" },
+    { label: "Automation", href: "/automation", icon: "AU", feature: "automation" },
+    { label: "AI", href: "/ai", icon: "AI", feature: "ai-features" },
+    { label: "Settings", href: "/settings", icon: "ST", feature: "settings" },
 ];
 
 interface SidebarProps {
@@ -32,8 +34,6 @@ interface SidebarProps {
 export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
     const pathname = usePathname();
     const { hasAccess, roleLabel } = usePermissions();
-
-    // Filter nav items based on user permissions
     const visibleItems = NAV_ITEMS.filter((item) => hasAccess(item.feature));
 
     return (
@@ -43,16 +43,15 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
                 collapsed ? "w-16" : "w-64"
             )}
         >
-            {/* Logo/Brand */}
             <div className="h-16 flex items-center justify-between px-4 border-b">
                 {!collapsed && (
-                    <Link href="/dashboard" className="flex items-center gap-2">
+                    <Link href="/workspace-dashboard" className="flex items-center gap-2">
                         <Image src="/logo-swi.png" alt="Logo SWI" width={32} height={32} />
                         <span className="font-bold text-lg">System SWI</span>
                     </Link>
                 )}
                 {collapsed && (
-                    <Link href="/dashboard">
+                    <Link href="/workspace-dashboard">
                         <Image src="/logo-swi.png" alt="Logo SWI" width={32} height={32} />
                     </Link>
                 )}
@@ -61,11 +60,10 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
                     className="p-2 rounded-md hover:bg-accent"
                     title={collapsed ? "Expand" : "Collapse"}
                 >
-                    {collapsed ? "→" : "←"}
+                    {collapsed ? ">" : "<"}
                 </button>
             </div>
 
-            {/* Navigation */}
             <nav className="flex-1 p-2 space-y-1">
                 {visibleItems.map((item) => {
                     const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
@@ -82,14 +80,13 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
                             )}
                             title={collapsed ? item.label : undefined}
                         >
-                            <span className="text-lg">{item.icon}</span>
+                            <span className="text-xs font-semibold">{item.icon}</span>
                             {!collapsed && <span>{item.label}</span>}
                         </Link>
                     );
                 })}
             </nav>
 
-            {/* Footer with role */}
             <div className="p-4 border-t">
                 {!collapsed && (
                     <p className="text-xs text-muted-foreground">

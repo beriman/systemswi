@@ -11,7 +11,7 @@ import * as Sentry from "@sentry/nextjs";
 type LogLevel = "info" | "warn" | "error" | "debug";
 
 interface LogContext {
-    [key: string]: any;
+    [key: string]: unknown;
 }
 
 /**
@@ -29,7 +29,7 @@ function log(level: LogLevel, message: string, context?: LogContext) {
     // Console logging
     if (process.env.NODE_ENV === "development") {
         const consoleMethod = console[level] || console.log;
-        consoleMethod(`[${timestamp}] [${level.toUpperCase()}]`, message, context || "");
+        consoleMethod(`[${timestamp}] [${level.toUpperCase()}]`, message, logData);
     }
 
     // Sentry logging for errors and warnings in production

@@ -59,7 +59,7 @@ export class ErrorBoundary extends Component<Props, State> {
                     <CardHeader>
                         <CardTitle className="text-red-600">Component Error</CardTitle>
                         <CardDescription>
-                            This component encountered an error and couldn't be displayed.
+                            This component encountered an error and couldn&apos;t be displayed.
                         </CardDescription>
                     </CardHeader>
                     <CardContent>

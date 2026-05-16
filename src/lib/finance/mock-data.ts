@@ -88,7 +88,7 @@ export const SETORANS: Setoran[] = [
 ];
 
 // Audit Log
-let AUDIT_LOG: AuditLogEntry[] = [
+const AUDIT_LOG: AuditLogEntry[] = [
     { id: "log-001", timestamp: "2026-01-10T09:00:00Z", userId: "ceo", userName: "CEO", action: "login", module: "auth", details: "Logged in successfully" },
     { id: "log-002", timestamp: "2026-01-10T09:15:00Z", userId: "coo", userName: "COO", action: "view", module: "finance", details: "Viewed financial reports" },
     { id: "log-003", timestamp: "2026-01-10T09:30:00Z", userId: "ceo", userName: "CEO", action: "approve", module: "workflow", details: "Approved Instagram post request wf-001" },

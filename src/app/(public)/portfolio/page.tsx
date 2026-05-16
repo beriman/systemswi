@@ -1,140 +1,189 @@
-// Portfolio Page - Events & Past Work
 "use client";
 
 import { useState } from "react";
-import { PORTFOLIO_ITEMS, PORTFOLIO_CATEGORIES, getPortfolioByCategory } from "@/lib/public";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import Link from "next/link";
+import {
+  ArrowRight,
+  BriefcaseBusiness,
+  CalendarDays,
+  MapPin,
+  Sparkles,
+  Users,
+} from "lucide-react";
+import { PORTFOLIO_ITEMS, getPortfolioByCategory } from "@/lib/public";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
-// Placeholder image URLs using picsum.photos
-const getPlaceholderImage = (category: string, index: number) => {
-    const seeds: Record<string, number[]> = {
-        wedding: [101, 102, 103, 104],
-        corporate: [201, 202, 203, 204],
-        music: [301, 302, 303, 304],
-        exhibition: [401, 402, 403, 404],
-        other: [501, 502, 503, 504],
-    };
-    const seed = seeds[category]?.[index % 4] || 100 + index;
-    return `https://picsum.photos/seed/${seed}/400/300`;
+const categoryDisplay: Record<string, string> = {
+  exhibition: "Fragrantions & Exhibition",
+  corporate: "Corporate / B2B",
+  wedding: "Private Event",
+  music: "Lifestyle Event",
+  other: "Workshop & Education",
 };
 
-export const PORTFOLIO_CATEGORIES_DISPLAY: Record<string, string> = {
-    exhibition: "Exhibition",
-    corporate: "Corporate",
-    wedding: "Wedding",
-    music: "Music",
-    other: "Workshop",
+const categoryNotes: Record<string, string> = {
+  exhibition: "Proof of community, sponsor, tenant, and media activation.",
+  corporate: "Proof of B2B scent branding and partnership opportunity.",
+  wedding: "Private experience format for premium customer segments.",
+  music: "Lifestyle activation for youth and community traffic.",
+  other: "Education funnel for store, class, and repeat order.",
 };
+
+const proofPillars = [
+  {
+    title: "Event traction",
+    copy: "Fragrantions dan Road to Fragrantions menjadi bukti bahwa SWI bisa mengumpulkan brand, komunitas, tenant, sponsor, dan customer.",
+    icon: CalendarDays,
+  },
+  {
+    title: "Experience format",
+    copy: "Workshop dan kelas parfum membuktikan bahwa fragrance bisa dijual sebagai pengalaman, bukan hanya produk di rak.",
+    icon: Sparkles,
+  },
+  {
+    title: "Commercial bridge",
+    copy: "Setiap portfolio perlu diarahkan ke katalog brand, marketplace, booking, repeat order, dan partnership B2B.",
+    icon: BriefcaseBusiness,
+  },
+];
 
 export default function PortfolioPage() {
-    const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const items = selectedCategory ? getPortfolioByCategory(selectedCategory) : PORTFOLIO_ITEMS;
+  const categories = Object.entries(categoryDisplay);
 
-    const items = selectedCategory
-        ? getPortfolioByCategory(selectedCategory)
-        : PORTFOLIO_ITEMS;
-
-    const categories = Object.entries(PORTFOLIO_CATEGORIES_DISPLAY);
-
-    return (
-        <div className="flex flex-col">
-            {/* Hero */}
-            <section className="gradient-hero text-white py-20">
-                <div className="container mx-auto px-4 text-center">
-                    <h1 className="text-4xl md:text-5xl font-bold mb-4">Portfolio</h1>
-                    <p className="text-lg md:text-xl text-white/90 max-w-2xl mx-auto">
-                        Lihat berbagai event yang telah kami selenggarakan dengan sukses
-                    </p>
-                </div>
-            </section>
-
-            <div className="container mx-auto px-4 py-12">
-                {/* Filter */}
-                <section className="flex flex-wrap gap-2 justify-center mb-12">
-                    <Button
-                        variant={selectedCategory === null ? "default" : "outline"}
-                        onClick={() => setSelectedCategory(null)}
-                        className="transition-smooth"
-                    >
-                        All
-                    </Button>
-                    {categories.map(([key, label]) => (
-                        <Button
-                            key={key}
-                            variant={selectedCategory === key ? "default" : "outline"}
-                            onClick={() => setSelectedCategory(key)}
-                            className="transition-smooth"
-                        >
-                            {label}
-                        </Button>
-                    ))}
-                </section>
-
-                {/* Portfolio Grid */}
-                <section className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-                    {items.map((item, index) => (
-                        <Card key={item.id} className="overflow-hidden group cursor-pointer hover:shadow-elegant transition-smooth border-2 hover:border-primary/20">
-                            <div className="h-48 relative overflow-hidden">
-                                {/* Placeholder image */}
-                                <img
-                                    src={getPlaceholderImage(item.category, index)}
-                                    alt={item.title}
-                                    className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
-                                />
-                                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end justify-center pb-6">
-                                    <span className="text-white font-medium bg-primary/80 px-4 py-2 rounded-full text-sm">View Details</span>
-                                </div>
-                            </div>
-                            <CardHeader className="pb-2">
-                                <div className="flex items-center justify-between">
-                                    <span className="text-xs text-primary font-medium uppercase tracking-wide">
-                                        {PORTFOLIO_CATEGORIES_DISPLAY[item.category] || item.category}
-                                    </span>
-                                    <span className="text-xs text-muted-foreground">
-                                        {new Date(item.date).toLocaleDateString("id-ID", { year: "numeric", month: "short" })}
-                                    </span>
-                                </div>
-                                <CardTitle className="text-lg group-hover:text-primary transition-colors">{item.title}</CardTitle>
-                                <CardDescription className="flex items-center gap-1">
-                                    📍 {item.location}
-                                </CardDescription>
-                            </CardHeader>
-                            <CardContent>
-                                <p className="text-sm text-muted-foreground line-clamp-2">
-                                    {item.description}
-                                </p>
-                                {item.participants && (
-                                    <p className="text-xs text-primary mt-3 font-medium">
-                                        👥 {item.participants.toLocaleString()} peserta
-                                    </p>
-                                )}
-                            </CardContent>
-                        </Card>
-                    ))}
-                </section>
-
-                {items.length === 0 && (
-                    <div className="text-center py-12 text-muted-foreground">
-                        <span className="text-6xl block mb-4">📂</span>
-                        Belum ada portfolio untuk kategori ini
-                    </div>
-                )}
-            </div>
-
-            {/* CTA Section */}
-            <section className="py-16 bg-muted/30">
-                <div className="container mx-auto px-4 text-center">
-                    <h2 className="text-2xl font-bold mb-4">Ingin Bekerja Sama dengan Kami?</h2>
-                    <p className="text-muted-foreground mb-6 max-w-xl mx-auto">
-                        Hubungi kami untuk konsultasi gratis tentang event parfum atau kolaborasi brand.
-                    </p>
-                    <a href="https://wa.me/628118556688" target="_blank" rel="noopener">
-                        <Button size="lg">
-                            💬 Hubungi via WhatsApp
-                        </Button>
-                    </a>
-                </div>
-            </section>
+  return (
+    <div className="flex flex-col">
+      <section className="border-b bg-gradient-to-b from-slate-950 to-primary py-20 text-white">
+        <div className="container mx-auto px-4">
+          <div className="max-w-4xl">
+            <Badge variant="secondary" className="mb-5 bg-white/10 text-white">
+              Portfolio & proof of work
+            </Badge>
+            <h1 className="text-4xl font-bold leading-tight md:text-6xl">
+              Bukti aktivitas SWI dari event, kelas, komunitas, dan B2B fragrance.
+            </h1>
+            <p className="mt-6 max-w-3xl text-lg leading-8 text-white/80">
+              Portfolio publik ini perlu membantu partner dan investor melihat bahwa SWI sudah memiliki format
+              experience, komunitas, serta peluang komersial yang bisa diarahkan ke store, brand, dan marketplace.
+            </p>
+          </div>
         </div>
-    );
+      </section>
+
+      <section className="border-b bg-muted/30 py-12">
+        <div className="container mx-auto grid gap-5 px-4 md:grid-cols-3">
+          {proofPillars.map((pillar) => {
+            const Icon = pillar.icon;
+            return (
+              <Card key={pillar.title} className="border-none shadow-sm">
+                <CardHeader>
+                  <div className="mb-2 flex h-11 w-11 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                    <Icon className="h-5 w-5" />
+                  </div>
+                  <CardTitle className="text-xl">{pillar.title}</CardTitle>
+                  <CardDescription className="leading-6">{pillar.copy}</CardDescription>
+                </CardHeader>
+              </Card>
+            );
+          })}
+        </div>
+      </section>
+
+      <section className="container mx-auto px-4 py-14">
+        <div className="mb-8 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <h2 className="text-3xl font-bold text-slate-950">Portfolio items</h2>
+            <p className="mt-3 max-w-2xl text-muted-foreground">
+              Gunakan filter untuk melihat jenis proof yang relevan saat bicara dengan sponsor, brand, vendor, atau investor.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant={selectedCategory === null ? "default" : "outline"}
+              onClick={() => setSelectedCategory(null)}
+            >
+              Semua
+            </Button>
+            {categories.map(([key, label]) => (
+              <Button
+                key={key}
+                variant={selectedCategory === key ? "default" : "outline"}
+                onClick={() => setSelectedCategory(key)}
+              >
+                {label}
+              </Button>
+            ))}
+          </div>
+        </div>
+
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+          {items.map((item) => (
+            <Card key={item.id} className="overflow-hidden border-none shadow-sm transition-smooth hover:shadow-elegant">
+              <div className="border-b bg-gradient-to-br from-primary/10 via-white to-amber-100 p-6">
+                <div className="flex items-start justify-between gap-3">
+                  <Badge variant="outline" className="bg-white/70">
+                    {categoryDisplay[item.category] || item.category}
+                  </Badge>
+                  {item.participants && (
+                    <div className="flex items-center gap-1 rounded-full bg-white/80 px-3 py-1 text-xs font-semibold text-primary">
+                      <Users className="h-3.5 w-3.5" />
+                      {item.participants.toLocaleString("id-ID")}
+                    </div>
+                  )}
+                </div>
+                <div className="mt-10 flex h-20 items-end">
+                  <Sparkles className="h-12 w-12 text-primary/70" />
+                </div>
+              </div>
+              <CardHeader>
+                <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  <CalendarDays className="h-3.5 w-3.5" />
+                  {new Date(item.date).toLocaleDateString("id-ID", { month: "long", year: "numeric" })}
+                </div>
+                <CardTitle className="text-xl">{item.title}</CardTitle>
+                <CardDescription className="flex items-center gap-2">
+                  <MapPin className="h-4 w-4" />
+                  {item.location}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm leading-6 text-muted-foreground">{item.description}</p>
+                <div className="mt-5 rounded-lg bg-muted/60 p-4 text-sm text-slate-700">
+                  <p className="font-semibold text-slate-950">Investor note</p>
+                  <p className="mt-1">{categoryNotes[item.category] || "Proof point untuk ekosistem SWI."}</p>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+
+        {items.length === 0 && (
+          <div className="rounded-xl border bg-muted/30 py-12 text-center text-muted-foreground">
+            Belum ada portfolio untuk kategori ini.
+          </div>
+        )}
+      </section>
+
+      <section className="border-t bg-slate-950 py-16 text-white">
+        <div className="container mx-auto grid gap-8 px-4 md:grid-cols-[1fr_auto] md:items-center">
+          <div>
+            <h2 className="text-3xl font-bold">Portfolio harus tersambung ke revenue stream.</h2>
+            <p className="mt-3 max-w-2xl text-white/75">
+              Langkah berikutnya adalah menambahkan foto aktual, sponsor/tenant list, ticketing, omzet event,
+              lead partner, dan conversion ke marketplace atau store booking.
+            </p>
+          </div>
+          <Button asChild size="lg" variant="secondary">
+            <Link href="/products">
+              Lihat brand & layanan
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+          </Button>
+        </div>
+      </section>
+    </div>
+  );
 }

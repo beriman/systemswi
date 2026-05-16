@@ -7,15 +7,8 @@ import { jwtVerify } from "jose";
 // Paths that require authentication
 const PROTECTED_PATHS = [
     "/dashboard",
+    "/workspace-dashboard",
     "/workspace",
-];
-
-// Paths that are always public
-const PUBLIC_PATHS = [
-    "/",
-    "/login",
-    "/api/auth/google",
-    "/api/auth/callback",
 ];
 
 // Cookie name (must match auth/index.ts)
@@ -29,15 +22,6 @@ const JWT_SECRET = process.env.JWT_SECRET || "dev-secret-change-in-production";
  */
 function isProtectedPath(pathname: string): boolean {
     return PROTECTED_PATHS.some(
-        (path) => pathname === path || pathname.startsWith(`${path}/`)
-    );
-}
-
-/**
- * Check if path is public
- */
-function isPublicPath(pathname: string): boolean {
-    return PUBLIC_PATHS.some(
         (path) => pathname === path || pathname.startsWith(`${path}/`)
     );
 }
