@@ -1,107 +1,170 @@
-'use client';
+import { AlertTriangle, CheckCircle2, CircleDollarSign, Lightbulb, Target } from "lucide-react";
+import { investorThesis, productRoadmap, riskRegister } from "@/lib/swi-overview";
 
-import React, { useState } from 'react';
+const scenarios = [
+  {
+    name: "Pixel Potion Rosa 1L preorder",
+    capital: "Rp 1-1,5 juta",
+    upside: "Validasi demand sebelum produksi massal",
+    risk: "Marketing lemah membuat preorder lambat",
+    verdict: "Prioritas",
+    tone: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  },
+  {
+    name: "Webinar paid fragrance starter",
+    capital: "Rp 500 ribu",
+    upside: "Cash cepat, database customer, brand authority",
+    risk: "Butuh landing page dan follow-up sales",
+    verdict: "Aman",
+    tone: "border-sky-200 bg-sky-50 text-sky-700",
+  },
+  {
+    name: "Fragrantions venue deposit",
+    capital: "Rp 4 juta+",
+    upside: "Mengunci timeline event",
+    risk: "Cash keluar sebelum sponsor/tenant masuk",
+    verdict: "Tunggu bukti",
+    tone: "border-amber-200 bg-amber-50 text-amber-700",
+  },
+];
 
 export default function StrategySimulator() {
-  const [budget] = useState(4000000); // Modal 4 Juta
-  
-  const scenarios = [
-    {
-      id: 1,
-      name: 'Produksi Parfum "Queen Rosa"',
-      cost: 3500000,
-      output: '50-70 Botol (30ml)',
-      roi_est: 'High (300%)',
-      risk: 'Medium (Stok mati jika marketing gagal)',
-      desc: 'Fokus pada Hero Product Pixel Potion. Memanfaatkan hype karakter Rosa.',
-      verdict: 'Recommended'
-    },
-    {
-      id: 2,
-      name: 'Webinar "Rahasia Perfumer" (SensasiWangi.id)',
-      cost: 500000,
-      output: '50-100 Peserta Berbayar',
-      roi_est: 'Medium (150%) + Leads',
-      risk: 'Low',
-      desc: 'Modal zoom & ads kecil. Keuntungan utama adalah Database Email & Brand Authority.',
-      verdict: 'Safe Bet'
-    },
-    {
-      id: 3,
-      name: 'Event Fragrantions 2026 (DP Venue)',
-      cost: 4000000,
-      output: 'Booking Slot',
-      roi_est: 'Long Term',
-      risk: 'High',
-      desc: 'Menghabiskan seluruh modal hanya untuk DP. Tidak ada cashflow masuk segera.',
-      verdict: 'Not Recommended'
-    }
-  ];
-
   return (
-    <div className="p-6">
-      <h1 className="text-2xl font-bold text-gray-800 mb-2">Strategic Simulator: &quot;The 4 Million Challenge&quot;</h1>
-      <p className="text-gray-600 mb-6">Analisis alokasi modal terbatas (IDR 4.000.000) untuk dampak maksimal di 2026.</p>
-
-      <div className="grid grid-cols-1 gap-6">
-        {scenarios.map((scene) => (
-          <div key={scene.id} className={`p-6 rounded-lg border-l-4 shadow-sm ${
-            scene.verdict === 'Recommended' ? 'bg-green-50 border-green-500' :
-            scene.verdict === 'Safe Bet' ? 'bg-blue-50 border-blue-500' :
-            'bg-red-50 border-red-500'
-          }`}>
-            <div className="flex justify-between items-center mb-2">
-              <h3 className="text-xl font-bold">{scene.name}</h3>
-              <span className="font-mono text-sm bg-white px-2 py-1 rounded border">Biaya: Rp {scene.cost.toLocaleString('id-ID')}</span>
-            </div>
-            
-            <p className="text-gray-700 mb-4">{scene.desc}</p>
-            
-            <div className="grid grid-cols-3 gap-4 text-sm">
-              <div>
-                <span className="block text-gray-500 font-bold">Output:</span>
-                {scene.output}
-              </div>
-              <div>
-                <span className="block text-gray-500 font-bold">Est. ROI:</span>
-                {scene.roi_est}
-              </div>
-              <div>
-                <span className="block text-gray-500 font-bold">Risk:</span>
-                {scene.risk}
-              </div>
-            </div>
-
-            <div className="mt-4 pt-4 border-t border-gray-200">
-              <span className="font-bold">Verdict: </span>
-              <span className={`font-bold ${
-                scene.verdict === 'Recommended' ? 'text-green-700' :
-                scene.verdict === 'Safe Bet' ? 'text-blue-700' :
-                'text-red-700'
-              }`}>{scene.verdict}</span>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <div className="mt-8 bg-gray-800 text-white p-6 rounded-lg">
-        <h2 className="text-lg font-bold mb-4">🤖 Osmo Strategic Recommendation</h2>
-        <p className="mb-4">
-          Dengan modal <strong>Rp 4.000.000</strong>, strategi &quot;All-In&quot; ke produksi fisik terlalu berisiko karena menghabiskan likuiditas.
-          Strategi terbaik adalah <strong>Hybrid Approach</strong>:
+    <div className="p-4 md:p-8">
+      <header className="rounded-2xl border border-black/10 bg-white p-6 shadow-sm md:p-8">
+        <p className="text-sm font-bold uppercase tracking-[0.2em] text-teal-700">Strategy room</p>
+        <h1 className="mt-3 text-4xl font-bold leading-tight text-slate-950 md:text-6xl">
+          SWI Decision Simulator
+        </h1>
+        <p className="mt-4 max-w-4xl text-base leading-8 text-slate-600">
+          Ruang strategi untuk memilih langkah yang paling masuk akal saat modal, waktu, dan tenaga terbatas. Fokusnya
+          bukan ide paling ramai, tetapi keputusan yang cepat menghasilkan data dan cashflow.
         </p>
-        <ol className="list-decimal list-inside space-y-2 text-gray-300">
-          <li>
-            <strong className="text-white">Jalankan Webinar (Rp 500rb):</strong> Gunakan webinar berbayar murah (Rp 50rb/org) untuk mengumpulkan dana segar cepat (~Rp 2.5jt revenue) + Database Market.
-          </li>
-          <li>
-            <strong className="text-white">Pre-Order Queen Rosa (Rp 1jt - Ads/Sample):</strong> Jangan produksi massal dulu. Buat sample, foto estetik (pakai Manggo), lalu buka PO. Gunakan uang DP customer untuk produksi.
-          </li>
-          <li>
-            <strong className="text-white">Sisa Kas (Rp 2.5jt):</strong> Simpan sebagai &quot;Safety Net&quot; atau cicil hutang modal pendiri.
-          </li>
-        </ol>
-      </div>
+      </header>
+
+      <section className="mt-5 grid gap-5 lg:grid-cols-3">
+        {scenarios.map((scenario) => (
+          <article key={scenario.name} className="rounded-2xl border border-black/10 bg-white p-6 shadow-sm">
+            <div className="flex items-start justify-between gap-4">
+              <Target className="h-6 w-6 text-teal-700" />
+              <span className={`rounded-full border px-3 py-1 text-xs font-bold ${scenario.tone}`}>
+                {scenario.verdict}
+              </span>
+            </div>
+            <h2 className="mt-5 text-xl font-bold text-slate-950">{scenario.name}</h2>
+            <div className="mt-5 space-y-4 text-sm">
+              <div>
+                <p className="font-bold text-slate-500">Capital needed</p>
+                <p className="mt-1 text-slate-800">{scenario.capital}</p>
+              </div>
+              <div>
+                <p className="font-bold text-slate-500">Upside</p>
+                <p className="mt-1 text-slate-800">{scenario.upside}</p>
+              </div>
+              <div>
+                <p className="font-bold text-slate-500">Risk</p>
+                <p className="mt-1 text-slate-800">{scenario.risk}</p>
+              </div>
+            </div>
+          </article>
+        ))}
+      </section>
+
+      <section className="mt-5 grid gap-5 2xl:grid-cols-[1.05fr_0.95fr]">
+        <div className="rounded-2xl border border-black/10 bg-white p-6 shadow-sm">
+          <div className="mb-6 flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-bold uppercase tracking-[0.18em] text-slate-400">Product strategy</p>
+              <h2 className="mt-2 text-2xl font-bold text-slate-950">Produk mana yang harus diprioritaskan?</h2>
+            </div>
+            <CircleDollarSign className="h-6 w-6 text-teal-700" />
+          </div>
+          <div className="space-y-4">
+            {productRoadmap.map((product) => (
+              <article key={product.name} className="rounded-xl border border-slate-200 bg-[#fbfaf7] p-5">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <h3 className="font-bold text-slate-950">{product.name}</h3>
+                    <p className="mt-1 text-sm font-semibold text-slate-500">{product.brand}</p>
+                  </div>
+                  <span className="rounded-full bg-white px-3 py-1 text-xs font-bold text-slate-600">
+                    {product.phase}
+                  </span>
+                </div>
+                <p className="mt-3 text-sm leading-6 text-slate-600">{product.target}</p>
+                <div className="mt-4 grid gap-2 md:grid-cols-3">
+                  {product.blockers.map((blocker) => (
+                    <p key={blocker} className="flex gap-2 text-sm text-slate-600">
+                      <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-teal-700" />
+                      {blocker}
+                    </p>
+                  ))}
+                </div>
+              </article>
+            ))}
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-black/10 bg-[#10231f] p-6 text-white shadow-sm">
+          <div className="mb-6 flex items-start justify-between gap-4">
+            <div>
+              <p className="text-sm font-bold uppercase tracking-[0.18em] text-teal-100">Recommended strategy</p>
+              <h2 className="mt-2 text-2xl font-bold">Hybrid approach.</h2>
+            </div>
+            <Lightbulb className="h-6 w-6 text-amber-300" />
+          </div>
+          <div className="space-y-3">
+            {[
+              "Jalankan webinar berbayar kecil untuk menghasilkan cash cepat dan database.",
+              "Buka preorder Pixel Potion Rosa 1L sebelum produksi besar.",
+              "Gunakan sponsor/tenant LOI sebelum membayar komitmen besar event.",
+              "Simpan cash buffer untuk produksi batch dan kewajiban operasional.",
+            ].map((item) => (
+              <div key={item} className="rounded-lg border border-white/10 bg-white/[0.06] p-4 text-sm leading-6 text-white/75">
+                {item}
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="mt-5 grid gap-5 2xl:grid-cols-[0.95fr_1.05fr]">
+        <div className="rounded-2xl border border-black/10 bg-white p-6 shadow-sm">
+          <div className="mb-6 flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-bold uppercase tracking-[0.18em] text-slate-400">Investor thesis</p>
+              <h2 className="mt-2 text-2xl font-bold text-slate-950">Narasi yang harus dibuktikan</h2>
+            </div>
+            <Lightbulb className="h-6 w-6 text-teal-700" />
+          </div>
+          <div className="grid gap-4 md:grid-cols-2">
+            {investorThesis.map((item) => (
+              <article key={item.title} className="rounded-xl border border-slate-200 bg-[#fbfaf7] p-5">
+                <h3 className="font-bold text-slate-950">{item.title}</h3>
+                <p className="mt-3 text-sm leading-7 text-slate-600">{item.copy}</p>
+              </article>
+            ))}
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-black/10 bg-white p-6 shadow-sm">
+          <div className="mb-6 flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-bold uppercase tracking-[0.18em] text-slate-400">Risk discipline</p>
+              <h2 className="mt-2 text-2xl font-bold text-slate-950">Jangan biarkan strategi melebar</h2>
+            </div>
+            <AlertTriangle className="h-6 w-6 text-amber-600" />
+          </div>
+          <div className="space-y-3">
+            {riskRegister.map((risk) => (
+              <article key={risk.risk} className="rounded-xl border border-slate-200 bg-[#fbfaf7] p-4">
+                <p className="font-bold text-slate-950">{risk.risk}</p>
+                <p className="mt-2 text-sm leading-6 text-slate-600">{risk.mitigation}</p>
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
     </div>
   );
 }
