@@ -157,6 +157,7 @@ export async function GET() {
       bankAccounts,
       totalSaldoAkhir,
       shareholders,
+      totalModalDasar: 1000000000,
       totalModalDitempatkan,
       totalSudahSetor,
       totalSetoranPercent: totalModalDitempatkan > 0 ? (totalSudahSetor / totalModalDitempatkan) * 100 : 0,

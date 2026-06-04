@@ -10,6 +10,7 @@ interface DashboardData {
   bankAccounts: any[];
   totalSaldoAkhir: number;
   shareholders: any[];
+  totalModalDasar: number;
   totalModalDitempatkan: number;
   totalSudahSetor: number;
   totalSetoranPercent: number;
@@ -100,6 +101,120 @@ export default function FinancePage() {
                     <div className="text-2xl font-bold mt-2">{formatCurrency(data.totalSaldoAkhir)}</div>
                     <div className="text-xs text-muted-foreground">{data.bankAccounts.length} rekening aktif</div>
                   </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Founder Equity & Debt Monitor */}
+            <Card>
+              <CardHeader>
+                <CardTitle>👑 Founder Equity & Debt Monitor</CardTitle>
+                <CardDescription>
+                  Berdasarkan Akta Pendirian PT Sensasi Wangi Indonesia — Modal Dasar: {formatCurrency(data.totalModalDasar || 1000000000)}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {/* Summary Bar */}
+                <div className="grid gap-4 md:grid-cols-3 mb-6">
+                  <div className="p-4 border rounded-lg bg-blue-50">
+                    <div className="text-xs text-muted-foreground">Modal Dasar (Authorized)</div>
+                    <div className="text-xl font-bold">{formatCurrency(data.totalModalDasar || 1000000000)}</div>
+                    <div className="text-xs text-muted-foreground">10.000 saham × Rp 100.000</div>
+                  </div>
+                  <div className="p-4 border rounded-lg bg-green-50">
+                    <div className="text-xs text-muted-foreground">Modal Ditempatkan (Issued)</div>
+                    <div className="text-xl font-bold">{formatCurrency(data.totalModalDitempatkan)}</div>
+                    <div className="text-xs text-muted-foreground">2.500 saham × Rp 100.000</div>
+                  </div>
+                  <div className="p-4 border rounded-lg bg-purple-50">
+                    <div className="text-xs text-muted-foreground">Sudah Disetor (Paid-up)</div>
+                    <div className="text-xl font-bold">{formatCurrency(data.totalSudahSetor)}</div>
+                    <div className="text-xs text-muted-foreground">{data.totalSetoranPercent.toFixed(1)}% dari modal ditempatkan</div>
+                  </div>
+                </div>
+
+                {/* Progress: Setoran vs Ditempatkan */}
+                <div className="mb-6">
+                  <div className="flex justify-between text-sm mb-1">
+                    <span>Progress Setoran</span>
+                    <span className="font-medium">{data.totalSetoranPercent.toFixed(1)}%</span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-3">
+                    <div
+                      className="bg-gradient-to-r from-blue-500 to-green-500 h-3 rounded-full transition-all"
+                      style={{ width: `${Math.min(data.totalSetoranPercent, 100)}%` }}
+                    />
+                  </div>
+                  <div className="flex justify-between text-xs text-muted-foreground mt-1">
+                    <span>Rp 0</span>
+                    <span>Target: {formatCurrency(data.totalModalDitempatkan)}</span>
+                  </div>
+                </div>
+
+                {/* Founder Details Table */}
+                <div className="rounded-md border overflow-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Founder</TableHead>
+                        <TableHead className="text-right">Saham</TableHead>
+                        <TableHead className="text-right">Kewajiban</TableHead>
+                        <TableHead className="text-right">Disetor</TableHead>
+                        <TableHead className="text-right">Hutang (Sisa)</TableHead>
+                        <TableHead className="text-right">Progress</TableHead>
+                        <TableHead>% Kepemilikan</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {data.shareholders.map((sh, i) => {
+                        const sisa = sh.kewajiban - sh.sudahSetor;
+                        const progress = sh.progress;
+                        return (
+                          <TableRow key={i}>
+                            <TableCell>
+                              <div className="font-medium">{sh.nama}</div>
+                              <div className="text-xs text-muted-foreground">{sh.jumlahSaham} saham</div>
+                            </TableCell>
+                            <TableCell className="text-right">{sh.jumlahSaham}</TableCell>
+                            <TableCell className="text-right">{formatCurrency(sh.kewajiban)}</TableCell>
+                            <TableCell className="text-right text-green-600 font-medium">{formatCurrency(sh.sudahSetor)}</TableCell>
+                            <TableCell className="text-right text-red-600 font-bold">{formatCurrency(sisa)}</TableCell>
+                            <TableCell className="text-right">
+                              <div className="flex items-center gap-2">
+                                <div className="w-full bg-gray-200 rounded-full h-1.5">
+                                  <div
+                                    className={`h-1.5 rounded-full ${progress >= 100 ? "bg-green-500" : progress >= 50 ? "bg-blue-500" : "bg-yellow-500"}`}
+                                    style={{ width: `${Math.min(progress, 100)}%` }}
+                                  />
+                                </div>
+                                <span className="text-xs font-medium">{progress.toFixed(1)}%</span>
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-right font-medium">{sh.persen}</TableCell>
+                          </TableRow>
+                        );
+                      })}
+                      <TableRow className="bg-muted font-bold">
+                        <TableCell>TOTAL</TableCell>
+                        <TableCell className="text-right">2.500</TableCell>
+                        <TableCell className="text-right">{formatCurrency(data.totalModalDitempatkan)}</TableCell>
+                        <TableCell className="text-right text-green-600">{formatCurrency(data.totalSudahSetor)}</TableCell>
+                        <TableCell className="text-right text-red-600">{formatCurrency(data.totalModalDitempatkan - data.totalSudahSetor)}</TableCell>
+                        <TableCell className="text-right">{data.totalSetoranPercent.toFixed(1)}%</TableCell>
+                        <TableCell className="text-right">100%</TableCell>
+                      </TableRow>
+                    </TableBody>
+                  </Table>
+                </div>
+
+                {/* Breakdown Catatan */}
+                <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-sm">
+                  <p className="font-medium text-yellow-800 mb-1">📝 Catatan</p>
+                  <ul className="text-xs text-yellow-700 space-y-1">
+                    <li>• Gaji Beriman & Wapiq Rp 500.000/bulan (Jan 2025 – Jun 2026) dibayarkan dengan mengurangi hutang saham</li>
+                    <li>• Malsiaf tidak memperoleh gaji</li>
+                    <li>• Sisa 7.500 saham (Rp 750.000.000) belum dikeluarkan — dapat dikeluarkan dengan RUPS</li>
+                  </ul>
                 </div>
               </CardContent>
             </Card>
