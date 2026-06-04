@@ -166,16 +166,14 @@ function seedDatabase(db: any) {
     VALUES ('SWQ-001', 'Sukuk SWI Store TIM', 1000000000, 1000, 1000000, 36, 50, 50, 'musyarakah', 'perencanaan')
   `).run();
 
-  // Seed transactions — from Rekening_Koran mutasi
-  const insertTx = db.prepare(`
-    INSERT INTO transactions (tanggal, jenis, kategori, deskripsi, jumlah, sumber, referensi)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `);
+  // Seed transactions — historis setoran Beriman
+  const insertTx = db.prepare(
+    "INSERT INTO transactions (tanggal, jenis, kategori, deskripsi, jumlah, sumber, referensi) VALUES (?, ?, ?, ?, ?, ?, ?)"
+  );
 
-  // Mei 2026 transactions from sheets
-  insertTx.run("2026-05-01", "pemasukan", "Saldo Awal", "Saldo awal Holding Mei 2026", 20505329.80, "BRI Holding", "Saldo Holding");
-  insertTx.run("2026-05-01", "pemasukan", "Saldo Awal", "Saldo awal Website Mei 2026", 790000.00, "BRI Website", "Saldo Website");
-  // Cicilan Beriman hari ini
+  // Setoran Beriman: Sep 2023 (6.8M) + Jan 2024 (20M) + Jun 2026 (7M) = 33.8M
+  insertTx.run("2023-09-01", "pemasukan", "Setoran Modal", "Setoran modal Beriman Juliano (Sep 2023)", 6800000, "BRI Holding", "Setoran awal");
+  insertTx.run("2024-01-01", "pemasukan", "Setoran Modal", "Setoran modal Beriman Juliano (Jan 2024)", 20000000, "BRI Holding", "Top-up setoran");
   insertTx.run("2026-06-04", "pemasukan", "Setoran Modal", "Cicilan setoran saham Beriman Juliano", 7000000, "BRI Holding", "Cicilan setoran bayar saham");
 }
 
