@@ -171,14 +171,20 @@ function seedDatabase(db: any) {
     "INSERT INTO transactions (tanggal, jenis, kategori, deskripsi, jumlah, sumber, referensi) VALUES (?, ?, ?, ?, ?, ?, ?)"
   );
 
-  // Setoran Beriman: Sep 2023 (6.8M) + Jan 2024 (20M) + Jun 2026 (7M) = 33.8M
+  // Setoran Beriman: Sep 2023 (6.8M) + Jan 2024 (20M) + Jun 2026 (7M) + Gaji 18 bulan (9M) = 42.8M
   insertTx.run("2023-09-01", "pemasukan", "Setoran Modal", "Setoran modal Beriman Juliano (Sep 2023)", 6800000, "BRI Holding", "Setoran awal");
   insertTx.run("2024-01-01", "pemasukan", "Setoran Modal", "Setoran modal Beriman Juliano (Jan 2024)", 20000000, "BRI Holding", "Top-up setoran");
   insertTx.run("2026-06-04", "pemasukan", "Setoran Modal", "Cicilan setoran saham Beriman Juliano", 7000000, "BRI Holding", "Cicilan setoran bayar saham");
+  // Gaji Beriman: Jan 2025 – Jun 2026 (18 bulan × 500.000 = 9M) → hutang saham
+  insertTx.run("2025-01-01", "pemasukan", "Gaji Direksi", "Gaji Beriman Juliano 2025 (12 bulan × 500.000)", 6000000, "Hutang Saham", "Gaji → Setoran Saham");
+  insertTx.run("2026-01-01", "pemasukan", "Gaji Direksi", "Gaji Beriman Juliano Jan-Jun 2026 (6 bulan × 500.000)", 3000000, "Hutang Saham", "Gaji → Setoran Saham");
 
-  // Setoran Wapiq: Okt 2023 (6.435M) + Des 2025 (9M) = 15.435M
+  // Setoran Wapiq: Okt 2023 (6.435M) + Des 2025 (9M) + Gaji 18 bulan (9M) = 24.435M
   insertTx.run("2023-10-01", "pemasukan", "Setoran Modal", "Setoran modal Wapiq Rizya Zaelan (Okt 2023)", 6435000, "BRI Holding", "Setoran awal");
   insertTx.run("2025-12-01", "pemasukan", "Setoran Modal", "Setoran modal Wapiq Rizya Zaelan (Des 2025)", 9000000, "BRI Holding", "Top-up setoran");
+  // Gaji Wapiq: Jan 2025 – Jun 2026 (18 bulan × 500.000 = 9M) → hutang saham
+  insertTx.run("2025-01-01", "pemasukan", "Gaji Direksi", "Gaji Wapiq Rizya Zaelan 2025 (12 bulan × 500.000)", 6000000, "Hutang Saham", "Gaji → Setoran Saham");
+  insertTx.run("2026-01-01", "pemasukan", "Gaji Direksi", "Gaji Wapiq Rizya Zaelan Jan-Jun 2026 (6 bulan × 500.000)", 3000000, "Hutang Saham", "Gaji → Setoran Saham");
 }
 
 export default getDb;
