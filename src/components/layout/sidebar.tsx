@@ -16,9 +16,12 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
     { label: "Overview", href: "/dashboard", icon: "📊", feature: "dashboard:overview" },
+    { label: "Finance", href: "/finance", icon: "💰", feature: "dashboard:overview" },
     { label: "Events", href: "/events", icon: "📅", feature: "event-cde" },
-    { label: "Media", href: "/media", icon: "🖼️", feature: "media" },
+    { label: "Sheets", href: "/sheets", icon: "📋", feature: "drive" },
     { label: "Drive", href: "/drive", icon: "📁", feature: "drive" },
+    { label: "Automation", href: "/automation", icon: "⚡", feature: "ai-features" },
+    { label: "Reports", href: "/reports", icon: "📈", feature: "dashboard" },
     { label: "AI Chat", href: "/ai-chat", icon: "🤖", feature: "ai-features" },
     { label: "Users", href: "/users", icon: "👥", feature: "user-management" },
     { label: "Settings", href: "/settings", icon: "⚙️", feature: "settings" },
