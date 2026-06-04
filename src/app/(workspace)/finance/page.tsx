@@ -1,26 +1,26 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { RoleGate } from "@/components/auth/role-gate";
 import { Skeleton } from "@/components/ui/skeleton";
-
-interface BankData {
-  headers: string[];
-  rows: string[][];
-  totalMonths: number;
-}
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 interface DashboardData {
-  investors: number;
-  sukuk: number;
-  pemasukan: number;
-  pengeluaran: number;
-  netCashflow: number;
-  bankData: BankData | null;
+  bankAccounts: any[];
+  totalSaldoAkhir: number;
+  shareholders: any[];
+  totalModalDitempatkan: number;
+  totalSudahSetor: number;
+  totalSetoranPercent: number;
+  sukukInfo: any;
+  sukukInvestors: any[];
+  totalUnitTerjual: number;
+  rekapData: any[];
 }
 
 function formatCurrency(amount: number): string {
+  if (!amount && amount !== 0) return "Rp 0";
   return new Intl.NumberFormat("id-ID", {
     style: "currency",
     currency: "IDR",
@@ -54,21 +54,17 @@ export default function FinancePage() {
       <div>
         <h2 className="text-2xl font-bold">💰 Finance & Equity</h2>
         <p className="text-muted-foreground">
-          Monitoring kesehatan keuangan PT Sensasi Wangi Indonesia
+          Data real-time dari Google Sheets — PT Sensasi Wangi Indonesia
         </p>
       </div>
 
       <RoleGate feature="dashboard:overview">
         {loading ? (
-          <div className="grid gap-4 md:grid-cols-4">
-            {[1, 2, 3, 4].map((i) => (
+          <div className="grid gap-4 md:grid-cols-3">
+            {[1, 2, 3].map((i) => (
               <Card key={i}>
-                <CardHeader className="pb-2">
-                  <Skeleton className="h-4 w-24" />
-                </CardHeader>
-                <CardContent>
-                  <Skeleton className="h-8 w-32" />
-                </CardContent>
+                <CardHeader className="pb-2"><Skeleton className="h-4 w-24" /></CardHeader>
+                <CardContent><Skeleton className="h-8 w-32" /></CardContent>
               </Card>
             ))}
           </div>
@@ -77,150 +73,192 @@ export default function FinancePage() {
             <CardContent className="py-8 text-center text-destructive">
               <p>Gagal memuat data: {error}</p>
               <p className="text-sm text-muted-foreground mt-2">
-                Pastikan Google Sheets terhubung dan API route aktif.
+                Pastikan Google Sheets terhubung dan environment variables sudah di-set.
               </p>
             </CardContent>
           </Card>
         ) : data ? (
           <>
-            {/* KPI Cards */}
-            <div className="grid gap-4 md:grid-cols-4">
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm text-muted-foreground">
-                    Total Pemasukan
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold text-green-600">
-                    {formatCurrency(data.pemasukan)}
+            {/* Bank Accounts */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Saldo Rekening Bank</CardTitle>
+                <CardDescription>Data dari Rekening Koran — Google Sheets</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                  {data.bankAccounts.map((acc, i) => (
+                    <div key={i} className="p-4 border rounded-lg">
+                      <div className="text-sm text-muted-foreground">{acc.bank} — {acc.nama}</div>
+                      <div className="text-xs text-muted-foreground font-mono">{acc.noRek}</div>
+                      <div className="text-2xl font-bold mt-2">{acc.saldoAkhir}</div>
+                      <div className="text-xs text-muted-foreground">Saldo Awal: {acc.saldoAwal}</div>
+                    </div>
+                  ))}
+                  <div className="p-4 border-2 border-primary rounded-lg bg-primary/5">
+                    <div className="text-sm font-medium text-primary">Total Saldo</div>
+                    <div className="text-2xl font-bold mt-2">{formatCurrency(data.totalSaldoAkhir)}</div>
+                    <div className="text-xs text-muted-foreground">{data.bankAccounts.length} rekening aktif</div>
                   </div>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm text-muted-foreground">
-                    Total Pengeluaran
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold text-red-600">
-                    {formatCurrency(data.pengeluaran)}
-                  </div>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm text-muted-foreground">
-                    Net Cashflow
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className={`text-2xl font-bold ${data.netCashflow >= 0 ? "text-green-600" : "text-red-600"}`}>
-                    {formatCurrency(data.netCashflow)}
-                  </div>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm text-muted-foreground">
-                    Investor Aktif
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">{data.investors}</div>
-                </CardContent>
-              </Card>
-            </div>
+                </div>
+              </CardContent>
+            </Card>
 
-            {/* Bank Data from Google Sheets */}
-            {data.bankData && (
+            {/* Shareholders / Equity */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Pemegang Saham & Modal</CardTitle>
+                <CardDescription>
+                  Modal Dasar: Rp 1.000.000.000 | Modal Ditempatkan: {formatCurrency(data.totalModalDitempatkan)} | Terkumpul: {formatCurrency(data.totalSudahSetor)} ({data.totalSetoranPercent.toFixed(1)}%)
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid gap-4 md:grid-cols-3">
+                  {data.shareholders.map((sh, i) => (
+                    <div key={i} className="p-4 border rounded-lg">
+                      <div className="flex justify-between items-start mb-2">
+                        <div>
+                          <h4 className="font-semibold">{sh.nama}</h4>
+                          <span className="text-xs text-muted-foreground">{sh.persen} • {sh.jumlahSaham} saham</span>
+                        </div>
+                        <span className={`text-xs px-2 py-1 rounded ${sh.progress >= 100 ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700"}`}>
+                          {sh.progress.toFixed(1)}%
+                        </span>
+                      </div>
+                      <div className="space-y-1 text-sm">
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Kewajiban:</span>
+                          <span>{formatCurrency(sh.kewajiban)}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Disetor:</span>
+                          <span className="text-green-600">{formatCurrency(sh.sudahSetor)}</span>
+                        </div>
+                        <div className="flex justify-between border-t pt-1">
+                          <span className="font-medium">Sisa:</span>
+                          <span className="font-bold text-red-600">{formatCurrency(sh.kewajiban - sh.sudahSetor)}</span>
+                        </div>
+                      </div>
+                      <div className="mt-3">
+                        <div className="w-full bg-gray-200 rounded-full h-2">
+                          <div className="bg-blue-600 h-2 rounded-full transition-all" style={{ width: `${Math.min(sh.progress, 100)}%` }} />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Sukuk */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Info Sukuk</CardTitle>
+                <CardDescription>
+                  {data.sukukInfo?.akad || "Musyarakah"} • Status: {data.sukukInfo?.status || "Perencanaan"}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid gap-4 md:grid-cols-4">
+                  <div className="p-3 border rounded">
+                    <div className="text-xs text-muted-foreground">Nilai Sukuk</div>
+                    <div className="font-bold">{data.sukukInfo?.nilai || "Rp 1.000.000.000"}</div>
+                  </div>
+                  <div className="p-3 border rounded">
+                    <div className="text-xs text-muted-foreground">Nisbah</div>
+                    <div className="font-bold">{data.sukukInfo?.nisbah || "50:50"}</div>
+                  </div>
+                  <div className="p-3 border rounded">
+                    <div className="text-xs text-muted-foreground">Yield Estimasi</div>
+                    <div className="font-bold">{data.sukukInfo?.yield || "8-12% p.a."}</div>
+                  </div>
+                  <div className="p-3 border rounded">
+                    <div className="text-xs text-muted-foreground">Unit Terjual</div>
+                    <div className="font-bold">{data.totalUnitTerjual} / 1,000</div>
+                  </div>
+                </div>
+
+                {data.sukukInvestors.length > 0 && (
+                  <div className="mt-4">
+                    <h4 className="text-sm font-medium mb-2">Investor Sukuk</h4>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>No</TableHead>
+                          <TableHead>Nama</TableHead>
+                          <TableHead>Jenis</TableHead>
+                          <TableHead>Unit</TableHead>
+                          <TableHead>Nominal</TableHead>
+                          <TableHead>Status</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {data.sukukInvestors.map((inv, i) => (
+                          <TableRow key={i}>
+                            <TableCell>{inv.no}</TableCell>
+                            <TableCell>{inv.nama}</TableCell>
+                            <TableCell>{inv.jenis}</TableCell>
+                            <TableCell>{inv.unit}</TableCell>
+                            <TableCell>{formatCurrency(inv.nominal)}</TableCell>
+                            <TableCell>
+                              <span className={`text-xs px-2 py-1 rounded ${inv.status === "Aktif" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-700"}`}>
+                                {inv.status}
+                              </span>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Rekap Rekening 8 Bulan */}
+            {data.rekapData.length > 0 && (
               <Card>
                 <CardHeader>
-                  <CardTitle>Rekap Rekening (dari Google Sheets)</CardTitle>
+                  <CardTitle>Rekap Rekening Koran</CardTitle>
+                  <CardDescription>8 bulan terakhir — dari Google Sheets</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b">
-                          {data.bankData.headers.map((h, i) => (
-                            <th key={i} className="text-left p-2 font-medium">
-                              {h}
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {data.bankData.rows.slice(0, 10).map((row, i) => (
-                          <tr key={i} className="border-b hover:bg-muted/50">
-                            {row.map((cell, j) => (
-                              <td key={j} className="p-2">
-                                {cell}
-                              </td>
-                            ))}
-                          </tr>
+                  <div className="rounded-md border overflow-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Bulan</TableHead>
+                          <TableHead>Akun</TableHead>
+                          <TableHead>Periode</TableHead>
+                          <TableHead className="text-right">Saldo Awal</TableHead>
+                          <TableHead className="text-right">Masuk</TableHead>
+                          <TableHead className="text-right">Keluar</TableHead>
+                          <TableHead className="text-right">Saldo Akhir</TableHead>
+                          <TableHead>Txns</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {data.rekapData.map((row, i) => (
+                          <TableRow key={i}>
+                            <TableCell className="font-medium">{row.bulan}</TableCell>
+                            <TableCell>
+                              <span className={`text-xs px-2 py-1 rounded ${row.akun === "Holding" ? "bg-blue-100 text-blue-700" : "bg-purple-100 text-purple-700"}`}>
+                                {row.akun}
+                              </span>
+                            </TableCell>
+                            <TableCell className="text-xs">{row.periode}</TableCell>
+                            <TableCell className="text-right text-xs">{row.saldoAwal}</TableCell>
+                            <TableCell className="text-right text-green-600 text-xs">{row.totalMasuk}</TableCell>
+                            <TableCell className="text-right text-red-600 text-xs">{row.totalKeluar}</TableCell>
+                            <TableCell className="text-right font-medium text-xs">{row.saldoAkhir}</TableCell>
+                            <TableCell className="text-xs">{row.jTxns}</TableCell>
+                          </TableRow>
                         ))}
-                      </tbody>
-                    </table>
+                      </TableBody>
+                    </Table>
                   </div>
                 </CardContent>
               </Card>
             )}
-
-            {/* Equity Section */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Founder Equity & Debt Monitor</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid gap-4 md:grid-cols-3">
-                  {[
-                    { name: "Beriman Juliano", share: 34, role: "CEO", commited: 340000000, paid: 50000000 },
-                    { name: "Wapiq Rizya", share: 33, role: "COO", commited: 330000000, paid: 30000000 },
-                    { name: "Muhamad Malsiaf", share: 33, role: "CFO", commited: 330000000, paid: 30000000 },
-                  ].map((founder) => {
-                    const debt = founder.commited - founder.paid;
-                    const progress = (founder.paid / founder.commited) * 100;
-                    return (
-                      <div key={founder.name} className="p-4 border rounded-lg">
-                        <div className="flex justify-between items-start mb-3">
-                          <div>
-                            <h4 className="font-semibold">{founder.name}</h4>
-                            <span className="text-xs text-muted-foreground">
-                              {founder.role} • {founder.share}%
-                            </span>
-                          </div>
-                          <span className={`text-xs px-2 py-1 rounded ${debt > 0 ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"}`}>
-                            {debt > 0 ? "Belum Lunas" : "Lunas"}
-                          </span>
-                        </div>
-                        <div className="space-y-2 text-sm">
-                          <div className="flex justify-between">
-                            <span className="text-muted-foreground">Komitmen:</span>
-                            <span>{formatCurrency(founder.commited)}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-muted-foreground">Disetor:</span>
-                            <span className="text-green-600">{formatCurrency(founder.paid)}</span>
-                          </div>
-                          <div className="flex justify-between border-t pt-2">
-                            <span className="font-medium">Hutang:</span>
-                            <span className="font-bold text-red-600">{formatCurrency(debt)}</span>
-                          </div>
-                        </div>
-                        <div className="mt-3">
-                          <div className="w-full bg-gray-200 rounded-full h-2">
-                            <div className="bg-blue-600 h-2 rounded-full" style={{ width: `${progress}%` }} />
-                          </div>
-                          <p className="text-xs text-right mt-1 text-muted-foreground">{progress.toFixed(1)}%</p>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </CardContent>
-            </Card>
           </>
         ) : null}
       </RoleGate>
