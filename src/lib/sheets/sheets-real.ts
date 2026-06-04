@@ -3,7 +3,7 @@
 import { google } from "googleapis";
 import fs from "fs";
 
-export const SPREADSHEET_ID = process.env.GOOGLE_SHEETS_ID || "";
+export const SPREADSHEET_ID = process.env.GOOGLE_SHEETS_ID || "1lQ_FX6v-aX0XNwkRO6TyYLU1NGq6lAMFvK88S09KZsA";
 const TOKEN_PATH = "/home/ubuntu/.hermes/google_token.json";
 
 // ── Sheet ranges map ──────────────────────────────────────────────

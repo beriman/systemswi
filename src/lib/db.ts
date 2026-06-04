@@ -152,28 +152,31 @@ function seedDatabase(db: any) {
     VALUES (?, ?, ?, ?, ?, ?, 'aktif', 1)
   `);
 
-  insertInvestor.run(1, "Beriman Juliano", "beriman@sensasiwangi.id", "08118556688", 850, 850000000);
-  insertInvestor.run(2, "Muhamad Malsiaf", "malsiaf@sensasiwangi.id", "08118556689", 825, 825000000);
-  insertInvestor.run(3, "Wapiq Rizya Zaelan", "wapiq@sensasiwangi.id", "08118556690", 825, 825000000);
+  // Seed investors — data from PemegangSaham sheet
+  // Beriman: 850 saham (34%), kewajiban Rp 85M, sudah setor Rp 26.8M
+  // Malsiaf: 825 saham (33%), kewajiban Rp 82.5M, sudah setor Rp 6.86M
+  // Wapiq: 825 saham (33%), kewajiban Rp 82.5M, sudah setor Rp 6.435M
+  insertInvestor.run(1, "Beriman Juliano", "beriman@sensasiwangi.id", "08118556688", 850, 85000000);
+  insertInvestor.run(2, "Muhamad Malsiaf", "malsiaf@sensasiwangi.id", "08118556689", 825, 82500000);
+  insertInvestor.run(3, "Wapiq Rizya Zaelan", "wapiq@sensasiwangi.id", "08118556690", 825, 82500000);
 
+  // Seed sukuk — data from SukukStore sheet
   db.prepare(`
-    INSERT INTO sukuk (kode, nama, nilai_sukuk, jumlah_unit, harga_per_unit, tenor_bulan, nisbah_investor, nisbah_pengelola, jenis_akad, status, tanggal_penerbitan, tanggal_jatuh_tempo)
-    VALUES ('SWQ-001', 'Sukuk SWI Quarterly 001', 1000000000, 1000, 1000000, 36, 42.5, 57.5, 'mudharabah', 'aktif', '2026-01-01', '2029-01-01')
+    INSERT INTO sukuk (kode, nama, nilai_sukuk, jumlah_unit, harga_per_unit, tenor_bulan, nisbah_investor, nisbah_pengelola, jenis_akad, status)
+    VALUES ('SWQ-001', 'Sukuk SWI Store TIM', 1000000000, 1000, 1000000, 36, 50, 50, 'musyarakah', 'perencanaan')
   `).run();
 
+  // Seed transactions — from Rekening_Koran mutasi
   const insertTx = db.prepare(`
-    INSERT INTO transactions (tanggal, jenis, kategori, deskripsi, jumlah, sumber)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO transactions (tanggal, jenis, kategori, deskripsi, jumlah, sumber, referensi)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
   `);
 
-  insertTx.run("2026-05-01", "pemasukan", "Investasi", "Setoran modal Beriman Juliano", 50000000, "BRI Holding");
-  insertTx.run("2026-05-02", "pemasukan", "Investasi", "Setoran modal Muhamad Malsiaf", 30000000, "BRI Holding");
-  insertTx.run("2026-05-03", "pemasukan", "Investasi", "Setoran modal Wapiq Rizya", 30000000, "BRI Holding");
-  insertTx.run("2026-05-05", "pengeluaran", "Operasional", "Sewa kantor Mei 2026", 5000000, "BRI Holding");
-  insertTx.run("2026-05-10", "pengeluaran", "Bahan Baku", "Pembelian bahan parfum batch 1", 15000000, "BRI Holding");
-  insertTx.run("2026-05-15", "pemasukan", "Penjualan", "Penjualan parfum sample", 2500000, "BRI Website");
-  insertTx.run("2026-05-20", "pengeluaran", "Marketing", "Iklan Instagram Mei 2026", 3000000, "BRI Website");
-  insertTx.run("2026-05-25", "pengeluaran", "Gaji", "Gaji karyawan Mei 2026", 8000000, "BRI Holding");
+  // Mei 2026 transactions from sheets
+  insertTx.run("2026-05-01", "pemasukan", "Saldo Awal", "Saldo awal Holding Mei 2026", 20505329.80, "BRI Holding", "Saldo Holding");
+  insertTx.run("2026-05-01", "pemasukan", "Saldo Awal", "Saldo awal Website Mei 2026", 790000.00, "BRI Website", "Saldo Website");
+  // Cicilan Beriman hari ini
+  insertTx.run("2026-06-04", "pemasukan", "Setoran Modal", "Cicilan setoran saham Beriman Juliano", 7000000, "BRI Holding", "Cicilan setoran bayar saham");
 }
 
 export default getDb;
