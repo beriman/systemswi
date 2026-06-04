@@ -1,0 +1,141 @@
+// Google Sheets integration for Event Management (Fragrantions)
+// PIC: Wapiq Rizya Zaelan
+// Uses the same Google OAuth token as the main SWI spreadsheet
+import { google } from "googleapis";
+import fs from "fs";
+
+// We'll use a separate spreadsheet for events
+// For now, we'll create sheets within the existing spreadsheet
+// Later can be migrated to a dedicated Fragrantions spreadsheet
+export const SPREADSHEET_ID = process.env.GOOGLE_SHEETS_ID || "1lQ_FX6v-aX0XNwkRO6TyYLU1NGq6lAMFvK88S09KZsA";
+const TOKEN_PATH = "/home/ubuntu/.hermes/google_token.json";
+
+// ── Sheet names for Event Management ──
+export const EVENT_SHEETS = {
+  Events: "Events",
+  Budget: "Event_Budget",
+  Tenants: "Event_Tenants",
+  Sponsors: "Event_Sponsors",
+  Timeline: "Event_Timeline",
+  Dashboard: "Event_Dashboard",
+};
+
+// ── Auth (reuse from sheets-real) ──
+let cachedAuth: any = null;
+
+function getAuth() {
+  if (cachedAuth) return cachedAuth;
+  const content = JSON.parse(fs.readFileSync(TOKEN_PATH, "utf-8"));
+  const oauth2 = new google.auth.OAuth2(
+    content.client_id,
+    content.client_secret,
+    process.env.GOOGLE_REDIRECT_URI || "http://localhost:1"
+  );
+  oauth2.setCredentials({
+    refresh_token: content.refresh_token,
+    access_token: content.token || content.access_token || "",
+    token_type: "Bearer",
+    expiry_date: content.expiry_date || Date.now() + 3600000,
+  });
+  cachedAuth = oauth2;
+  return cachedAuth;
+}
+
+// ── Read ──
+export async function readEventSheet(sheetName: string): Promise<string[][]> {
+  const auth = getAuth();
+  const sheets = google.sheets({ version: "v4", auth });
+  const { data } = await sheets.spreadsheets.values.get({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `${sheetName}!A:Z`,
+  });
+  return data.values || [];
+}
+
+// ── Write ──
+export async function writeEventSheet(sheetName: string, values: (string | number)[][]): Promise<void> {
+  const auth = getAuth();
+  const sheets = google.sheets({ version: "v4", auth });
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `${sheetName}!A:Z`,
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values },
+  });
+}
+
+// ── Append ──
+export async function appendEventRows(sheetName: string, rows: (string | number)[][]): Promise<void> {
+  const auth = getAuth();
+  const sheets = google.sheets({ version: "v4", auth });
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `${sheetName}!A:Z`,
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values: rows },
+  });
+}
+
+// ── Create sheet if not exists ──
+export async function ensureEventSheet(sheetName: string, headers: string[]): Promise<void> {
+  const auth = getAuth();
+  const sheets = google.sheets({ version: "v4", auth });
+
+  // Check if sheet exists
+  const ss = await sheets.spreadsheets.get({
+    spreadsheetId: SPREADSHEET_ID,
+    fields: "sheets.properties.title",
+  });
+
+  const exists = ss.data.sheets?.some((s) => s.properties?.title === sheetName);
+  if (exists) return;
+
+  // Create sheet
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId: SPREADSHEET_ID,
+    requestBody: {
+      requests: [{ addSheet: { properties: { title: sheetName } } }],
+    },
+  });
+
+  // Add headers
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `${sheetName}!A1:Z1`,
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values: [headers] },
+  });
+}
+
+// ── Initialize all event sheets ──
+export async function initializeEventSheets(): Promise<void> {
+  await ensureEventSheet(EVENT_SHEETS.Events, [
+    "ID", "Name", "Slug", "Type", "Status", "Description", "PIC", "Instagram",
+    "Start Date", "End Date", "Location", "Venue", "Budget", "Actual Cost", "Revenue",
+    "Tenant Count", "Sponsor Count", "Attendee Target", "Attendee Actual", "Notes", "Created", "Updated"
+  ]);
+
+  await ensureEventSheet(EVENT_SHEETS.Budget, [
+    "ID", "Event ID", "Category", "Item Name", "Planned Amount", "Actual Amount", "Notes", "Created"
+  ]);
+
+  await ensureEventSheet(EVENT_SHEETS.Tenants, [
+    "ID", "Event ID", "Brand Name", "Contact Person", "Email", "Phone",
+    "Booth Number", "Booth Size", "Package Type", "Fee", "Payment Status",
+    "Payment Amount", "Contract Date", "Notes", "Created"
+  ]);
+
+  await ensureEventSheet(EVENT_SHEETS.Sponsors, [
+    "ID", "Event ID", "Company Name", "Contact Person", "Email", "Phone",
+    "Tier", "Sponsorship Amount", "In-Kind", "In-Kind Description", "In-Kind Value",
+    "Payment Status", "Contract Date", "Logo URL", "Notes", "Created"
+  ]);
+
+  await ensureEventSheet(EVENT_SHEETS.Timeline, [
+    "ID", "Event ID", "Phase", "Milestone", "Due Date", "Completed", "Completed Date", "Notes", "Created"
+  ]);
+
+  await ensureEventSheet(EVENT_SHEETS.Dashboard, [
+    "Metric", "Value", "Notes"
+  ]);
+}
