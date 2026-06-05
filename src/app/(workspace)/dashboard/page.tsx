@@ -95,7 +95,7 @@ export default function DashboardPage() {
                 </div>
               )}
               <p className="text-xs text-muted-foreground mt-1">
-                {data?.sukukInfo?.nilai || "Rp 1M"} • {data?.sukukInfo?.akad || "Musyarakah"}
+                {data?.sukukInfo?.nilai || "Rp 1 Juta"} • {data?.sukukInfo?.akad || "Musyarakah"}
               </p>
             </CardContent>
           </Card>

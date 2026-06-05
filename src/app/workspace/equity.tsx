@@ -14,7 +14,7 @@ export default function EquityDashboard() {
   return (
     <div className="p-6 space-y-6">
       <h1 className="text-2xl font-bold text-gray-800">Founder Equity & Debt Monitor</h1>
-      <p className="text-gray-600">Pelacakan kewajiban setoran modal pendiri (Akta Perusahaan: IDR 1M)</p>
+      <p className="text-gray-600">Pelacakan kewajiban setoran modal pendiri (Akta Perusahaan: IDR 1 Juta)</p>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {founders.map((founder) => {
