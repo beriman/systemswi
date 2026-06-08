@@ -119,15 +119,15 @@ export default function HomePage() {
                             </Link>
                         </div>
                         <div className="grid grid-cols-3 gap-3 pt-8 max-w-xl mx-auto animate-slide-in-delay-2">
-                            <div className="rounded-2xl bg-white/10 border border-white/15 p-4 backdrop-blur">
+                            <div className="rounded-3xl bg-white/10 p-4 backdrop-blur-md shadow-sm">
                                 <div className="text-3xl font-bold">3</div>
                                 <div className="text-xs text-white/75">portfolio completed</div>
                             </div>
-                            <div className="rounded-2xl bg-white/10 border border-white/15 p-4 backdrop-blur">
+                            <div className="rounded-3xl bg-white/10 p-4 backdrop-blur-md shadow-sm">
                                 <div className="text-3xl font-bold">2</div>
                                 <div className="text-xs text-white/75">upcoming/planning</div>
                             </div>
-                            <div className="rounded-2xl bg-white/10 border border-white/15 p-4 backdrop-blur">
+                            <div className="rounded-3xl bg-white/10 p-4 backdrop-blur-md shadow-sm">
                                 <div className="text-3xl font-bold">@</div>
                                 <div className="text-xs text-white/75">fragrantions docs</div>
                             </div>
@@ -201,7 +201,7 @@ export default function HomePage() {
                         {divisions.map((division, index) => (
                             <Card
                                 key={index}
-                                className="group hover:shadow-elegant transition-smooth border-2 hover:border-accent flex flex-col"
+                                className="group rounded-3xl border-0 bg-background shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300 flex flex-col"
                             >
                                 <CardHeader>
                                     <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${division.color} flex items-center justify-center mb-4 group-hover:scale-110 transition-smooth`}>
@@ -244,7 +244,7 @@ export default function HomePage() {
                     </div>
 
                     <div className="grid md:grid-cols-3 gap-8 max-w-6xl mx-auto">
-                        <Card className="overflow-hidden hover:shadow-elegant transition-smooth">
+                        <Card className="overflow-hidden rounded-3xl border-0 bg-background shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
                             <div className="h-48 bg-gradient-to-br from-purple-900 via-purple-700 to-pink-600"></div>
                             <CardHeader>
                                 <CardTitle>L&apos;Arc~en~Scent</CardTitle>
@@ -257,7 +257,7 @@ export default function HomePage() {
                             </CardContent>
                         </Card>
 
-                        <Card className="overflow-hidden hover:shadow-elegant transition-smooth">
+                        <Card className="overflow-hidden rounded-3xl border-0 bg-background shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
                             <div className="h-48 bg-gradient-to-br from-cyan-600 via-blue-600 to-purple-600"></div>
                             <CardHeader>
                                 <CardTitle>Pixel Potion</CardTitle>
@@ -270,7 +270,7 @@ export default function HomePage() {
                             </CardContent>
                         </Card>
 
-                        <Card className="overflow-hidden hover:shadow-elegant transition-smooth">
+                        <Card className="overflow-hidden rounded-3xl border-0 bg-background shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
                             <div className="h-48 bg-gradient-to-br from-amber-700 via-orange-600 to-red-600"></div>
                             <CardHeader>
                                 <CardTitle>NUScentZa</CardTitle>
@@ -295,50 +295,60 @@ export default function HomePage() {
             </section>
 
             {/* Fragrantions Portfolio + Event & Community */}
-            <section className="py-20 bg-muted/30">
+            <section className="py-24 bg-[#f7f3ec]">
                 <div className="container mx-auto px-4">
-                    <div className="text-center mb-12">
-                        <p className="text-sm uppercase tracking-[0.25em] text-primary font-semibold mb-3">Event & Community</p>
-                        <h2 className="text-3xl md:text-4xl font-bold mb-6">Fragrantions Portfolio</h2>
-                        <p className="text-lg text-muted-foreground max-w-3xl mx-auto leading-relaxed">
-                            Front page ini sekarang disinkronkan dengan portfolio event: event yang sudah terlaksana diarahkan ke halaman Portfolio, sementara agenda berikutnya diarahkan ke Upcoming Events. Dokumentasi publiknya tetap terhubung ke @fragrantions.
-                        </p>
-                    </div>
+                    <div className="grid lg:grid-cols-[0.9fr_1.1fr] gap-12 items-start max-w-6xl mx-auto">
+                        <div className="lg:sticky lg:top-24">
+                            <p className="text-sm uppercase tracking-[0.28em] text-primary font-semibold mb-4">Event & Community</p>
+                            <h2 className="text-4xl md:text-5xl font-bold mb-6 tracking-tight">Fragrantions Portfolio</h2>
+                            <p className="text-lg text-muted-foreground leading-relaxed mb-8">
+                                Rekam jejak Fragrantions dan Road to Fragrantions sebagai ruang temu brand, kreator, dan pecinta parfum. Portfolio yang sudah terlaksana terhubung ke dokumentasi @fragrantions, sementara agenda berikutnya ada di Upcoming Events.
+                            </p>
+                            <div className="flex flex-col sm:flex-row lg:flex-col gap-3">
+                                <Link href="/portfolio">
+                                    <Button size="lg" variant="default" className="w-full sm:w-auto lg:w-full rounded-full shadow-md shadow-primary/15">
+                                        Lihat Portfolio Event
+                                    </Button>
+                                </Link>
+                                <Link href="/upcoming-events">
+                                    <Button size="lg" variant="secondary" className="w-full sm:w-auto lg:w-full rounded-full bg-background shadow-sm border-0">
+                                        Lihat Upcoming Events
+                                    </Button>
+                                </Link>
+                                <a href="https://www.instagram.com/fragrantions/" target="_blank" rel="noopener noreferrer">
+                                    <Button size="lg" variant="ghost" className="w-full sm:w-auto lg:w-full rounded-full text-primary hover:text-primary hover:bg-primary/10">
+                                        Instagram @fragrantions
+                                    </Button>
+                                </a>
+                            </div>
+                        </div>
 
-                    <div className="grid md:grid-cols-3 gap-6 max-w-6xl mx-auto mb-10">
-                        {fragrantionsPortfolioHighlights.map((event) => (
-                            <Card key={event.name} className="border-2 hover:border-primary/30 hover:shadow-elegant transition-smooth">
-                                <CardHeader>
-                                    <div className="flex items-center justify-between gap-3 mb-3">
-                                        <span className="text-xs font-medium text-primary uppercase tracking-wide">{event.type}</span>
-                                        <span className="text-xs text-muted-foreground">{event.date}</span>
-                                    </div>
-                                    <CardTitle className="text-xl">{event.name}</CardTitle>
-                                    <CardDescription>Completed event</CardDescription>
-                                </CardHeader>
-                                <CardContent>
-                                    <p className="text-sm text-muted-foreground leading-relaxed">{event.description}</p>
-                                </CardContent>
-                            </Card>
-                        ))}
-                    </div>
-
-                    <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                        <Link href="/portfolio">
-                            <Button size="lg" variant="default" className="w-full sm:w-auto">
-                                Lihat Portfolio Event
-                            </Button>
-                        </Link>
-                        <Link href="/upcoming-events">
-                            <Button size="lg" variant="outline" className="w-full sm:w-auto">
-                                Lihat Upcoming Events
-                            </Button>
-                        </Link>
-                        <a href="https://www.instagram.com/fragrantions/" target="_blank" rel="noopener noreferrer">
-                            <Button size="lg" variant="outline" className="w-full sm:w-auto">
-                                Instagram @fragrantions
-                            </Button>
-                        </a>
+                        <div className="space-y-4">
+                            {fragrantionsPortfolioHighlights.map((event, index) => (
+                                <Card key={event.name} className="overflow-hidden border-0 rounded-3xl bg-background/85 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
+                                    <CardHeader className="p-6 md:p-7">
+                                        <div className="flex items-start justify-between gap-5">
+                                            <div className="space-y-3">
+                                                <span className="inline-flex rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary uppercase tracking-wide">{event.type}</span>
+                                                <CardTitle className="text-2xl md:text-3xl tracking-tight">{event.name}</CardTitle>
+                                                <CardDescription className="text-base leading-relaxed">{event.description}</CardDescription>
+                                            </div>
+                                            <div className="shrink-0 text-right">
+                                                <div className="text-xs uppercase tracking-widest text-muted-foreground mb-1">Completed</div>
+                                                <div className="text-lg font-semibold text-foreground">{event.date}</div>
+                                            </div>
+                                        </div>
+                                    </CardHeader>
+                                    {index === 1 && (
+                                        <CardContent className="px-7 pb-7 pt-0">
+                                            <div className="rounded-2xl bg-gradient-to-r from-primary/10 via-amber-500/10 to-orange-500/10 p-4 text-sm text-muted-foreground">
+                                                Main event Fragrantions sebagai anchor utama portfolio event SWI.
+                                            </div>
+                                        </CardContent>
+                                    )}
+                                </Card>
+                            ))}
+                        </div>
                     </div>
                 </div>
             </section>
