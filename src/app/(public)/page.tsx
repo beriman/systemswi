@@ -47,12 +47,33 @@ const Building2Icon = () => (
     </svg>
 );
 
+const fragrantionsPortfolioHighlights = [
+    {
+        name: "Road to Fragrantions Vol. 1",
+        date: "Juli 2025",
+        type: "Roadshow / Pop-up",
+        description: "Rangkaian pemanasan pertama menuju Fragrantions 2025.",
+    },
+    {
+        name: "Fragrantions 2025",
+        date: "November 2025",
+        type: "Festival",
+        description: "Acara utama Fragrantions 2025 untuk komunitas dan pelaku fragrance.",
+    },
+    {
+        name: "Road to Fragrantions 2026 Vol. 1",
+        date: "April 2026",
+        type: "Roadshow / Pop-up",
+        description: "Rangkaian menuju Fragrantions 2026 yang sudah terlaksana.",
+    },
+];
+
 const divisions = [
     {
         icon: SparklesIcon,
         title: "Event & Experience",
-        description: "Menghadirkan pengalaman parfum yang menyentuh indra dan emosi.",
-        bullets: ["Fragrantions", "Workshop & Kelas", "B2B Event"],
+        description: "Menghadirkan pengalaman parfum lewat Fragrantions, roadshow, workshop, dan kolaborasi komunitas.",
+        bullets: ["Fragrantions", "Road to Fragrantions", "Workshop & Brand Activation"],
         color: "from-amber-500 to-orange-600",
     },
     {
@@ -85,17 +106,31 @@ export default function HomePage() {
                             Kami adalah rumah bagi berbagai brand parfum, platform digital, komunitas kreator wewangian, serta penyelenggara event parfum terbesar di Indonesia. Dari riset aroma, edukasi, hingga produksi — semua kami kemas menjadi sebuah pengalaman wangi yang holistik.
                         </p>
                         <div className="flex flex-col sm:flex-row gap-4 justify-center pt-4 animate-slide-in-delay-2">
-                            <Link href="/about">
+                            <Link href="/portfolio">
                                 <Button size="lg" variant="secondary" className="w-full sm:w-auto">
-                                    Lihat Tentang Kami
+                                    Lihat Portfolio Event
                                     <ArrowRightIcon />
                                 </Button>
                             </Link>
-                            <Link href="/portfolio">
+                            <Link href="/upcoming-events">
                                 <Button size="lg" variant="outline" className="w-full sm:w-auto bg-white/10 hover:bg-white/20 text-white border-white/30">
-                                    Lihat Portfolio
+                                    Upcoming Fragrantions
                                 </Button>
                             </Link>
+                        </div>
+                        <div className="grid grid-cols-3 gap-3 pt-8 max-w-xl mx-auto animate-slide-in-delay-2">
+                            <div className="rounded-2xl bg-white/10 border border-white/15 p-4 backdrop-blur">
+                                <div className="text-3xl font-bold">3</div>
+                                <div className="text-xs text-white/75">portfolio completed</div>
+                            </div>
+                            <div className="rounded-2xl bg-white/10 border border-white/15 p-4 backdrop-blur">
+                                <div className="text-3xl font-bold">2</div>
+                                <div className="text-xs text-white/75">upcoming/planning</div>
+                            </div>
+                            <div className="rounded-2xl bg-white/10 border border-white/15 p-4 backdrop-blur">
+                                <div className="text-3xl font-bold">@</div>
+                                <div className="text-xs text-white/75">fragrantions docs</div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -259,18 +294,52 @@ export default function HomePage() {
                 </div>
             </section>
 
-            {/* Event & Community */}
+            {/* Fragrantions Portfolio + Event & Community */}
             <section className="py-20 bg-muted/30">
-                <div className="container mx-auto px-4 text-center">
-                    <h2 className="text-3xl md:text-4xl font-bold mb-6">Event & Community</h2>
-                    <p className="text-lg text-muted-foreground max-w-3xl mx-auto mb-12 leading-relaxed">
-                        Kami membangun ruang bagi kreativitas, edukasi, dan kolaborasi. Mulai dari Road to Fragrantions hingga Fragrantions, event kami selalu menjadi tempat berkumpulnya para kreator dan pecinta parfum.
-                    </p>
-                    <Link href="/upcoming-events">
-                        <Button size="lg" variant="default">
-                            Lihat Event
-                        </Button>
-                    </Link>
+                <div className="container mx-auto px-4">
+                    <div className="text-center mb-12">
+                        <p className="text-sm uppercase tracking-[0.25em] text-primary font-semibold mb-3">Event & Community</p>
+                        <h2 className="text-3xl md:text-4xl font-bold mb-6">Fragrantions Portfolio</h2>
+                        <p className="text-lg text-muted-foreground max-w-3xl mx-auto leading-relaxed">
+                            Front page ini sekarang disinkronkan dengan portfolio event: event yang sudah terlaksana diarahkan ke halaman Portfolio, sementara agenda berikutnya diarahkan ke Upcoming Events. Dokumentasi publiknya tetap terhubung ke @fragrantions.
+                        </p>
+                    </div>
+
+                    <div className="grid md:grid-cols-3 gap-6 max-w-6xl mx-auto mb-10">
+                        {fragrantionsPortfolioHighlights.map((event) => (
+                            <Card key={event.name} className="border-2 hover:border-primary/30 hover:shadow-elegant transition-smooth">
+                                <CardHeader>
+                                    <div className="flex items-center justify-between gap-3 mb-3">
+                                        <span className="text-xs font-medium text-primary uppercase tracking-wide">{event.type}</span>
+                                        <span className="text-xs text-muted-foreground">{event.date}</span>
+                                    </div>
+                                    <CardTitle className="text-xl">{event.name}</CardTitle>
+                                    <CardDescription>Completed event</CardDescription>
+                                </CardHeader>
+                                <CardContent>
+                                    <p className="text-sm text-muted-foreground leading-relaxed">{event.description}</p>
+                                </CardContent>
+                            </Card>
+                        ))}
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row gap-4 justify-center">
+                        <Link href="/portfolio">
+                            <Button size="lg" variant="default" className="w-full sm:w-auto">
+                                Lihat Portfolio Event
+                            </Button>
+                        </Link>
+                        <Link href="/upcoming-events">
+                            <Button size="lg" variant="outline" className="w-full sm:w-auto">
+                                Lihat Upcoming Events
+                            </Button>
+                        </Link>
+                        <a href="https://www.instagram.com/fragrantions/" target="_blank" rel="noopener noreferrer">
+                            <Button size="lg" variant="outline" className="w-full sm:w-auto">
+                                Instagram @fragrantions
+                            </Button>
+                        </a>
+                    </div>
                 </div>
             </section>
 

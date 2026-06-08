@@ -1,11 +1,9 @@
-import { redirect } from "next/navigation";
+import PublicHomePage, { metadata } from "./(public)/page";
 
-// Root page redirects to the operating dashboard while System SWI is in development.
-// Set NEXT_PUBLIC_SHOW_PUBLIC_SITE=true to expose the company profile at root again.
+export { metadata };
+
+// Root front page now uses the public SWI company profile.
+// Operational dashboard remains directly accessible at /dashboard during development.
 export default function Home() {
-  if (process.env.NEXT_PUBLIC_SHOW_PUBLIC_SITE === "true") {
-    redirect("/about");
-  }
-
-  redirect("/dashboard");
+  return <PublicHomePage />;
 }
