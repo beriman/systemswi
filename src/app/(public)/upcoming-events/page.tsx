@@ -47,7 +47,7 @@ export default function EventsPage() {
                             <div className="order-1 md:order-2 space-y-6">
                                 <h2 className="text-3xl md:text-4xl font-bold">Fragrantions</h2>
                                 <p className="text-lg text-muted-foreground leading-relaxed">
-                                    Event parfum terbesar di Indonesia yang mempertemukan brand lokal, perfumer, kolektor, dan pecinta wewangian dalam satu atap. Pameran, talkshow, workshop, dan peluncuran produk eksklusif.
+                                    Acara utama Fragrantions yang mempertemukan brand lokal, perfumer, kolektor, dan pecinta wewangian. Fragrantions 2025 berlangsung pada November 2025; Fragrantions 2026 masih tentative antara Agustus atau November 2026.
                                 </p>
                                 <div className="flex flex-col gap-4">
                                     <div className="flex items-center gap-3 text-muted-foreground">
@@ -68,16 +68,16 @@ export default function EventsPage() {
                             <div className="space-y-6">
                                 <h2 className="text-3xl md:text-4xl font-bold">Road to Fragrantions</h2>
                                 <p className="text-lg text-muted-foreground leading-relaxed">
-                                    Rangkaian acara pemanasan menuju event utama. Berupa pop-up market, mini workshop, dan community gathering di berbagai kota besar di Indonesia.
+                                    Rangkaian acara pemanasan menuju event utama. Saat ini record yang dipakai: Road to Fragrantions Juli 2025 dan Road to Fragrantions 2026 Vol. 1 April 2026; next event adalah Vol. 2 pada Juli 2026.
                                 </p>
                                 <div className="flex flex-col gap-4">
                                     <div className="flex items-center gap-3 text-muted-foreground">
                                         <span className="text-primary">📅</span>
-                                        <span>Bulanan / Kuartalan</span>
+                                        <span>2 kali Road to Fragrantions tercatat; Vol. 2 berikutnya Juli 2026</span>
                                     </div>
                                     <div className="flex items-center gap-3 text-muted-foreground">
                                         <span className="text-primary">📍</span>
-                                        <span>Bandung, Surabaya, Bali, Medan</span>
+                                        <span>Lokasi mengikuti pengumuman @fragrantions</span>
                                     </div>
                                 </div>
                                 <Button variant="outline" className="w-fit">Lihat Jadwal</Button>
