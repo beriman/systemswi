@@ -25,21 +25,50 @@ type BrandSummary = {
   grossProfit: number;
   operatingProfit: number;
   avgSellingPrice: number;
+  avgHppPerUnit: number;
   stockEstimate: number;
+  activeBatches: number;
+};
+
+type ProductionBatch = {
+  id: string;
+  date: string;
+  brandId: string;
+  brandName: string;
+  sku: string;
+  productName: string;
+  productType: string;
+  batchCode: string;
+  qtyProduced: number;
+  unit: string;
+  rawMaterialCost: number;
+  bottlingCost: number;
+  packagingCost: number;
+  otherCost: number;
+  hppPerUnit: number;
+  totalProductionCost: number;
+  status: string;
+  qcStatus: string;
+  stockLocation: string;
+  notes: string;
 };
 
 type ApiData = {
   brands: BrandSummary[];
+  productionBatches: ProductionBatch[];
   totals: {
     brandCount: number;
     productionQty: number;
     productionCost: number;
+    activeBatches: number;
     unitsSold: number;
     netRevenue: number;
     cogs: number;
     expenses: number;
     grossProfit: number;
     operatingProfit: number;
+    avgHppPerUnit: number;
+    stockEstimate: number;
   };
   workflow: string[];
 };
@@ -132,8 +161,14 @@ export default function BrandsPage() {
         productType: String(form.get("productType") || "Perfume"),
         batchCode: String(form.get("batchCode") || ""),
         qtyProduced: Number(form.get("qtyProduced") || 0),
-        hppPerUnit: Number(form.get("hppPerUnit") || 0),
+        unit: String(form.get("unit") || "pcs"),
+        rawMaterialCost: Number(form.get("rawMaterialCost") || 0),
+        bottlingCost: Number(form.get("bottlingCost") || 0),
+        packagingCost: Number(form.get("packagingCost") || 0),
+        otherCost: Number(form.get("otherCost") || 0),
         status: String(form.get("status") || "Done"),
+        qcStatus: String(form.get("qcStatus") || "Unchecked"),
+        stockLocation: String(form.get("stockLocation") || "Gudang / Booth"),
         notes: String(form.get("notes") || ""),
       });
       e.currentTarget.reset();
@@ -147,9 +182,15 @@ export default function BrandsPage() {
         <Field name="productType" label="Tipe Produk" placeholder="Perfume / Merchandise" defaultValue="Perfume" />
         <Field name="batchCode" label="Batch Code" placeholder="BATCH-2026-001" />
         <Field name="qtyProduced" label="Qty Produksi" type="number" placeholder="100" />
-        <Field name="hppPerUnit" label="HPP / Unit" type="number" placeholder="45000" />
-        <Field name="status" label="Status" placeholder="Done / QC / Planned" defaultValue="Done" />
-        <Field className="md:col-span-2" name="notes" label="Catatan" placeholder="Formula, packaging, vendor, dll" />
+        <Field name="unit" label="Unit" placeholder="pcs / botol / set" defaultValue="pcs" />
+        <Field name="rawMaterialCost" label="Biaya Bahan Baku" type="number" placeholder="2500000" />
+        <Field name="bottlingCost" label="Biaya Bottling" type="number" placeholder="500000" />
+        <Field name="packagingCost" label="Biaya Packaging" type="number" placeholder="750000" />
+        <Field name="otherCost" label="Biaya Lain" type="number" placeholder="0" />
+        <Field name="status" label="Status Produksi" placeholder="Planned / In Progress / QC / Done" defaultValue="Done" />
+        <Field name="qcStatus" label="QC Status" placeholder="Unchecked / Passed / Rework" defaultValue="Unchecked" />
+        <Field name="stockLocation" label="Lokasi Stock" placeholder="Gudang / Booth / Consignment" defaultValue="Gudang" />
+        <Field className="md:col-span-2" name="notes" label="Catatan" placeholder="Formula, packaging, vendor, issue QC, dll" />
         <Button disabled={saving || !selectedBrand} className="md:col-span-2">Simpan Produksi</Button>
       </form>
     );
@@ -266,9 +307,9 @@ export default function BrandsPage() {
     <div className="space-y-6">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
-          <h2 className="text-2xl font-bold">🏭 Brand Production & Selling</h2>
+          <h2 className="text-2xl font-bold">🏭 Produksi Brand & Selling</h2>
           <p className="text-muted-foreground">
-            Template dashboard per brand: produksi → selling → pengeluaran → analisa margin/profit.
+            Operasional produksi per batch: bahan baku → bottling → packaging → QC → stock → selling.
           </p>
         </div>
         <Button onClick={load} disabled={loading}>Refresh Data</Button>
@@ -280,9 +321,11 @@ export default function BrandsPage() {
         </Card>
       )}
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
         <Kpi title="Brand Aktif" value={loading ? "..." : formatNumber(totals?.brandCount || 0)} note="template bisa ditambah" />
         <Kpi title="Qty Produksi" value={loading ? "..." : formatNumber(totals?.productionQty || 0)} note="semua brand" />
+        <Kpi title="Batch Aktif" value={loading ? "..." : formatNumber(totals?.activeBatches || 0)} note="planned/QC/done" />
+        <Kpi title="HPP Rata-rata" value={loading ? "..." : formatCurrency(totals?.avgHppPerUnit || 0)} note="total biaya ÷ qty" />
         <Kpi title="Net Revenue" value={loading ? "..." : formatCurrency(totals?.netRevenue || 0)} note="selling - diskon" />
         <Kpi title="Operating Profit" value={loading ? "..." : formatCurrency(totals?.operatingProfit || 0)} note="gross profit - expense" accent={(totals?.operatingProfit || 0) >= 0 ? "text-green-600" : "text-red-600"} />
       </div>
@@ -306,6 +349,55 @@ export default function BrandsPage() {
         </CardContent>
       </Card>
 
+      <Card>
+        <CardHeader>
+          <CardTitle>Batch Produksi Terbaru</CardTitle>
+          <CardDescription>Ringkasan dari Brand_Production. Gunakan untuk kontrol QC, lokasi stok, dan HPP per batch.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[920px] text-sm">
+              <thead className="text-left text-muted-foreground">
+                <tr className="border-b">
+                  <th className="py-2 pr-3">Tanggal</th>
+                  <th className="py-2 pr-3">Brand</th>
+                  <th className="py-2 pr-3">SKU / Batch</th>
+                  <th className="py-2 pr-3">Produk</th>
+                  <th className="py-2 pr-3 text-right">Qty</th>
+                  <th className="py-2 pr-3 text-right">HPP</th>
+                  <th className="py-2 pr-3 text-right">Total Cost</th>
+                  <th className="py-2 pr-3">Status</th>
+                  <th className="py-2 pr-3">QC</th>
+                  <th className="py-2 pr-3">Stock</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(data?.productionBatches || []).slice(0, 12).map((batch) => (
+                  <tr key={batch.id} className="border-b last:border-0">
+                    <td className="py-2 pr-3">{batch.date || "-"}</td>
+                    <td className="py-2 pr-3 font-medium">{batch.brandName || "-"}</td>
+                    <td className="py-2 pr-3">
+                      <div>{batch.sku || "-"}</div>
+                      <div className="text-xs text-muted-foreground">{batch.batchCode || "-"}</div>
+                    </td>
+                    <td className="py-2 pr-3">{batch.productName || "-"}</td>
+                    <td className="py-2 pr-3 text-right">{formatNumber(batch.qtyProduced)} {batch.unit}</td>
+                    <td className="py-2 pr-3 text-right">{formatCurrency(batch.hppPerUnit)}</td>
+                    <td className="py-2 pr-3 text-right">{formatCurrency(batch.totalProductionCost)}</td>
+                    <td className="py-2 pr-3"><Badge variant="outline">{batch.status}</Badge></td>
+                    <td className="py-2 pr-3">{batch.qcStatus}</td>
+                    <td className="py-2 pr-3">{batch.stockLocation || "-"}</td>
+                  </tr>
+                ))}
+                {!loading && !(data?.productionBatches || []).length && (
+                  <tr><td colSpan={10} className="py-6 text-center text-muted-foreground">Belum ada batch produksi. Input batch pertama lewat form di bawah.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+
       <div className="grid gap-4 lg:grid-cols-3">
         {(data?.brands || []).map((brand) => (
           <Card key={brand.id} className={`overflow-hidden ${selectedBrandId === brand.id ? "ring-2 ring-primary" : ""}`}>
@@ -323,6 +415,8 @@ export default function BrandsPage() {
               <Metric label="Produksi" value={`${formatNumber(brand.productionQty)} unit`} />
               <Metric label="Terjual" value={`${formatNumber(brand.unitsSold)} unit`} />
               <Metric label="Stock Est." value={`${formatNumber(brand.stockEstimate)} unit`} />
+              <Metric label="Biaya Produksi" value={formatCurrency(brand.productionCost)} />
+              <Metric label="HPP Avg" value={formatCurrency(brand.avgHppPerUnit)} />
               <Metric label="Net Revenue" value={formatCurrency(brand.netRevenue)} />
               <Metric label="Expense" value={formatCurrency(brand.expenses)} />
               <Metric label="Operating Profit" value={formatCurrency(brand.operatingProfit)} highlight={brand.operatingProfit >= 0 ? "text-green-600" : "text-red-600"} />

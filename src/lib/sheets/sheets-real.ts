@@ -42,7 +42,7 @@ export const SHEETS: Record<string, { range: string; description: string }> = {
   Proyeksi12Bulan:   { range: "Proyeksi_12Bulan!A1:O25",      description: "Proyeksi 12 bulan" },
   Produksi:          { range: "Produksi!A1:Z100",             description: "Data produksi" },
   BrandMaster:       { range: "Brand_Master!A1:K200",         description: "Master brand dan template brand" },
-  BrandProduction:   { range: "Brand_Production!A1:N1000",    description: "Pelaporan produksi per brand" },
+  BrandProduction:   { range: "Brand_Production!A1:T1000",    description: "Pelaporan produksi per brand" },
   BrandSales:        { range: "Brand_Sales!A1:N1000",         description: "Selling / penjualan per brand" },
   BrandExpenses:     { range: "Brand_Expenses!A1:L1000",      description: "Pengeluaran per brand" },
   BrandDashboard:    { range: "Brand_Dashboard!A1:C50",       description: "Ringkasan analisa brand" },

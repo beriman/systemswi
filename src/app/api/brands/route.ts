@@ -5,7 +5,7 @@ import { appendRows, readRanges } from "@/lib/sheets/sheets-real";
 
 const BRAND_RANGES = {
   master: "Brand_Master!A1:K200",
-  production: "Brand_Production!A1:N1000",
+  production: "Brand_Production!A1:T1000",
   sales: "Brand_Sales!A1:N1000",
   expenses: "Brand_Expenses!A1:L1000",
   dashboard: "Brand_Dashboard!A1:C50",
@@ -25,6 +25,29 @@ type Brand = {
   templateVersion: string;
 };
 
+type ProductionBatch = {
+  id: string;
+  date: string;
+  brandId: string;
+  brandName: string;
+  sku: string;
+  productName: string;
+  productType: string;
+  batchCode: string;
+  qtyProduced: number;
+  unit: string;
+  rawMaterialCost: number;
+  bottlingCost: number;
+  packagingCost: number;
+  otherCost: number;
+  hppPerUnit: number;
+  totalProductionCost: number;
+  status: string;
+  qcStatus: string;
+  stockLocation: string;
+  notes: string;
+};
+
 type BrandSummary = Brand & {
   productionQty: number;
   productionCost: number;
@@ -36,7 +59,9 @@ type BrandSummary = Brand & {
   grossProfit: number;
   operatingProfit: number;
   avgSellingPrice: number;
+  avgHppPerUnit: number;
   stockEstimate: number;
+  activeBatches: number;
 };
 
 function n(value: unknown): number {
@@ -77,19 +102,61 @@ function parseBrandRows(rows: string[][]): Brand[] {
   }));
 }
 
+function parseProductionRows(rows: string[][]): ProductionBatch[] {
+  return rows.slice(1).filter((row) => s(row, 0) || s(row, 4) || s(row, 5)).map((row) => {
+    // Backward-compatible reader:
+    // v1 columns: ID..Unit, HPP/Unit, Total Cost, Status, Notes (A:N)
+    // v2 columns: ID..Unit, Raw, Bottling, Packaging, Other, HPP, Total, Status, QC, Stock, Notes (A:S)
+    const isV2 = row.length >= 19;
+    const qty = n(row[8]);
+    const legacyHpp = n(row[10]);
+    const rawMaterialCost = isV2 ? n(row[10]) : qty * legacyHpp;
+    const bottlingCost = isV2 ? n(row[11]) : 0;
+    const packagingCost = isV2 ? n(row[12]) : 0;
+    const otherCost = isV2 ? n(row[13]) : 0;
+    const totalCost = isV2 ? n(row[15]) : n(row[11]);
+    const hppPerUnit = isV2 ? n(row[14]) : legacyHpp;
+
+    return {
+      id: s(row, 0),
+      date: s(row, 1),
+      brandId: s(row, 2),
+      brandName: s(row, 3),
+      sku: s(row, 4),
+      productName: s(row, 5),
+      productType: s(row, 6) || "Perfume",
+      batchCode: s(row, 7),
+      qtyProduced: qty,
+      unit: s(row, 9) || "pcs",
+      rawMaterialCost,
+      bottlingCost,
+      packagingCost,
+      otherCost,
+      hppPerUnit,
+      totalProductionCost: totalCost || rawMaterialCost + bottlingCost + packagingCost + otherCost,
+      status: isV2 ? (s(row, 16) || "Done") : (s(row, 12) || "Done"),
+      qcStatus: isV2 ? (s(row, 17) || "Unchecked") : "Unchecked",
+      stockLocation: isV2 ? s(row, 18) : "",
+      notes: isV2 ? s(row, 19) : s(row, 13),
+    };
+  });
+}
+
 function summarize(
   brands: Brand[],
   productionRows: string[][],
   salesRows: string[][],
   expenseRows: string[][]
 ): BrandSummary[] {
+  const productionBatches = parseProductionRows(productionRows);
+
   return brands.map((brand) => {
-    const prod = productionRows.slice(1).filter((row) => s(row, 2) === brand.id || s(row, 3) === brand.name);
+    const prod = productionBatches.filter((row) => row.brandId === brand.id || row.brandName === brand.name);
     const sales = salesRows.slice(1).filter((row) => s(row, 2) === brand.id || s(row, 3) === brand.name);
     const expenses = expenseRows.slice(1).filter((row) => s(row, 2) === brand.id || s(row, 3) === brand.name);
 
-    const productionQty = prod.reduce((sum, row) => sum + n(row[8]), 0);
-    const productionCost = prod.reduce((sum, row) => sum + n(row[11]), 0);
+    const productionQty = prod.reduce((sum, row) => sum + row.qtyProduced, 0);
+    const productionCost = prod.reduce((sum, row) => sum + row.totalProductionCost, 0);
     const unitsSold = sales.reduce((sum, row) => sum + n(row[7]), 0);
     const grossRevenue = sales.reduce((sum, row) => sum + n(row[9]), 0);
     const netRevenue = sales.reduce((sum, row) => sum + n(row[11]), 0);
@@ -98,7 +165,9 @@ function summarize(
     const grossProfit = netRevenue - cogs;
     const operatingProfit = grossProfit - expenseTotal;
     const avgSellingPrice = unitsSold ? netRevenue / unitsSold : 0;
+    const avgHppPerUnit = productionQty ? productionCost / productionQty : 0;
     const stockEstimate = productionQty - unitsSold;
+    const activeBatches = prod.filter((row) => !["cancelled", "archived"].includes(row.status.toLowerCase())).length;
 
     return {
       ...brand,
@@ -112,7 +181,9 @@ function summarize(
       grossProfit,
       operatingProfit,
       avgSellingPrice,
+      avgHppPerUnit,
       stockEstimate,
+      activeBatches,
     };
   });
 }
@@ -126,6 +197,7 @@ export async function GET() {
     const expenses = data[BRAND_RANGES.expenses] || [];
     const dashboard = data[BRAND_RANGES.dashboard] || [];
     const brands = parseBrandRows(master);
+    const productionBatches = parseProductionRows(production).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
     const summaries = summarize(brands, production, sales, expenses);
 
     const totals = summaries.reduce(
@@ -133,6 +205,7 @@ export async function GET() {
         brandCount: acc.brandCount + 1,
         productionQty: acc.productionQty + b.productionQty,
         productionCost: acc.productionCost + b.productionCost,
+        activeBatches: acc.activeBatches + b.activeBatches,
         unitsSold: acc.unitsSold + b.unitsSold,
         netRevenue: acc.netRevenue + b.netRevenue,
         cogs: acc.cogs + b.cogs,
@@ -140,19 +213,24 @@ export async function GET() {
         grossProfit: acc.grossProfit + b.grossProfit,
         operatingProfit: acc.operatingProfit + b.operatingProfit,
       }),
-      { brandCount: 0, productionQty: 0, productionCost: 0, unitsSold: 0, netRevenue: 0, cogs: 0, expenses: 0, grossProfit: 0, operatingProfit: 0 }
+      { brandCount: 0, productionQty: 0, productionCost: 0, activeBatches: 0, unitsSold: 0, netRevenue: 0, cogs: 0, expenses: 0, grossProfit: 0, operatingProfit: 0 }
     );
 
     return NextResponse.json({
       brands: summaries,
-      totals,
+      productionBatches,
+      totals: {
+        ...totals,
+        avgHppPerUnit: totals.productionQty ? totals.productionCost / totals.productionQty : 0,
+        stockEstimate: totals.productionQty - totals.unitsSold,
+      },
       raw: { master, production, sales, expenses, dashboard },
       workflow: [
         "1. Tambah brand di Brand_Master",
-        "2. Catat batch produksi di Brand_Production",
+        "2. Catat batch produksi di Brand_Production: bahan baku, bottling, packaging, biaya lain, QC, lokasi stock",
         "3. Catat selling per channel di Brand_Sales",
         "4. Catat pengeluaran brand di Brand_Expenses",
-        "5. Dashboard menghitung margin, profit, dan stock estimate per brand",
+        "5. Dashboard menghitung HPP, margin, profit, dan stock estimate per brand",
       ],
     });
   } catch (error) {
@@ -188,8 +266,16 @@ export async function POST(req: NextRequest) {
 
     if (action === "production") {
       const qty = n(body.qtyProduced);
-      const hpp = n(body.hppPerUnit);
-      const totalCost = body.totalProductionCost !== undefined ? n(body.totalProductionCost) : qty * hpp;
+      const rawMaterialCost = n(body.rawMaterialCost);
+      const bottlingCost = n(body.bottlingCost);
+      const packagingCost = n(body.packagingCost);
+      const otherCost = n(body.otherCost);
+      const totalCost = body.totalProductionCost !== undefined
+        ? n(body.totalProductionCost)
+        : rawMaterialCost + bottlingCost + packagingCost + otherCost;
+      const hppPerUnit = body.hppPerUnit !== undefined && n(body.hppPerUnit) > 0
+        ? n(body.hppPerUnit)
+        : (qty ? totalCost / qty : 0);
       const id = body.id || `prod-${Date.now()}`;
       await appendRows("Brand_Production", [[
         id,
@@ -202,9 +288,15 @@ export async function POST(req: NextRequest) {
         body.batchCode || "",
         qty,
         body.unit || "pcs",
-        hpp,
+        rawMaterialCost,
+        bottlingCost,
+        packagingCost,
+        otherCost,
+        Math.round(hppPerUnit),
         totalCost,
         body.status || "Done",
+        body.qcStatus || "Unchecked",
+        body.stockLocation || "",
         body.notes || "",
       ]]);
       return NextResponse.json({ success: true, action, id });
