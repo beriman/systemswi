@@ -2,6 +2,27 @@
 import { NextResponse } from "next/server";
 import { readSheet } from "@/lib/sheets/sheets-real";
 
+function parseMoney(value: unknown): number {
+  if (typeof value === "number") return value;
+  const raw = String(value ?? "").trim();
+  if (!raw) return 0;
+  return Number(raw.replace(/[^\d.-]/g, "")) || 0;
+}
+
+function parsePercent(value: unknown): string {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "0%";
+  const numeric = Number(raw.replace(",", "."));
+  if (Number.isFinite(numeric)) {
+    return numeric <= 1 ? `${(numeric * 100).toFixed(0)}%` : `${numeric.toFixed(0)}%`;
+  }
+  return raw;
+}
+
+function isShareholderRow(row: string[]): boolean {
+  return /^\d+$/.test(String(row[0] ?? "").trim()) && Boolean(row[1]);
+}
+
 export async function GET() {
   try {
     // ── Read all finance data from Google Sheets ──
@@ -48,33 +69,39 @@ export async function GET() {
     }
 
     // ── Parse shareholders from PemegangSaham ──
-    let shareholders: any[] = [];
-    let totalModalDitempatkan = 0;
-    let totalSudahSetor = 0;
-    if (pemegangSaham.length >= 6) {
-      // Row 5 is header, rows 6+ are data
-      for (let i = 6; i < pemegangSaham.length; i++) {
-        const row = pemegangSaham[i];
-        if (row.length >= 7 && row[0] && row[0] !== "TOTAL:") {
-          const jumlahSaham = parseInt(row[2]) || 0;
-          const nilai = parseFloat((row[3] || "0").replace(/[^\d.-]/g, "")) || 0;
-          const kewajiban = parseFloat((row[5] || "0").replace(/[^\d.-]/g, "")) || 0;
-          const sudahSetor = parseFloat((row[6] || "0").replace(/[^\d.-]/g, "")) || 0;
-          shareholders.push({
-            no: row[0],
-            nama: row[1],
-            jumlahSaham,
-            nilai,
-            persen: row[4],
-            kewajiban,
-            sudahSetor,
-            progress: kewajiban > 0 ? ((sudahSetor / kewajiban) * 100) : 0,
-          });
-          totalModalDitempatkan += nilai;
-          totalSudahSetor += sudahSetor;
-        }
-      }
-    }
+    // Google Sheets is the source of truth. Do not assume fixed row numbers:
+    // the sheet has title/subtitle rows before the table and note rows after it.
+    const shareholders = pemegangSaham
+      .filter(isShareholderRow)
+      .map((row) => {
+        const jumlahSaham = Number.parseInt(String(row[2] ?? "0"), 10) || 0;
+        const nilai = parseMoney(row[3]);
+        const kewajiban = parseMoney(row[5] ?? row[3]);
+        const sudahSetor = parseMoney(row[6]);
+        const sisaKewajiban = row[7] ? parseMoney(row[7]) : Math.max(kewajiban - sudahSetor, 0);
+        const progress = kewajiban > 0 ? (sudahSetor / kewajiban) * 100 : 0;
+
+        return {
+          no: row[0],
+          nama: row[1],
+          jumlahSaham,
+          nilai,
+          persen: parsePercent(row[4]),
+          kewajiban,
+          sudahSetor,
+          sisaKewajiban,
+          status: row[8] || (sisaKewajiban <= 0 ? "Lunas" : "Dalam Proses"),
+          progress,
+        };
+      });
+
+    const totalJumlahSaham = shareholders.reduce((sum, sh) => sum + sh.jumlahSaham, 0);
+    const totalModalDitempatkan = shareholders.reduce((sum, sh) => sum + sh.nilai, 0);
+    const totalSudahSetor = shareholders.reduce((sum, sh) => sum + sh.sudahSetor, 0);
+    const totalSisaKewajiban = shareholders.reduce((sum, sh) => sum + sh.sisaKewajiban, 0);
+    const shareholderNotes = pemegangSaham
+      .map((row) => row[0])
+      .filter((cell): cell is string => typeof cell === "string" && /^\d+\./.test(cell.trim()));
 
     // ── Parse sukuk info ──
     let sukukInfo: any = {};
@@ -158,9 +185,14 @@ export async function GET() {
       totalSaldoAkhir,
       shareholders,
       totalModalDasar: 1000000000,
+      totalJumlahSaham,
       totalModalDitempatkan,
       totalSudahSetor,
+      totalSisaKewajiban,
       totalSetoranPercent: totalModalDitempatkan > 0 ? (totalSudahSetor / totalModalDitempatkan) * 100 : 0,
+      sharePrice: 100000,
+      shareholderNotes,
+      shareholderDataSource: "Google Sheets: PemegangSaham!A1:I16",
       sukukInfo,
       sukukInvestors,
       totalUnitTerjual,

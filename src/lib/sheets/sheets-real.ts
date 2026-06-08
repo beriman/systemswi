@@ -12,7 +12,7 @@ export const SHEETS: Record<string, { range: string; description: string }> = {
   DashboardSetoran:  { range: "Dashboard!A31:G36",            description: "Rekap setoran 30%" },
   RekapSetoran:      { range: "RekapSetoran!A1:F14",          description: "Rekap setoran per bulan" },
   Holding:           { range: "Holding!A1:G5",                description: "Data holding company" },
-  PemegangSaham:     { range: "PemegangSaham!A1:G16",         description: "Data pemegang saham" },
+  PemegangSaham:     { range: "PemegangSaham!A1:I16",         description: "Data pemegang saham" },
   DivisiShareholders:{ range: "DivisiShareholders!A4:F9",     description: "Shareholder per divisi" },
   SukukStore:        { range: "SukukStore!A4:O9",             description: "Info sukuk store" },
   SukukInvestor:     { range: "SukukStore!A12:O26",           description: "Investor sukuk" },
@@ -54,7 +54,11 @@ function loadCredentialsFromFile() {
       client_secret: content.client_secret,
       refresh_token: content.refresh_token,
       access_token: content.token || content.access_token || "",
-      expiry_date: content.expiry_date || Date.now() + 3600000,
+      // Hermes' Google token file stores expiry under either `expiry` or
+      // `expiry_date` depending on the OAuth flow. If we don't pass the real
+      // expiry, google-auth-library can keep using an expired access token and
+      // Sheets reads fail with 401 Invalid Credentials.
+      expiry_date: content.expiry_date || content.expiry || 0,
     };
   } catch {
     return null;
@@ -66,12 +70,13 @@ function loadCredentialsFromEnv() {
   const client_secret = process.env.GOOGLE_CLIENT_SECRET;
   const refresh_token = process.env.GOOGLE_REFRESH_TOKEN;
   if (!client_id || !client_secret || !refresh_token) return null;
+  const access_token = process.env.GOOGLE_ACCESS_TOKEN || "";
   return {
     client_id,
     client_secret,
     refresh_token,
-    access_token: process.env.GOOGLE_ACCESS_TOKEN || "",
-    expiry_date: parseInt(process.env.GOOGLE_EXPIRY_DATE || "0", 10) || Date.now() + 3600000,
+    access_token,
+    expiry_date: access_token ? (parseInt(process.env.GOOGLE_EXPIRY_DATE || "0", 10) || 0) : 0,
   };
 }
 

@@ -13,7 +13,12 @@ interface DashboardData {
   totalModalDasar: number;
   totalModalDitempatkan: number;
   totalSudahSetor: number;
+  totalSisaKewajiban: number;
+  totalJumlahSaham: number;
   totalSetoranPercent: number;
+  sharePrice: number;
+  shareholderNotes: string[];
+  shareholderDataSource: string;
   sukukInfo: any;
   sukukInvestors: any[];
   totalUnitTerjual: number;
@@ -115,21 +120,26 @@ export default function FinancePage() {
               </CardHeader>
               <CardContent>
                 {/* Summary Bar */}
-                <div className="grid gap-4 md:grid-cols-3 mb-6">
+                <div className="grid gap-4 md:grid-cols-4 mb-6">
                   <div className="p-4 border rounded-lg bg-blue-50">
                     <div className="text-xs text-muted-foreground">Modal Dasar (Authorized)</div>
                     <div className="text-xl font-bold">{formatCurrency(data.totalModalDasar || 1000000000)}</div>
-                    <div className="text-xs text-muted-foreground">10.000 saham × Rp 100.000</div>
+                    <div className="text-xs text-muted-foreground">10.000 saham × {formatCurrency(data.sharePrice || 100000)}</div>
                   </div>
                   <div className="p-4 border rounded-lg bg-green-50">
                     <div className="text-xs text-muted-foreground">Modal Ditempatkan (Issued)</div>
                     <div className="text-xl font-bold">{formatCurrency(data.totalModalDitempatkan)}</div>
-                    <div className="text-xs text-muted-foreground">2.500 saham × Rp 100.000</div>
+                    <div className="text-xs text-muted-foreground">{data.totalJumlahSaham.toLocaleString("id-ID")} saham × {formatCurrency(data.sharePrice || 100000)}</div>
                   </div>
                   <div className="p-4 border rounded-lg bg-purple-50">
                     <div className="text-xs text-muted-foreground">Sudah Disetor (Paid-up)</div>
                     <div className="text-xl font-bold">{formatCurrency(data.totalSudahSetor)}</div>
                     <div className="text-xs text-muted-foreground">{data.totalSetoranPercent.toFixed(1)}% dari modal ditempatkan</div>
+                  </div>
+                  <div className="p-4 border rounded-lg bg-red-50">
+                    <div className="text-xs text-muted-foreground">Sisa Kewajiban</div>
+                    <div className="text-xl font-bold text-red-700">{formatCurrency(data.totalSisaKewajiban)}</div>
+                    <div className="text-xs text-muted-foreground">Belum disetor oleh pemegang saham</div>
                   </div>
                 </div>
 
@@ -167,7 +177,7 @@ export default function FinancePage() {
                     </TableHeader>
                     <TableBody>
                       {data.shareholders.map((sh, i) => {
-                        const sisa = sh.kewajiban - sh.sudahSetor;
+                        const sisa = sh.sisaKewajiban ?? Math.max(sh.kewajiban - sh.sudahSetor, 0);
                         const progress = sh.progress;
                         return (
                           <TableRow key={i}>
@@ -196,10 +206,10 @@ export default function FinancePage() {
                       })}
                       <TableRow className="bg-muted font-bold">
                         <TableCell>TOTAL</TableCell>
-                        <TableCell className="text-right">2.500</TableCell>
+                        <TableCell className="text-right">{data.totalJumlahSaham.toLocaleString("id-ID")}</TableCell>
                         <TableCell className="text-right">{formatCurrency(data.totalModalDitempatkan)}</TableCell>
                         <TableCell className="text-right text-green-600">{formatCurrency(data.totalSudahSetor)}</TableCell>
-                        <TableCell className="text-right text-red-600">{formatCurrency(data.totalModalDitempatkan - data.totalSudahSetor)}</TableCell>
+                        <TableCell className="text-right text-red-600">{formatCurrency(data.totalSisaKewajiban)}</TableCell>
                         <TableCell className="text-right">{data.totalSetoranPercent.toFixed(1)}%</TableCell>
                         <TableCell className="text-right">100%</TableCell>
                       </TableRow>
@@ -209,11 +219,18 @@ export default function FinancePage() {
 
                 {/* Breakdown Catatan */}
                 <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-sm">
-                  <p className="font-medium text-yellow-800 mb-1">📝 Catatan</p>
+                  <p className="font-medium text-yellow-800 mb-1">📝 Catatan Perhitungan</p>
                   <ul className="text-xs text-yellow-700 space-y-1">
-                    <li>• Gaji Beriman & Wapiq Rp 500.000/bulan (Jan 2025 – Jun 2026) dibayarkan dengan mengurangi hutang saham</li>
-                    <li>• Malsiaf tidak memperoleh gaji</li>
-                    <li>• Sisa 7.500 saham (Rp 750.000.000) belum dikeluarkan — dapat dikeluarkan dengan RUPS</li>
+                    {data.shareholderNotes?.length ? (
+                      data.shareholderNotes.map((note, index) => <li key={index}>• {note.replace(/^\d+\.\s*/, "")}</li>)
+                    ) : (
+                      <>
+                        <li>• Gaji Beriman & Wapiq Rp 500.000/bulan dibayarkan dengan mengurangi hutang saham</li>
+                        <li>• Malsiaf tidak memperoleh gaji</li>
+                      </>
+                    )}
+                    <li>• Sumber data: {data.shareholderDataSource || "Google Sheets PemegangSaham"}</li>
+                    <li>• Saldo bank tidak sama dengan setoran modal; setoran gaji dicatat sebagai pengurangan hutang saham, bukan transaksi bank.</li>
                   </ul>
                 </div>
               </CardContent>
@@ -251,7 +268,7 @@ export default function FinancePage() {
                         </div>
                         <div className="flex justify-between border-t pt-1">
                           <span className="font-medium">Sisa:</span>
-                          <span className="font-bold text-red-600">{formatCurrency(sh.kewajiban - sh.sudahSetor)}</span>
+                          <span className="font-bold text-red-600">{formatCurrency(sh.sisaKewajiban ?? Math.max(sh.kewajiban - sh.sudahSetor, 0))}</span>
                         </div>
                       </div>
                       <div className="mt-3">
