@@ -4,7 +4,11 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { jwtVerify } from "jose";
 
-// Paths that require authentication
+// Auth is disabled by default while System SWI is still in active development.
+// Set ENABLE_PORTAL_AUTH=true in production when the portal is ready to be locked down.
+const ENABLE_PORTAL_AUTH = process.env.ENABLE_PORTAL_AUTH === "true";
+
+// Paths that require authentication when ENABLE_PORTAL_AUTH=true.
 const PROTECTED_PATHS = [
     "/dashboard",
     "/workspace",
@@ -57,6 +61,11 @@ async function verifyToken(token: string): Promise<boolean> {
 
 export async function proxy(request: NextRequest) {
     const { pathname } = request.nextUrl;
+
+    // Development mode: keep dashboard/workspace directly accessible.
+    if (!ENABLE_PORTAL_AUTH) {
+        return NextResponse.next();
+    }
 
     // Skip middleware for static files and API routes (except protected ones)
     if (

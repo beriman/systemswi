@@ -9,6 +9,7 @@ export default function WorkspaceLayout({
     children: React.ReactNode;
 }) {
     const { user, isLoading } = useAuth();
+    const enableAuth = process.env.NEXT_PUBLIC_ENABLE_AUTH === "true";
 
     // Show loading state
     if (isLoading) {
@@ -19,8 +20,9 @@ export default function WorkspaceLayout({
         );
     }
 
-    // Redirect to login if not authenticated
-    if (!user) {
+    // Redirect to login only when auth is explicitly enabled.
+    // During development, System SWI should open directly to the dashboard.
+    if (enableAuth && !user) {
         if (typeof window !== "undefined") {
             window.location.href = "/login";
         }

@@ -2,6 +2,17 @@
 import { create } from "zustand";
 import type { User, AuthState } from "@/lib/auth/types";
 
+const ENABLE_AUTH = process.env.NEXT_PUBLIC_ENABLE_AUTH === "true";
+
+const DEV_USER: User = {
+    id: "dev-beriman",
+    email: "beriman.juliano@gmail.com",
+    name: "Beriman Juliano",
+    role: "ceo",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    lastLoginAt: new Date().toISOString(),
+};
+
 interface AuthStore extends AuthState {
     setUser: (user: User | null) => void;
     setLoading: (isLoading: boolean) => void;
@@ -11,9 +22,9 @@ interface AuthStore extends AuthState {
 }
 
 export const useAuthStore = create<AuthStore>((set) => ({
-    user: null,
-    isLoading: true,
-    isAuthenticated: false,
+    user: ENABLE_AUTH ? null : DEV_USER,
+    isLoading: ENABLE_AUTH,
+    isAuthenticated: !ENABLE_AUTH,
     error: null,
 
     setUser: (user) =>
@@ -40,6 +51,11 @@ export const useAuthStore = create<AuthStore>((set) => ({
     },
 
     refreshUser: async () => {
+        if (!ENABLE_AUTH) {
+            set({ user: DEV_USER, isAuthenticated: true, isLoading: false, error: null });
+            return;
+        }
+
         set({ isLoading: true });
         try {
             const response = await fetch("/api/auth/me");

@@ -1,8 +1,11 @@
 import { redirect } from "next/navigation";
 
-// Root page redirects to public homepage
+// Root page redirects to the operating dashboard while System SWI is in development.
+// Set NEXT_PUBLIC_SHOW_PUBLIC_SITE=true to expose the company profile at root again.
 export default function Home() {
-  // The public homepage is now at /(public)/page.tsx
-  // When users visit /, they should see the public page
-  redirect("/about");
+  if (process.env.NEXT_PUBLIC_SHOW_PUBLIC_SITE === "true") {
+    redirect("/about");
+  }
+
+  redirect("/dashboard");
 }
