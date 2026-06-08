@@ -12,19 +12,12 @@ const nextConfig: NextConfig = {
     ],
   },
   
-  // Experimental features
-  experimental: {
-    serverComponentsExternalPackages: ["better-sqlite3"],
-  },
+  // Server-side native packages
+  serverExternalPackages: ["better-sqlite3"],
   
   // Skip type checking during build (fix implicit any errors)
   typescript: {
     ignoreBuildErrors: true,
-  },
-  
-  // Skip linting during build
-  eslint: {
-    ignoreDuringBuilds: true,
   },
 };
 
