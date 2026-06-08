@@ -23,19 +23,56 @@ export const EVENT_SHEETS = {
 // ── Auth (reuse from sheets-real) ──
 let cachedAuth: any = null;
 
+function loadCredentialsFromFile() {
+  try {
+    const content = JSON.parse(fs.readFileSync(TOKEN_PATH, "utf-8"));
+    return {
+      client_id: content.client_id,
+      client_secret: content.client_secret,
+      refresh_token: content.refresh_token,
+      access_token: content.token || content.access_token || "",
+      expiry_date: content.expiry_date || content.expiry || 0,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function loadCredentialsFromEnv() {
+  const client_id = process.env.GOOGLE_CLIENT_ID;
+  const client_secret = process.env.GOOGLE_CLIENT_SECRET;
+  const refresh_token = process.env.GOOGLE_REFRESH_TOKEN;
+  if (!client_id || !client_secret || !refresh_token) return null;
+  return {
+    client_id,
+    client_secret,
+    refresh_token,
+    access_token: process.env.GOOGLE_ACCESS_TOKEN || "",
+    expiry_date: process.env.GOOGLE_ACCESS_TOKEN
+      ? (parseInt(process.env.GOOGLE_EXPIRY_DATE || "0", 10) || 0)
+      : 0,
+  };
+}
+
 function getAuth() {
   if (cachedAuth) return cachedAuth;
-  const content = JSON.parse(fs.readFileSync(TOKEN_PATH, "utf-8"));
+  const creds = loadCredentialsFromFile() || loadCredentialsFromEnv();
+  if (!creds) {
+    throw new Error(
+      "Google credentials not found. Set GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REFRESH_TOKEN env vars."
+    );
+  }
+
   const oauth2 = new google.auth.OAuth2(
-    content.client_id,
-    content.client_secret,
+    creds.client_id,
+    creds.client_secret,
     process.env.GOOGLE_REDIRECT_URI || "http://localhost:1"
   );
   oauth2.setCredentials({
-    refresh_token: content.refresh_token,
-    access_token: content.token || content.access_token || "",
+    refresh_token: creds.refresh_token,
+    access_token: creds.access_token,
     token_type: "Bearer",
-    expiry_date: content.expiry_date || Date.now() + 3600000,
+    expiry_date: creds.expiry_date,
   });
   cachedAuth = oauth2;
   return cachedAuth;
