@@ -1,0 +1,566 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Tutorial Instagram Graph API untuk @fragrantions | SWI</title>
+  <meta name="description" content="Panduan satu halaman untuk setup Instagram Graph API @fragrantions agar dokumentasi event dapat disinkronkan ke systemswi." />
+  <meta property="og:title" content="Tutorial Instagram Graph API untuk @fragrantions" />
+  <meta property="og:description" content="Panduan setup Instagram Business/Creator, Facebook Page, Meta Developer App, permission, token, dan test media API." />
+  <meta property="og:type" content="article" />
+  <style>
+    :root {
+      --bg: #0d1117;
+      --panel: #151b23;
+      --panel-2: #1f2937;
+      --text: #f8fafc;
+      --muted: #a7b0c0;
+      --line: rgba(255,255,255,.12);
+      --gold: #f59e0b;
+      --amber: #fbbf24;
+      --orange: #fb923c;
+      --green: #22c55e;
+      --blue: #38bdf8;
+      --red: #fb7185;
+      --shadow: 0 20px 70px rgba(0,0,0,.35);
+      --radius: 22px;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top left, rgba(245,158,11,.20), transparent 34rem),
+        radial-gradient(circle at top right, rgba(56,189,248,.14), transparent 30rem),
+        linear-gradient(180deg, #0d1117 0%, #111827 55%, #0b0f16 100%);
+      line-height: 1.65;
+    }
+    a { color: var(--amber); }
+    code, pre {
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    }
+    .wrap { width: min(1120px, calc(100% - 32px)); margin: 0 auto; }
+    .hero {
+      padding: 64px 0 30px;
+      position: relative;
+      overflow: hidden;
+    }
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 13px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: rgba(255,255,255,.06);
+      color: var(--muted);
+      font-size: 14px;
+      margin-bottom: 22px;
+    }
+    .brand strong { color: var(--text); }
+    h1 {
+      font-size: clamp(36px, 7vw, 76px);
+      line-height: .95;
+      letter-spacing: -0.06em;
+      margin: 0 0 20px;
+      max-width: 920px;
+    }
+    .gradient-text {
+      background: linear-gradient(90deg, var(--amber), var(--orange), #fff4cf);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+    .lead {
+      max-width: 780px;
+      color: var(--muted);
+      font-size: clamp(17px, 2vw, 22px);
+      margin: 0 0 26px;
+    }
+    .hero-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 24px; }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 9px;
+      text-decoration: none;
+      border-radius: 999px;
+      padding: 12px 18px;
+      font-weight: 700;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,.07);
+      color: var(--text);
+      transition: transform .15s ease, background .15s ease;
+    }
+    .btn:hover { transform: translateY(-1px); background: rgba(255,255,255,.11); }
+    .btn.primary { background: linear-gradient(135deg, var(--gold), var(--orange)); color: #160d04; border: none; }
+    .meta-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 14px;
+      margin: 34px 0 10px;
+    }
+    .meta-card {
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: rgba(255,255,255,.06);
+      backdrop-filter: blur(12px);
+    }
+    .meta-card b { display: block; font-size: 22px; color: var(--amber); }
+    .meta-card span { color: var(--muted); font-size: 13px; }
+    .layout {
+      display: grid;
+      grid-template-columns: 280px minmax(0, 1fr);
+      gap: 26px;
+      padding: 24px 0 70px;
+    }
+    .toc {
+      position: sticky;
+      top: 18px;
+      align-self: start;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 18px;
+      background: rgba(21,27,35,.82);
+      backdrop-filter: blur(16px);
+      box-shadow: var(--shadow);
+    }
+    .toc h2 { margin: 0 0 10px; font-size: 15px; color: var(--amber); text-transform: uppercase; letter-spacing: .12em; }
+    .toc a {
+      display: block;
+      color: var(--muted);
+      text-decoration: none;
+      padding: 8px 0;
+      border-bottom: 1px solid rgba(255,255,255,.06);
+      font-size: 14px;
+    }
+    .toc a:hover { color: var(--text); }
+    .content { display: grid; gap: 18px; }
+    section.card {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: rgba(21,27,35,.78);
+      box-shadow: var(--shadow);
+      padding: clamp(20px, 4vw, 34px);
+      overflow: hidden;
+    }
+    section.card h2 {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      margin: 0 0 14px;
+      font-size: clamp(24px, 4vw, 34px);
+      line-height: 1.08;
+      letter-spacing: -0.03em;
+    }
+    .num {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex: 0 0 auto;
+      width: 38px;
+      height: 38px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, var(--gold), var(--orange));
+      color: #111827;
+      font-weight: 900;
+      font-size: 17px;
+    }
+    h3 { margin: 24px 0 10px; font-size: 20px; color: #fff7dc; }
+    p { margin: 0 0 14px; color: var(--muted); }
+    ul, ol { margin: 10px 0 16px; padding-left: 24px; color: var(--muted); }
+    li { margin: 7px 0; }
+    strong { color: var(--text); }
+    .note, .warn, .success {
+      border-radius: 16px;
+      padding: 15px 16px;
+      margin: 18px 0;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,.055);
+    }
+    .note { border-left: 4px solid var(--blue); }
+    .warn { border-left: 4px solid var(--red); }
+    .success { border-left: 4px solid var(--green); }
+    .note b, .warn b, .success b { color: var(--text); }
+    pre {
+      white-space: pre-wrap;
+      word-break: break-word;
+      overflow-x: auto;
+      padding: 16px;
+      border-radius: 16px;
+      color: #dbeafe;
+      background: #070b12;
+      border: 1px solid rgba(255,255,255,.10);
+      margin: 12px 0 18px;
+      font-size: 13px;
+    }
+    .pill-row { display: flex; flex-wrap: wrap; gap: 9px; margin: 12px 0; }
+    .pill {
+      display: inline-flex;
+      border: 1px solid rgba(251,191,36,.28);
+      color: #fde68a;
+      background: rgba(245,158,11,.10);
+      border-radius: 999px;
+      padding: 6px 10px;
+      font-size: 13px;
+      font-weight: 700;
+    }
+    .checklist {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      padding: 0;
+      list-style: none;
+    }
+    .checklist li {
+      margin: 0;
+      border: 1px solid var(--line);
+      border-radius: 15px;
+      padding: 13px 14px;
+      background: rgba(255,255,255,.045);
+      color: var(--muted);
+    }
+    .checklist li::before { content: "✓"; color: var(--green); font-weight: 900; margin-right: 8px; }
+    .footer {
+      border-top: 1px solid var(--line);
+      padding: 26px 0 44px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+    .print-only { display: none; }
+    @media (max-width: 900px) {
+      .layout { grid-template-columns: 1fr; }
+      .toc { position: relative; top: auto; }
+      .meta-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .checklist { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 520px) {
+      .meta-grid { grid-template-columns: 1fr; }
+      .hero { padding-top: 38px; }
+      .wrap { width: min(100% - 22px, 1120px); }
+    }
+    @media print {
+      body { background: white; color: #111827; }
+      .toc, .hero-actions { display: none; }
+      .layout { display: block; }
+      section.card, .meta-card { box-shadow: none; background: white; color: #111827; border-color: #ddd; page-break-inside: avoid; }
+      p, ul, ol, li, .meta-card span { color: #374151; }
+      h1, h2, h3, strong { color: #111827; }
+      .gradient-text { color: #111827; background: none; }
+      .print-only { display: block; }
+      pre { background: #f3f4f6; color: #111827; border-color: #ddd; }
+    }
+  </style>
+</head>
+<body>
+  <header class="hero">
+    <div class="wrap">
+      <div class="brand">🌿 <strong>SWI / Fragrantions</strong> <span>Instagram API Setup Guide</span></div>
+      <h1>Tutorial <span class="gradient-text">Instagram Graph API</span> untuk @fragrantions</h1>
+      <p class="lead">Panduan satu halaman untuk Wapiq: setup akun Instagram Business/Creator, Facebook Page, Meta Developer App, permission, access token, dan test ambil data post/reels Fragrantions secara resmi.</p>
+      <div class="hero-actions">
+        <a class="btn primary" href="#checklist">Mulai dari Checklist →</a>
+        <a class="btn" href="#token">Langsung ke Token</a>
+        <a class="btn" href="javascript:window.print()">Print / Save PDF</a>
+      </div>
+      <div class="meta-grid">
+        <div class="meta-card"><b>1 page</b><span>mudah dishare ke tim</span></div>
+        <div class="meta-card"><b>Official</b><span>pakai API Meta, bukan scraping</span></div>
+        <div class="meta-card"><b>Goal</b><span>sync dokumentasi event</span></div>
+        <div class="meta-card"><b>Output</b><span>IG Business ID + token</span></div>
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap layout">
+    <aside class="toc" aria-label="Daftar isi">
+      <h2>Daftar Isi</h2>
+      <a href="#tujuan">Tujuan</a>
+      <a href="#checklist">Checklist Cepat</a>
+      <a href="#akun">Akun Instagram</a>
+      <a href="#page">Facebook Page</a>
+      <a href="#app">Meta Developer App</a>
+      <a href="#permission">Permission</a>
+      <a href="#explorer">Graph API Explorer</a>
+      <a href="#business-id">Ambil IG Business ID</a>
+      <a href="#media-test">Test Media API</a>
+      <a href="#token">Long-lived Token</a>
+      <a href="#kirim">Data untuk HemuHemu</a>
+      <a href="#troubleshooting">Troubleshooting</a>
+      <a href="#swi">Rencana Integrasi SWI</a>
+    </aside>
+
+    <div class="content">
+      <section id="tujuan" class="card">
+        <h2><span class="num">1</span> Tujuan setup ini</h2>
+        <p>Kita mau sistem SWI bisa mengambil data Instagram <strong>@fragrantions</strong> secara resmi lewat <strong>Instagram Graph API</strong>, bukan scrape manual.</p>
+        <ul class="checklist">
+          <li>Ambil daftar post dan reels</li>
+          <li>Ambil caption dan tanggal posting</li>
+          <li>Ambil permalink Instagram</li>
+          <li>Ambil media URL / thumbnail</li>
+          <li>Simpan dokumentasi event ke systemswi</li>
+          <li>Tampilkan sebagai portfolio Fragrantions</li>
+        </ul>
+        <div class="warn"><b>Penting:</b> Jangan pakai bot/scraping paksa. Instagram sering memblokir akses server dan datanya tidak stabil. API resmi lebih aman untuk data bisnis.</div>
+      </section>
+
+      <section id="checklist" class="card">
+        <h2><span class="num">2</span> Checklist paling cepat</h2>
+        <p>Kalau mau versi super singkat, Wapiq cukup ikuti ini:</p>
+        <ol>
+          <li>Pastikan <strong>@fragrantions</strong> adalah akun <strong>Business</strong> atau <strong>Creator</strong>.</li>
+          <li>Hubungkan @fragrantions ke <strong>Facebook Page</strong>.</li>
+          <li>Buat <strong>Meta Developer App</strong>.</li>
+          <li>Tambahkan produk <strong>Instagram API</strong> / <strong>Facebook Login for Business</strong>.</li>
+          <li>Generate token dengan permission: <code>instagram_basic</code> dan <code>pages_show_list</code>.</li>
+          <li>Jalankan endpoint: <code>/me/accounts?fields=name,id,instagram_business_account</code>.</li>
+          <li>Ambil <strong>Instagram Business Account ID</strong>.</li>
+          <li>Test endpoint media Instagram.</li>
+          <li>Buat <strong>long-lived access token</strong>.</li>
+          <li>Kirim data ke Beriman/HemuHemu untuk dipasang ke systemswi.</li>
+        </ol>
+      </section>
+
+      <section id="akun" class="card">
+        <h2><span class="num">3</span> Pastikan @fragrantions Business / Creator</h2>
+        <p>Di aplikasi Instagram, login ke akun <strong>@fragrantions</strong>, lalu cek tipe akun.</p>
+        <ol>
+          <li>Buka Instagram @fragrantions.</li>
+          <li>Masuk ke <strong>Settings and activity</strong>.</li>
+          <li>Pilih <strong>Account type and tools</strong>.</li>
+          <li>Pastikan akun sudah <strong>Business Account</strong> atau <strong>Creator Account</strong>.</li>
+        </ol>
+        <div class="note"><b>Rekomendasi:</b> Untuk Fragrantions, gunakan <strong>Business Account</strong> agar lebih cocok untuk integrasi event dan brand.</div>
+      </section>
+
+      <section id="page" class="card">
+        <h2><span class="num">4</span> Hubungkan ke Facebook Page</h2>
+        <p>Instagram Graph API biasanya membutuhkan akun Instagram Business/Creator yang tersambung dengan Facebook Page.</p>
+        <ol>
+          <li>Buka Instagram @fragrantions.</li>
+          <li>Masuk ke <strong>Settings and activity</strong>.</li>
+          <li>Buka <strong>Business tools and controls</strong>.</li>
+          <li>Pilih <strong>Connect or create Facebook Page</strong>.</li>
+          <li>Pilih Page yang sudah ada, atau buat Page baru bernama <strong>Fragrantions</strong>.</li>
+        </ol>
+        <div class="success"><b>Pastikan:</b> Akun Facebook Wapiq / admin punya akses penuh ke Page Fragrantions di Meta Business Suite.</div>
+      </section>
+
+      <section id="app" class="card">
+        <h2><span class="num">5</span> Buat Meta Developer App</h2>
+        <p>Buka Meta for Developers:</p>
+        <pre>https://developers.facebook.com/</pre>
+        <ol>
+          <li>Login memakai akun Facebook yang punya akses ke Page Fragrantions.</li>
+          <li>Klik <strong>My Apps</strong>.</li>
+          <li>Klik <strong>Create App</strong>.</li>
+          <li>Pilih tipe app yang berhubungan dengan <strong>Business</strong> / <strong>Business Integration</strong>.</li>
+          <li>Nama app yang disarankan:</li>
+        </ol>
+        <pre>SWI Fragrantions Instagram Sync</pre>
+        <p>Setelah app dibuat, masuk ke dashboard app tersebut.</p>
+      </section>
+
+      <section id="permission" class="card">
+        <h2><span class="num">6</span> Tambahkan produk & permission</h2>
+        <p>Di dashboard Meta App, buka <strong>Add products</strong>, lalu tambahkan produk yang berkaitan dengan Instagram API, biasanya salah satu dari:</p>
+        <div class="pill-row">
+          <span class="pill">Instagram</span>
+          <span class="pill">Instagram API with Facebook Login</span>
+          <span class="pill">Facebook Login for Business</span>
+        </div>
+        <h3>Permission minimal</h3>
+        <pre>instagram_basic
+pages_show_list</pre>
+        <p>Fungsi permission:</p>
+        <ul>
+          <li><code>instagram_basic</code>: membaca profil dan media Instagram Business/Creator.</li>
+          <li><code>pages_show_list</code>: melihat daftar Facebook Page yang terhubung ke akun Facebook.</li>
+        </ul>
+        <h3>Permission tambahan kalau nanti dibutuhkan</h3>
+        <pre>instagram_manage_insights
+instagram_manage_comments
+instagram_content_publish</pre>
+        <div class="note"><b>Tahap awal cukup:</b> <code>instagram_basic</code> dan <code>pages_show_list</code>. Jangan centang terlalu banyak permission dulu.</div>
+      </section>
+
+      <section id="explorer" class="card">
+        <h2><span class="num">7</span> Generate token di Graph API Explorer</h2>
+        <p>Buka Graph API Explorer:</p>
+        <pre>https://developers.facebook.com/tools/explorer/</pre>
+        <ol>
+          <li>Di kanan atas, pilih app: <strong>SWI Fragrantions Instagram Sync</strong>.</li>
+          <li>Klik <strong>Generate Access Token</strong>.</li>
+          <li>Centang permission:</li>
+        </ol>
+        <pre>instagram_basic
+pages_show_list</pre>
+        <ol start="4">
+          <li>Login/authorize menggunakan akun Facebook yang punya akses ke Facebook Page Fragrantions.</li>
+          <li>Simpan sementara token yang keluar. Ini biasanya masih short-lived token.</li>
+        </ol>
+        <div class="warn"><b>Rahasia:</b> Access token jangan di-share ke grup umum. Token ini bisa memberi akses baca data akun Instagram/Page.</div>
+      </section>
+
+      <section id="business-id" class="card">
+        <h2><span class="num">8</span> Ambil Instagram Business Account ID</h2>
+        <p>Di Graph API Explorer, jalankan endpoint ini:</p>
+        <pre>GET /me/accounts?fields=name,id,instagram_business_account</pre>
+        <p>Kalau sukses, hasilnya kira-kira seperti ini:</p>
+        <pre>{
+  "data": [
+    {
+      "name": "Fragrantions",
+      "id": "FACEBOOK_PAGE_ID",
+      "instagram_business_account": {
+        "id": "INSTAGRAM_BUSINESS_ACCOUNT_ID"
+      }
+    }
+  ]
+}</pre>
+        <p>Catat dua hal penting:</p>
+        <pre>Facebook Page ID:
+...
+
+Instagram Business Account ID:
+...</pre>
+      </section>
+
+      <section id="media-test" class="card">
+        <h2><span class="num">9</span> Test ambil media Instagram</h2>
+        <p>Setelah mendapatkan <strong>Instagram Business Account ID</strong>, jalankan:</p>
+        <pre>GET /INSTAGRAM_BUSINESS_ACCOUNT_ID/media?fields=id,caption,media_type,media_url,permalink,timestamp,thumbnail_url</pre>
+        <p>Contoh:</p>
+        <pre>GET /17841400000000000/media?fields=id,caption,media_type,media_url,permalink,timestamp,thumbnail_url</pre>
+        <p>Hasil sukses kira-kira:</p>
+        <pre>{
+  "data": [
+    {
+      "id": "18000000000000000",
+      "caption": "Road to Fragrantions...",
+      "media_type": "VIDEO",
+      "media_url": "https://...",
+      "permalink": "https://www.instagram.com/reel/...",
+      "timestamp": "2026-04-..."
+    }
+  ]
+}</pre>
+        <div class="note"><b>Catatan:</b> Untuk carousel, nanti biasanya butuh request tambahan ke children media. Untuk tahap awal, endpoint di atas sudah cukup untuk validasi koneksi.</div>
+      </section>
+
+      <section id="token" class="card">
+        <h2><span class="num">10</span> Buat Long-lived Access Token</h2>
+        <p>Token dari Graph API Explorer biasanya pendek masa aktifnya. Untuk systemswi, kita butuh token yang lebih panjang, biasanya sekitar 60 hari.</p>
+        <p>Gunakan endpoint berikut:</p>
+        <pre>https://graph.facebook.com/v20.0/oauth/access_token?grant_type=fb_exchange_token&client_id=APP_ID&client_secret=APP_SECRET&fb_exchange_token=SHORT_LIVED_TOKEN</pre>
+        <p>Ganti:</p>
+        <ul>
+          <li><code>APP_ID</code>: App ID dari Meta Developer App.</li>
+          <li><code>APP_SECRET</code>: App Secret dari Meta Developer App.</li>
+          <li><code>SHORT_LIVED_TOKEN</code>: token yang didapat dari Graph API Explorer.</li>
+        </ul>
+        <p>Hasilnya kira-kira:</p>
+        <pre>{
+  "access_token": "LONG_LIVED_ACCESS_TOKEN",
+  "token_type": "bearer",
+  "expires_in": 5183944
+}</pre>
+        <div class="warn"><b>Simpan baik-baik:</b> Catat token dan tanggal expiry. Jangan masukkan token ke file publik, screenshot publik, atau Google Doc terbuka.</div>
+      </section>
+
+      <section id="kirim" class="card">
+        <h2><span class="num">11</span> Data yang perlu dikirim ke Beriman / HemuHemu</h2>
+        <p>Setelah setup selesai, kirim format ini:</p>
+        <pre>Instagram handle:
+@fragrantions
+
+Facebook Page ID:
+...
+
+Instagram Business Account ID:
+...
+
+Long-lived Access Token:
+...
+
+Token expiry:
+...
+
+Permission aktif:
+instagram_basic, pages_show_list</pre>
+        <div class="note"><b>Kalau token sensitif:</b> boleh kirim Page ID dan IG Business ID dulu. Access token bisa dimasukkan langsung ke environment variable saat integrasi.</div>
+      </section>
+
+      <section id="troubleshooting" class="card">
+        <h2><span class="num">12</span> Troubleshooting umum</h2>
+        <h3>Akun Instagram tidak muncul</h3>
+        <ul>
+          <li>@fragrantions belum Business/Creator.</li>
+          <li>@fragrantions belum connect ke Facebook Page.</li>
+          <li>Akun Facebook yang dipakai tidak punya akses ke Page.</li>
+          <li>Page belum benar-benar linked ke Instagram di Meta Business Suite.</li>
+        </ul>
+        <h3>Error permission</h3>
+        <p>Pastikan token punya permission:</p>
+        <pre>instagram_basic
+pages_show_list</pre>
+        <h3>Error unsupported get request</h3>
+        <p>Biasanya ID salah atau token tidak punya akses. Ulangi endpoint:</p>
+        <pre>/me/accounts?fields=name,id,instagram_business_account</pre>
+        <h3>Media URL tidak permanen</h3>
+        <p><code>media_url</code> bisa berubah/expire. Untuk dokumentasi jangka panjang, simpan minimal:</p>
+        <pre>permalink
+caption
+timestamp
+media_type
+thumbnail_url</pre>
+      </section>
+
+      <section id="swi" class="card">
+        <h2><span class="num">13</span> Rencana integrasi ke systemswi</h2>
+        <p>Setelah Wapiq mendapatkan token dan IG Business ID, systemswi bisa dibuat auto-sync ke sheet baru:</p>
+        <pre>Event_Media</pre>
+        <p>Kolom ideal:</p>
+        <pre>ID
+Event ID
+Event Name
+Instagram Media ID
+Instagram URL
+Media Type
+Caption
+Caption Summary
+Post Date
+Cover Image URL
+Source Account
+Sync Status
+Notes
+Created
+Updated</pre>
+        <p>Output di website:</p>
+        <ul>
+          <li>Halaman portfolio Fragrantions.</li>
+          <li>Dokumentasi Instagram per event.</li>
+          <li>Reels/post muncul sebagai kartu media.</li>
+          <li>Link balik ke Instagram original.</li>
+        </ul>
+      </section>
+
+      <section class="card">
+        <h2><span class="num">✓</span> Penutup</h2>
+        <p>Kalau Wapiq sudah mendapatkan <strong>Instagram Business Account ID</strong> dan <strong>Long-lived Access Token</strong>, kirim ke Beriman/HemuHemu. Setelah itu HemuHemu bisa bantu pasang auto-sync ke systemswi.</p>
+        <div class="success"><b>Target akhir:</b> dokumentasi event Fragrantions tidak perlu dimasukkan manual satu-satu; sistem bisa membaca dari Instagram resmi dan menyimpan ke portfolio SWI.</div>
+      </section>
+    </div>
+  </main>
+
+  <footer class="footer">
+    <div class="wrap">
+      <strong>PT Sensasi Wangi Indonesia</strong><br />
+      Tutorial internal untuk setup Instagram Graph API @fragrantions. Dibuat untuk Wapiq / tim Fragrantions.
+    </div>
+  </footer>
+</body>
+</html>
