@@ -109,7 +109,7 @@ export const PORTFOLIO_ITEMS: PortfolioItem[] = [
         date: "2025-07-01",
         location: "Indonesia",
         description: "Road to Fragrantions pertama sebagai rangkaian pemanasan menuju acara utama Fragrantions 2025.",
-        images: ["/images/portfolio/road-to-fragrantions-2025.jpg"],
+        images: ["/images/events/road-to-fragrantions-vol-1.jpg"],
     },
     {
         id: "p2",
@@ -118,7 +118,7 @@ export const PORTFOLIO_ITEMS: PortfolioItem[] = [
         date: "2025-11-01",
         location: "Indonesia",
         description: "Acara utama Fragrantions 2025 yang diselenggarakan pada November 2025.",
-        images: ["/images/portfolio/fragrantions-2025.jpg"],
+        images: ["/images/events/fragrantions-2025.jpg"],
     },
     {
         id: "p3",
@@ -127,7 +127,7 @@ export const PORTFOLIO_ITEMS: PortfolioItem[] = [
         date: "2026-04-01",
         location: "Indonesia",
         description: "Road to Fragrantions 2026 Vol. 1 sebagai rangkaian menuju Fragrantions 2026.",
-        images: ["/images/portfolio/road-to-fragrantions-2026-vol-1.jpg"],
+        images: ["/images/events/road-to-fragrantions-2026-vol-1.jpg"],
     },
 ];
 

@@ -53,18 +53,21 @@ const fragrantionsPortfolioHighlights = [
         date: "Juli 2025",
         type: "Roadshow / Pop-up",
         description: "Rangkaian pemanasan pertama menuju Fragrantions 2025.",
+        image: "/images/events/road-to-fragrantions-vol-1.jpg",
     },
     {
         name: "Fragrantions 2025",
         date: "November 2025",
         type: "Festival",
         description: "Acara utama Fragrantions 2025 untuk komunitas dan pelaku fragrance.",
+        image: "/images/events/fragrantions-2025.jpg",
     },
     {
         name: "Road to Fragrantions 2026 Vol. 1",
         date: "April 2026",
         type: "Roadshow / Pop-up",
         description: "Rangkaian menuju Fragrantions 2026 yang sudah terlaksana.",
+        image: "/images/events/road-to-fragrantions-2026-vol-1.jpg",
     },
 ];
 
@@ -245,7 +248,9 @@ export default function HomePage() {
 
                     <div className="grid md:grid-cols-3 gap-8 max-w-6xl mx-auto">
                         <Card className="overflow-hidden rounded-3xl border-0 bg-background shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
-                            <div className="h-48 bg-gradient-to-br from-purple-900 via-purple-700 to-pink-600"></div>
+                            <div className="h-48 bg-[#16110f] flex items-center justify-center p-8">
+                                <img src="/images/brands/larcenscent.webp" alt="L'Arc~en~Scent logo" className="max-h-full max-w-full object-contain rounded-2xl" />
+                            </div>
                             <CardHeader>
                                 <CardTitle>L&apos;Arc~en~Scent</CardTitle>
                                 <CardDescription>Luxury Artisan Perfume</CardDescription>
@@ -258,7 +263,9 @@ export default function HomePage() {
                         </Card>
 
                         <Card className="overflow-hidden rounded-3xl border-0 bg-background shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
-                            <div className="h-48 bg-gradient-to-br from-cyan-600 via-blue-600 to-purple-600"></div>
+                            <div className="h-48 bg-[#130d1f] flex items-center justify-center p-8">
+                                <img src="/images/brands/pixel-potion.webp" alt="Pixel Potion logo" className="max-h-full max-w-full object-contain" />
+                            </div>
                             <CardHeader>
                                 <CardTitle>Pixel Potion</CardTitle>
                                 <CardDescription>Gamer-Inspired Fragrance</CardDescription>
@@ -271,7 +278,9 @@ export default function HomePage() {
                         </Card>
 
                         <Card className="overflow-hidden rounded-3xl border-0 bg-background shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
-                            <div className="h-48 bg-gradient-to-br from-amber-700 via-orange-600 to-red-600"></div>
+                            <div className="h-48 bg-black flex items-center justify-center p-8">
+                                <img src="/images/brands/nuscentza.webp" alt="Nuscentza logo" className="max-h-full max-w-full object-contain" />
+                            </div>
                             <CardHeader>
                                 <CardTitle>NUScentZa</CardTitle>
                                 <CardDescription>Aroma Indonesia</CardDescription>
@@ -326,6 +335,10 @@ export default function HomePage() {
                         <div className="space-y-4">
                             {fragrantionsPortfolioHighlights.map((event, index) => (
                                 <Card key={event.name} className="overflow-hidden border-0 rounded-3xl bg-background/85 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
+                                    <div className="relative h-56 overflow-hidden bg-muted">
+                                        <img src={event.image} alt={`${event.name} documentation`} className="h-full w-full object-cover transition-transform duration-500 hover:scale-105" />
+                                        <div className="absolute inset-0 bg-gradient-to-t from-black/45 via-transparent to-transparent" />
+                                    </div>
                                     <CardHeader className="p-6 md:p-7">
                                         <div className="flex items-start justify-between gap-5">
                                             <div className="space-y-3">

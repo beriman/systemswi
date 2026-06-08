@@ -35,16 +35,24 @@ const PORTFOLIO_CATEGORIES_DISPLAY: Record<string, string> = {
     other: "Other",
 };
 
-const getPlaceholderImage = (type: string, index: number) => {
-    const seeds: Record<string, number[]> = {
-        festival: [8201, 8202, 8203, 8204],
-        exhibition: [8301, 8302, 8303, 8304],
-        "pop-up": [8401, 8402, 8403, 8404],
-        workshop: [8501, 8502, 8503, 8504],
-        other: [8601, 8602, 8603, 8604],
-    };
-    const seed = seeds[type]?.[index % 4] || 8000 + index;
-    return `https://picsum.photos/seed/fragrantions-${seed}/640/420`;
+const EVENT_IMAGE_BY_SLUG: Record<string, string> = {
+    "road-to-fragrantions-2025-vol-1": "/images/events/road-to-fragrantions-vol-1.jpg",
+    "fragrantions-2025": "/images/events/fragrantions-2025.jpg",
+    "road-to-fragrantions-2026-vol-1": "/images/events/road-to-fragrantions-2026-vol-1.jpg",
+};
+
+const FALLBACK_EVENT_IMAGE_BY_TYPE: Record<string, string> = {
+    festival: "/images/events/fragrantions-2025.jpg",
+    exhibition: "/images/events/fragrantions-2025.jpg",
+    "pop-up": "/images/events/road-to-fragrantions-vol-1.jpg",
+    workshop: "/images/events/road-to-fragrantions-2026-vol-1.jpg",
+    other: "/images/swi/logosensasiwangi.png",
+};
+
+const getEventImage = (event: { slug?: string; type?: string }, index = 0) => {
+    if (event.slug && EVENT_IMAGE_BY_SLUG[event.slug]) return EVENT_IMAGE_BY_SLUG[event.slug];
+    if (event.type && FALLBACK_EVENT_IMAGE_BY_TYPE[event.type]) return FALLBACK_EVENT_IMAGE_BY_TYPE[event.type];
+    return index % 2 === 0 ? "/images/events/road-to-fragrantions-vol-1.jpg" : "/images/events/fragrantions-2025.jpg";
 };
 
 function formatEventDate(startDate: string, endDate?: string) {
@@ -199,10 +207,10 @@ export default function PortfolioPage() {
                 {!isLoading && hasSheetEvents && (
                     <section className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
                         {filteredEvents.map((event, index) => (
-                            <Card key={event.id} className="overflow-hidden group hover:shadow-elegant transition-smooth border-2 hover:border-primary/20">
+                            <Card key={event.id} className="overflow-hidden group rounded-3xl border-0 bg-background shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
                                 <div className="h-52 relative overflow-hidden bg-muted">
                                     <img
-                                        src={getPlaceholderImage(event.type, index)}
+                                        src={getEventImage(event, index)}
                                         alt={event.name}
                                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                                     />
@@ -260,10 +268,10 @@ export default function PortfolioPage() {
                 {!isLoading && !hasSheetEvents && (
                     <section className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
                         {fallbackItems.map((item, index) => (
-                            <Card key={item.id} className="overflow-hidden group hover:shadow-elegant transition-smooth border-2 hover:border-primary/20">
+                            <Card key={item.id} className="overflow-hidden group rounded-3xl border-0 bg-background shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
                                 <div className="h-48 relative overflow-hidden">
                                     <img
-                                        src={getPlaceholderImage(item.category, index)}
+                                        src={item.images?.[0] || getEventImage({ type: item.category }, index)}
                                         alt={item.title}
                                         className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
                                     />
