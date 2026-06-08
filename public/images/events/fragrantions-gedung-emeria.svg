@@ -1,0 +1,30 @@
+<svg width="1200" height="800" viewBox="0 0 1200 800" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1200" y2="800" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#110D0A"/>
+      <stop offset="0.48" stop-color="#4C2B1A"/>
+      <stop offset="1" stop-color="#B9853D"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(285 215) rotate(36) scale(700 450)">
+      <stop stop-color="#F9D991" stop-opacity="0.85"/>
+      <stop offset="1" stop-color="#F9D991" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1200" height="800" fill="url(#bg)"/>
+  <rect width="1200" height="800" fill="url(#glow)"/>
+  <g opacity="0.14" fill="#FFF4D8">
+    <rect x="760" y="120" width="78" height="520" rx="39"/>
+    <rect x="872" y="80" width="78" height="600" rx="39"/>
+    <rect x="984" y="160" width="78" height="460" rx="39"/>
+  </g>
+  <g transform="translate(96 96)">
+    <text x="0" y="0" fill="#F8D995" font-family="Inter, Arial, sans-serif" font-size="30" letter-spacing="9" font-weight="800">FRAGRANTIONS</text>
+    <text x="0" y="104" fill="#FFFFFF" font-family="Inter, Arial, sans-serif" font-size="88" font-weight="850">Gedung Emeria</text>
+    <text x="0" y="166" fill="#FFE9B8" font-family="Inter, Arial, sans-serif" font-size="34" font-weight="500">Taman Ismail Marzuki, Jakarta</text>
+  </g>
+  <g transform="translate(96 562)">
+    <rect x="0" y="0" width="548" height="92" rx="46" fill="#FFFFFF" fill-opacity="0.14"/>
+    <text x="38" y="58" fill="#FFFFFF" font-family="Inter, Arial, sans-serif" font-size="30" font-weight="700">Main event venue</text>
+  </g>
+  <path d="M98 454 H641" stroke="#F8D995" stroke-width="3" stroke-linecap="round" opacity="0.8"/>
+</svg>

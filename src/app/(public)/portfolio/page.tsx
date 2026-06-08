@@ -36,23 +36,23 @@ const PORTFOLIO_CATEGORIES_DISPLAY: Record<string, string> = {
 };
 
 const EVENT_IMAGE_BY_SLUG: Record<string, string> = {
-    "road-to-fragrantions-2025-vol-1": "/images/events/road-to-fragrantions-vol-1.jpg",
-    "fragrantions-2025": "/images/events/fragrantions-2025.jpg",
-    "road-to-fragrantions-2026-vol-1": "/images/events/road-to-fragrantions-2026-vol-1.jpg",
+    "road-to-fragrantions-2025-vol-1": "/images/events/road-to-fragrantions-tim.svg",
+    "fragrantions-2025": "/images/events/fragrantions-gedung-emeria.svg",
+    "road-to-fragrantions-2026-vol-1": "/images/events/road-to-fragrantions-tim.svg",
 };
 
 const FALLBACK_EVENT_IMAGE_BY_TYPE: Record<string, string> = {
-    festival: "/images/events/fragrantions-2025.jpg",
-    exhibition: "/images/events/fragrantions-2025.jpg",
-    "pop-up": "/images/events/road-to-fragrantions-vol-1.jpg",
-    workshop: "/images/events/road-to-fragrantions-2026-vol-1.jpg",
+    festival: "/images/events/fragrantions-gedung-emeria.svg",
+    exhibition: "/images/events/fragrantions-gedung-emeria.svg",
+    "pop-up": "/images/events/road-to-fragrantions-tim.svg",
+    workshop: "/images/events/road-to-fragrantions-tim.svg",
     other: "/images/swi/logosensasiwangi.png",
 };
 
 const getEventImage = (event: { slug?: string; type?: string }, index = 0) => {
     if (event.slug && EVENT_IMAGE_BY_SLUG[event.slug]) return EVENT_IMAGE_BY_SLUG[event.slug];
     if (event.type && FALLBACK_EVENT_IMAGE_BY_TYPE[event.type]) return FALLBACK_EVENT_IMAGE_BY_TYPE[event.type];
-    return index % 2 === 0 ? "/images/events/road-to-fragrantions-vol-1.jpg" : "/images/events/fragrantions-2025.jpg";
+    return index % 2 === 0 ? "/images/events/road-to-fragrantions-tim.svg" : "/images/events/fragrantions-gedung-emeria.svg";
 };
 
 function formatEventDate(startDate: string, endDate?: string) {

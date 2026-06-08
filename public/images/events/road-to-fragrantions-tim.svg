@@ -1,0 +1,31 @@
+<svg width="1200" height="800" viewBox="0 0 1200 800" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1200" y2="800" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#2B1A12"/>
+      <stop offset="0.52" stop-color="#8A5A2E"/>
+      <stop offset="1" stop-color="#D2A65A"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(930 170) rotate(133) scale(650 420)">
+      <stop stop-color="#FFF2C8" stop-opacity="0.9"/>
+      <stop offset="1" stop-color="#FFF2C8" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1200" height="800" fill="url(#bg)"/>
+  <rect width="1200" height="800" fill="url(#glow)"/>
+  <g opacity="0.18" stroke="#FFF4D8" stroke-width="2">
+    <path d="M90 610 C240 480 340 710 510 545 S785 415 1110 540"/>
+    <path d="M40 675 C220 535 400 765 570 600 S830 465 1160 610"/>
+    <path d="M-10 735 C220 610 390 790 620 665 S890 560 1230 705"/>
+  </g>
+  <g transform="translate(96 96)">
+    <text x="0" y="0" fill="#FFF7E8" font-family="Inter, Arial, sans-serif" font-size="28" letter-spacing="8" font-weight="700">ROAD TO FRAGRANTIONS</text>
+    <text x="0" y="92" fill="#FFFFFF" font-family="Inter, Arial, sans-serif" font-size="82" font-weight="800">Promenade TIM</text>
+    <text x="0" y="152" fill="#FFF0CC" font-family="Inter, Arial, sans-serif" font-size="34" font-weight="500">Taman Ismail Marzuki, Jakarta</text>
+  </g>
+  <g transform="translate(96 560)">
+    <rect x="0" y="0" width="520" height="92" rx="46" fill="#FFFFFF" fill-opacity="0.16"/>
+    <text x="38" y="58" fill="#FFFFFF" font-family="Inter, Arial, sans-serif" font-size="30" font-weight="700">Venue verified by SWI</text>
+  </g>
+  <circle cx="1010" cy="610" r="112" fill="#FFFFFF" fill-opacity="0.12"/>
+  <circle cx="1010" cy="610" r="68" fill="#FFFFFF" fill-opacity="0.12"/>
+</svg>

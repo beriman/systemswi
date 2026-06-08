@@ -52,22 +52,25 @@ const fragrantionsPortfolioHighlights = [
         name: "Road to Fragrantions Vol. 1",
         date: "Juli 2025",
         type: "Roadshow / Pop-up",
-        description: "Rangkaian pemanasan pertama menuju Fragrantions 2025.",
-        image: "/images/events/road-to-fragrantions-vol-1.jpg",
+        description: "Rangkaian pemanasan pertama menuju Fragrantions 2025 di Promenade Taman Ismail Marzuki, Jakarta.",
+        venue: "Promenade TIM, Jakarta",
+        image: "/images/events/road-to-fragrantions-tim.svg",
     },
     {
         name: "Fragrantions 2025",
         date: "November 2025",
         type: "Festival",
-        description: "Acara utama Fragrantions 2025 untuk komunitas dan pelaku fragrance.",
-        image: "/images/events/fragrantions-2025.jpg",
+        description: "Acara utama Fragrantions 2025 di Gedung Emeria, Taman Ismail Marzuki, Jakarta.",
+        venue: "Gedung Emeria TIM, Jakarta",
+        image: "/images/events/fragrantions-gedung-emeria.svg",
     },
     {
         name: "Road to Fragrantions 2026 Vol. 1",
         date: "April 2026",
         type: "Roadshow / Pop-up",
-        description: "Rangkaian menuju Fragrantions 2026 yang sudah terlaksana.",
-        image: "/images/events/road-to-fragrantions-2026-vol-1.jpg",
+        description: "Rangkaian menuju Fragrantions 2026 di Promenade Taman Ismail Marzuki, Jakarta.",
+        venue: "Promenade TIM, Jakarta",
+        image: "/images/events/road-to-fragrantions-tim.svg",
     },
 ];
 
@@ -345,6 +348,7 @@ export default function HomePage() {
                                                 <span className="inline-flex rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary uppercase tracking-wide">{event.type}</span>
                                                 <CardTitle className="text-2xl md:text-3xl tracking-tight">{event.name}</CardTitle>
                                                 <CardDescription className="text-base leading-relaxed">{event.description}</CardDescription>
+                                                <div className="text-sm font-semibold text-foreground/80">📍 {event.venue}</div>
                                             </div>
                                             <div className="shrink-0 text-right">
                                                 <div className="text-xs uppercase tracking-widest text-muted-foreground mb-1">Completed</div>
