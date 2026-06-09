@@ -26,7 +26,7 @@ export const SHEETS: Record<string, { range: string; description: string }> = {
   SukukSchedule:     { range: "Sukuk_Payment_Schedule!A1:L25", description: "Jadwal pembayaran sukuk" },
   SukukNotification: { range: "Sukuk_Notification!A1:H50",    description: "Notifikasi sukuk" },
   SukukAudit:        { range: "Sukuk_Audit!A1:H50",          description: "Audit trail sukuk" },
-  RekeningKoran:     { range: "Rekening_Koran!A5:D7",         description: "Rekening koran header" },
+  RekeningKoran:     { range: "Rekening_Koran!A5:E7",         description: "Rekening koran header" },
   RekeningMutasi:    { range: "Rekening_Koran!A10:L12",      description: "Mutasi rekening" },
   RekapRekening:     { range: "Rekap_Rekening!A1:H20",       description: "Rekap rekening 8 bulan" },
   COA:               { range: "COA!A5:E60",                   description: "Chart of accounts" },

@@ -16,6 +16,39 @@ function formatCurrency(amount: number): string {
   }).format(amount);
 }
 
+function formatNumber(value: number): string {
+  return new Intl.NumberFormat("id-ID").format(value || 0);
+}
+
+function formatDate(date: string): string {
+  if (!date || date === "TBA") return "TBA";
+  const parsed = new Date(date);
+  if (Number.isNaN(parsed.getTime())) return date;
+  return parsed.toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" });
+}
+
+function ActionLink({ href, title, detail }: { href: string; title: string; detail: string }) {
+  return (
+    <Link href={href} className="block rounded-lg border bg-white/70 p-3 transition-colors hover:border-primary/50 hover:bg-white">
+      <div className="font-medium">{title}</div>
+      <div className="text-xs text-muted-foreground">{detail}</div>
+    </Link>
+  );
+}
+
+function QuickLink({ href, title, description }: { href: string; title: string; description: string }) {
+  return (
+    <Link href={href} className="block">
+      <Card className="hover:border-primary/50 transition-colors">
+        <CardHeader>
+          <CardTitle className="text-lg">{title}</CardTitle>
+          <CardDescription>{description}</CardDescription>
+        </CardHeader>
+      </Card>
+    </Link>
+  );
+}
+
 export default function DashboardPage() {
   const { accessibleFeatures } = usePermissions();
   const [data, setData] = useState<any>(null);
@@ -32,9 +65,9 @@ export default function DashboardPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold">Overview</h2>
+        <h2 className="text-2xl font-bold">Executive Overview</h2>
         <p className="text-muted-foreground">
-          Welcome to System SWI Dashboard — Data dari Google Sheets
+          Ringkasan CEO: finance, event Fragrantions, produksi brand, dan next action dari Google Sheets.
         </p>
       </div>
 
@@ -101,6 +134,98 @@ export default function DashboardPage() {
           </Card>
         </div>
 
+        {/* Operational Snapshot */}
+        <div className="grid gap-4 lg:grid-cols-3">
+          <Card className="border-purple-100 bg-purple-50/50">
+            <CardHeader>
+              <CardTitle className="text-lg">🎉 Events / Fragrantions</CardTitle>
+              <CardDescription>Portfolio dan pipeline event</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {loading ? <Skeleton className="h-24 w-full" /> : (
+                <>
+                  <div className="grid grid-cols-3 gap-2 text-center">
+                    <div>
+                      <div className="text-2xl font-bold">{formatNumber(data?.eventSummary?.totalEvents || 0)}</div>
+                      <div className="text-xs text-muted-foreground">Total</div>
+                    </div>
+                    <div>
+                      <div className="text-2xl font-bold text-blue-600">{formatNumber(data?.eventSummary?.upcoming || 0)}</div>
+                      <div className="text-xs text-muted-foreground">Upcoming</div>
+                    </div>
+                    <div>
+                      <div className="text-2xl font-bold text-green-600">{formatNumber(data?.eventSummary?.completed || 0)}</div>
+                      <div className="text-xs text-muted-foreground">Completed</div>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    {(data?.eventSummary?.latestEvents || []).slice(0, 2).map((event: any) => (
+                      <div key={event.id || event.name} className="rounded-lg bg-white/70 p-2 text-sm">
+                        <div className="font-medium">{event.name}</div>
+                        <div className="text-xs text-muted-foreground">{formatDate(event.startDate)} • {event.venue || "Venue TBA"}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <Link href="/events" className="text-sm font-medium text-purple-700 hover:underline">Buka Events →</Link>
+                </>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="border-emerald-100 bg-emerald-50/50">
+            <CardHeader>
+              <CardTitle className="text-lg">🏭 Produksi</CardTitle>
+              <CardDescription>Batch, HPP, QC, dan estimasi stok</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {loading ? <Skeleton className="h-24 w-full" /> : (
+                <>
+                  <div className="grid grid-cols-3 gap-2 text-center">
+                    <div>
+                      <div className="text-2xl font-bold">{formatNumber(data?.brandSummary?.productionQty || 0)}</div>
+                      <div className="text-xs text-muted-foreground">Qty</div>
+                    </div>
+                    <div>
+                      <div className="text-2xl font-bold text-emerald-600">{formatNumber(data?.brandSummary?.activeBatches || 0)}</div>
+                      <div className="text-xs text-muted-foreground">Batch</div>
+                    </div>
+                    <div>
+                      <div className="text-2xl font-bold">{formatNumber(data?.brandSummary?.stockEstimate || 0)}</div>
+                      <div className="text-xs text-muted-foreground">Stock</div>
+                    </div>
+                  </div>
+                  <div className="text-sm">
+                    <span className="text-muted-foreground">HPP rata-rata: </span>
+                    <span className="font-semibold">{formatCurrency(data?.brandSummary?.avgHppPerUnit || 0)}</span>
+                  </div>
+                  <div className="space-y-2">
+                    {(data?.brandSummary?.latestBatches || []).slice(0, 2).map((batch: any) => (
+                      <div key={`${batch.sku}-${batch.productName}`} className="rounded-lg bg-white/70 p-2 text-sm">
+                        <div className="font-medium">{batch.brandName} — {batch.sku || batch.productName}</div>
+                        <div className="text-xs text-muted-foreground">{formatNumber(batch.qtyProduced)} unit • {batch.status} • QC {batch.qcStatus}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <Link href="/production" className="text-sm font-medium text-emerald-700 hover:underline">Buka Produksi →</Link>
+                </>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="border-orange-100 bg-orange-50/50">
+            <CardHeader>
+              <CardTitle className="text-lg">⚡ Next Actions</CardTitle>
+              <CardDescription>Shortcut operasional harian</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <ActionLink href="/finance" title="Review finance" detail="Saldo bank dan setoran modal" />
+              <ActionLink href="/events" title="Update Fragrantions" detail="Tenant, sponsor, budget, timeline" />
+              <ActionLink href="/production" title="Catat batch produksi" detail="Bahan, bottling, packaging, QC" />
+              <ActionLink href="/brands" title="Analisa brand" detail="Selling, COGS, expense, profit" />
+            </CardContent>
+          </Card>
+        </div>
+
         {/* Bank Accounts Detail */}
         {data?.bankAccounts?.length > 0 && (
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -120,31 +245,11 @@ export default function DashboardPage() {
         )}
 
         {/* Quick Links */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          <Link href="/finance" className="block">
-            <Card className="hover:border-primary/50 transition-colors">
-              <CardHeader>
-                <CardTitle className="text-lg">💰 Finance Detail</CardTitle>
-                <CardDescription>Lihat detail keuangan lengkap</CardDescription>
-              </CardHeader>
-            </Card>
-          </Link>
-          <Link href="/sheets" className="block">
-            <Card className="hover:border-primary/50 transition-colors">
-              <CardHeader>
-                <CardTitle className="text-lg">📋 Google Sheets</CardTitle>
-                <CardDescription>Buka data spreadsheet langsung</CardDescription>
-              </CardHeader>
-            </Card>
-          </Link>
-          <Link href="/reports" className="block">
-            <Card className="hover:border-primary/50 transition-colors">
-              <CardHeader>
-                <CardTitle className="text-lg">📈 Reports</CardTitle>
-                <CardDescription>Laporan pajak, BPJS, legal</CardDescription>
-              </CardHeader>
-            </Card>
-          </Link>
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          <QuickLink href="/finance" title="💰 Finance Detail" description="Keuangan, saham, setoran modal" />
+          <QuickLink href="/events" title="🎉 Events" description="Fragrantions portfolio & planning" />
+          <QuickLink href="/production" title="🏭 Produksi" description="Batch, HPP, QC, dan stock" />
+          <QuickLink href="/sheets" title="📋 Google Sheets" description="Buka data spreadsheet langsung" />
         </div>
       </RoleGate>
 

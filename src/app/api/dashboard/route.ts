@@ -1,6 +1,7 @@
 // GET /api/dashboard — Aggregate data from Google Sheets (real data)
 import { NextResponse } from "next/server";
-import { readSheet } from "@/lib/sheets/sheets-real";
+import { readRanges, readSheet } from "@/lib/sheets/sheets-real";
+import { EVENT_SHEETS, readEventSheet } from "@/lib/event/sheets";
 
 function parseMoney(value: unknown): number {
   if (typeof value === "number") return value;
@@ -23,6 +24,82 @@ function isShareholderRow(row: string[]): boolean {
   return /^\d+$/.test(String(row[0] ?? "").trim()) && Boolean(row[1]);
 }
 
+function cell(row: string[], idx: number): string {
+  return row[idx] || "";
+}
+
+function parseNumber(value: unknown): number {
+  if (typeof value === "number") return value;
+  if (!value) return 0;
+  return Number(String(value).replace(/[^0-9.-]/g, "")) || 0;
+}
+
+function summarizeBrands(masterRows: string[][], productionRows: string[][], salesRows: string[][], expenseRows: string[][]) {
+  const brands = masterRows.slice(1).filter((row) => cell(row, 0) || cell(row, 1));
+  const production = productionRows.slice(1).filter((row) => cell(row, 0) || cell(row, 4) || cell(row, 5));
+  const sales = salesRows.slice(1).filter((row) => cell(row, 0) || cell(row, 4) || cell(row, 5));
+  const expenses = expenseRows.slice(1).filter((row) => cell(row, 0) || cell(row, 4) || cell(row, 5));
+
+  const productionQty = production.reduce((sum, row) => sum + parseNumber(row[8]), 0);
+  const productionCost = production.reduce((sum, row) => sum + (parseNumber(row[15]) || parseNumber(row[11])), 0);
+  const activeBatches = production.filter((row) => !["cancelled", "archived"].includes(cell(row, 16).toLowerCase())).length;
+  const unitsSold = sales.reduce((sum, row) => sum + parseNumber(row[7]), 0);
+  const netRevenue = sales.reduce((sum, row) => sum + parseNumber(row[11]), 0);
+  const cogs = sales.reduce((sum, row) => sum + parseNumber(row[12]), 0);
+  const expensesTotal = expenses.reduce((sum, row) => sum + parseNumber(row[7]), 0);
+  const stockEstimate = productionQty - unitsSold;
+
+  return {
+    brandCount: brands.length,
+    productionQty,
+    productionCost,
+    activeBatches,
+    unitsSold,
+    stockEstimate,
+    avgHppPerUnit: productionQty ? productionCost / productionQty : 0,
+    netRevenue,
+    operatingProfit: netRevenue - cogs - expensesTotal,
+    latestBatches: production.slice(-3).reverse().map((row) => ({
+      date: cell(row, 1),
+      brandName: cell(row, 3),
+      sku: cell(row, 4),
+      productName: cell(row, 5),
+      qtyProduced: parseNumber(row[8]),
+      status: cell(row, 16) || cell(row, 12) || "Planned",
+      qcStatus: cell(row, 17) || "Unchecked",
+    })),
+  };
+}
+
+function summarizeEvents(rows: string[][]) {
+  const events = rows.slice(1).filter((row) => cell(row, 0) || cell(row, 1));
+  const upcomingStatuses = new Set(["planning", "open-registration", "planned"]);
+  const totalBudget = events.reduce((sum, row) => sum + parseNumber(row[12]), 0);
+  const totalCost = events.reduce((sum, row) => sum + parseNumber(row[13]), 0);
+  const totalRevenue = events.reduce((sum, row) => sum + parseNumber(row[14]), 0);
+  const upcoming = events.filter((row) => upcomingStatuses.has(cell(row, 4).toLowerCase())).length;
+  const completed = events.filter((row) => cell(row, 4).toLowerCase() === "completed").length;
+
+  return {
+    totalEvents: events.length,
+    upcoming,
+    completed,
+    totalBudget,
+    totalCost,
+    totalRevenue,
+    latestEvents: events.slice(-4).reverse().map((row) => ({
+      id: cell(row, 0),
+      name: cell(row, 1),
+      slug: cell(row, 2),
+      type: cell(row, 3),
+      status: cell(row, 4),
+      startDate: cell(row, 8),
+      venue: cell(row, 11) || cell(row, 10),
+      pic: cell(row, 6),
+    })),
+  };
+}
+
 export async function GET() {
   try {
     // ── Read all finance data from Google Sheets ──
@@ -35,6 +112,8 @@ export async function GET() {
       laporanBulanan,
       budgetVsActual,
       divisiShareholders,
+      brandRanges,
+      eventRows,
     ] = await Promise.all([
       readSheet("RekeningKoran").catch(() => []),
       readSheet("RekapRekening").catch(() => []),
@@ -44,6 +123,13 @@ export async function GET() {
       readSheet("LaporanBulanan").catch(() => []),
       readSheet("BudgetVsActual").catch(() => []),
       readSheet("DivisiShareholders").catch(() => []),
+      readRanges([
+        "Brand_Master!A1:K200",
+        "Brand_Production!A1:T1000",
+        "Brand_Sales!A1:N1000",
+        "Brand_Expenses!A1:L1000",
+      ]).catch(() => ({})),
+      readEventSheet(EVENT_SHEETS.Events).catch(() => []),
     ]);
 
     // ── Parse bank balances from RekeningKoran ──
@@ -180,6 +266,14 @@ export async function GET() {
       }
     }
 
+    const brandSummary = summarizeBrands(
+      brandRanges["Brand_Master!A1:K200"] || [],
+      brandRanges["Brand_Production!A1:T1000"] || [],
+      brandRanges["Brand_Sales!A1:N1000"] || [],
+      brandRanges["Brand_Expenses!A1:L1000"] || []
+    );
+    const eventSummary = summarizeEvents(eventRows);
+
     return NextResponse.json({
       bankAccounts,
       totalSaldoAkhir,
@@ -197,6 +291,18 @@ export async function GET() {
       sukukInvestors,
       totalUnitTerjual,
       rekapData,
+      brandSummary,
+      eventSummary,
+      executiveSnapshot: {
+        cash: totalSaldoAkhir,
+        paidInCapital: totalSudahSetor,
+        openCapitalObligation: totalSisaKewajiban,
+        eventCount: eventSummary.totalEvents,
+        upcomingEvents: eventSummary.upcoming,
+        productionQty: brandSummary.productionQty,
+        activeBatches: brandSummary.activeBatches,
+        estimatedStock: brandSummary.stockEstimate,
+      },
     });
   } catch (error) {
     return NextResponse.json(
