@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { CommercialPipeline } from "@/components/events/commercial-pipeline";
 
 interface Event {
   id: string;
@@ -75,7 +76,7 @@ export default function EventsPage() {
   const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<"overview" | "events" | "budget" | "timeline">("overview");
+  const [tab, setTab] = useState<"overview" | "events" | "commercial" | "budget" | "timeline">("overview");
 
   useEffect(() => {
     async function fetchEvents() {
@@ -127,6 +128,7 @@ export default function EventsPage() {
         {[
           { key: "overview", label: "📊 Overview" },
           { key: "events", label: "📅 Events" },
+          { key: "commercial", label: "🤝 Commercial" },
           { key: "budget", label: "💰 Budget & Keuangan" },
           { key: "timeline", label: "📋 Timeline" },
         ].map((t) => (
@@ -320,6 +322,8 @@ export default function EventsPage() {
             )}
           </CardContent>
         </Card>
+      ) : tab === "commercial" ? (
+        <CommercialPipeline events={events.map((event) => ({ id: event.id, name: event.name }))} />
       ) : tab === "budget" ? (
         <Card>
           <CardHeader>
