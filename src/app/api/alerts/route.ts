@@ -149,9 +149,16 @@ function eventBudgetAlerts(rows: string[][]): AlertItem[] {
   });
 }
 
+function shareholderName(row: string[]) {
+  return row
+    .slice(0, 4)
+    .map(text)
+    .find((cell) => /[A-Za-zÀ-ž]/.test(cell) && !/pemegang|nama|status|total/i.test(cell)) || "";
+}
+
 function shareholderAlerts(rows: string[][]): AlertItem[] {
   return rows.slice(1).filter((row) => row.some(Boolean)).flatMap((row, index) => {
-    const name = text(row[0]) || text(row[1]);
+    const name = shareholderName(row);
     const obligation = Math.max(amount(row[4]), amount(row[5]));
     const paid = amount(row[6]);
     const remaining = amount(row[7]) || Math.max(obligation - paid, 0);
