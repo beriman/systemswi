@@ -55,6 +55,9 @@ export default function FinancePage() {
   const [transactions, setTransactions] = useState<FinanceTransaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [uploadingProof, setUploadingProof] = useState(false);
+  const [uploadedProofUrl, setUploadedProofUrl] = useState("");
+  const [proofUploadMessage, setProofUploadMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [formMessage, setFormMessage] = useState<string | null>(null);
 
@@ -84,6 +87,29 @@ export default function FinancePage() {
     fetchData();
   }, []);
 
+  async function handleProofUpload(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setUploadingProof(true);
+    setProofUploadMessage(null);
+    const formData = new FormData(event.currentTarget);
+
+    try {
+      const res = await fetch("/api/finance/upload", {
+        method: "POST",
+        body: formData,
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || json.details || "Gagal upload bukti");
+      const proofUrl = json.file?.proofUrl || "";
+      setUploadedProofUrl(proofUrl);
+      setProofUploadMessage(`✅ Bukti tersimpan di Google Drive: ${json.file?.name || "file"}`);
+    } catch (err) {
+      setProofUploadMessage(`❌ ${String(err).replace(/^Error:\s*/, "")}`);
+    } finally {
+      setUploadingProof(false);
+    }
+  }
+
   async function handleTransactionSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSubmitting(true);
@@ -99,7 +125,7 @@ export default function FinancePage() {
       jumlah: Number(form.get("jumlah") || 0),
       sumber: String(form.get("sumber") || "bank"),
       referensi: String(form.get("referensi") || ""),
-      proofUrl: String(form.get("proofUrl") || ""),
+      proofUrl: String(form.get("proofUrl") || uploadedProofUrl || ""),
       catatan: String(form.get("catatan") || ""),
     };
 
@@ -113,6 +139,7 @@ export default function FinancePage() {
       if (!res.ok) throw new Error(json.error || json.details || "Gagal menyimpan transaksi");
       setFormMessage(`✅ Transaksi tersimpan ke ${json.syncedSheets?.join(" + ") || "Google Sheets"}.`);
       event.currentTarget.reset();
+      setUploadedProofUrl("");
       await fetchTransactions();
     } catch (err) {
       setFormMessage(`❌ ${String(err).replace(/^Error:\s*/, "")}`);
@@ -160,6 +187,38 @@ export default function FinancePage() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-5">
+                <form onSubmit={handleProofUpload} className="rounded-lg border border-dashed bg-background/80 p-4 space-y-3">
+                  <div>
+                    <h3 className="font-medium">Upload Bukti ke Google Drive Finance</h3>
+                    <p className="text-xs text-muted-foreground">
+                      PDF/gambar/CSV/XLS/XLSX maksimal 10MB. Setelah upload, URL otomatis dipakai sebagai Proof URL transaksi berikutnya dan dicatat ke SWI Memory Log.
+                    </p>
+                  </div>
+                  <div className="grid gap-3 md:grid-cols-4">
+                    <div className="space-y-2 md:col-span-2">
+                      <Label htmlFor="proof-file">File Bukti</Label>
+                      <Input id="proof-file" name="file" type="file" accept="image/*,.pdf,.csv,.xls,.xlsx" required />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="proof-referensi">Referensi</Label>
+                      <Input id="proof-referensi" name="referensi" placeholder="INV/mutasi/nota" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="proof-deskripsi">Deskripsi</Label>
+                      <Input id="proof-deskripsi" name="deskripsi" placeholder="Bukti transaksi" />
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <Button type="submit" variant="outline" disabled={uploadingProof}>{uploadingProof ? "Mengupload..." : "Upload Bukti"}</Button>
+                    {proofUploadMessage && <p className="text-sm text-muted-foreground">{proofUploadMessage}</p>}
+                    {uploadedProofUrl && (
+                      <a className="text-sm text-emerald-700 underline" href={uploadedProofUrl} target="_blank" rel="noreferrer">
+                        Buka proof URL
+                      </a>
+                    )}
+                  </div>
+                </form>
+
                 <form onSubmit={handleTransactionSubmit} className="grid gap-4 md:grid-cols-4">
                   <div className="space-y-2">
                     <Label htmlFor="tanggal">Tanggal</Label>
@@ -209,7 +268,14 @@ export default function FinancePage() {
                   </div>
                   <div className="space-y-2 md:col-span-2">
                     <Label htmlFor="proofUrl">Proof URL</Label>
-                    <Input id="proofUrl" name="proofUrl" type="url" placeholder="https://drive.google.com/..." />
+                    <Input
+                      id="proofUrl"
+                      name="proofUrl"
+                      type="url"
+                      placeholder="https://drive.google.com/..."
+                      value={uploadedProofUrl}
+                      onChange={(event) => setUploadedProofUrl(event.target.value)}
+                    />
                   </div>
                   <div className="space-y-2 md:col-span-4">
                     <Label htmlFor="catatan">Catatan Audit</Label>
