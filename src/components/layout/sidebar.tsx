@@ -20,6 +20,7 @@ const NAV_ITEMS: NavItem[] = [
     { label: "Produksi", href: "/production", icon: "🏭", feature: "dashboard:overview" },
     { label: "Inventory", href: "/inventory", icon: "📦", feature: "dashboard:overview" },
     { label: "Procurement", href: "/procurement", icon: "🧾", feature: "dashboard:overview" },
+    { label: "Alerts", href: "/alerts", icon: "🔔", feature: "dashboard:overview" },
     { label: "Brands", href: "/brands", icon: "🏷️", feature: "dashboard:overview" },
     { label: "Events", href: "/events", icon: "🎉", feature: "event-cde" },
     { label: "Sheets", href: "/sheets", icon: "📋", feature: "drive" },
