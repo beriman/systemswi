@@ -1,9 +1,13 @@
 // Document Generator types
 
 export type DocumentType =
+    | "invoice"
+    | "sponsor_proposal"
+    | "tenant_agreement"
     | "proposal"
     | "rab"
     | "laporan_keuangan"
+    | "monthly_report"
     | "laporan_progress"
     | "surat_undangan"
     | "kontrak"
@@ -53,9 +57,13 @@ export type DocumentStatus = "draft" | "pending" | "approved" | "sent";
 
 // Template labels
 export const DOCUMENT_TYPE_LABELS: Record<DocumentType, string> = {
+    invoice: "Invoice",
+    sponsor_proposal: "Proposal Sponsor",
+    tenant_agreement: "Tenant Agreement",
     proposal: "Proposal Event",
     rab: "Rencana Anggaran Biaya",
     laporan_keuangan: "Laporan Keuangan",
+    monthly_report: "Monthly Report",
     laporan_progress: "Laporan Progress",
     surat_undangan: "Surat Undangan",
     kontrak: "Kontrak Kerjasama",

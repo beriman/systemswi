@@ -7,15 +7,11 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
     getAllTemplates,
-    generateDocumentContent,
-    generateLetterNumber,
-    formatLetterNumber,
     DocumentTemplate,
     GeneratedDocument,
     getDocumentHistory,
     saveDocumentToHistory,
     deleteDocumentFromHistory,
-    createGeneratedDocument,
     exportToPDF,
 } from "@/lib/document";
 
@@ -29,6 +25,8 @@ export default function DocumentsPage() {
     const [currentDocument, setCurrentDocument] = useState<GeneratedDocument | null>(null);
     const [history, setHistory] = useState<GeneratedDocument[]>([]);
     const [activeTab, setActiveTab] = useState("create");
+    const [isGenerating, setIsGenerating] = useState(false);
+    const [statusMessage, setStatusMessage] = useState("");
 
     const templates = getAllTemplates();
 
@@ -42,38 +40,37 @@ export default function DocumentsPage() {
         setView("form");
     };
 
-    const handleGenerate = (data: Record<string, string>) => {
+    const handleGenerate = async (data: Record<string, string>) => {
         if (!selectedTemplate) return;
 
-        // Generate letter number for official documents
-        const needsLetterNumber = ["surat_undangan", "kontrak", "surat_tugas", "proposal"].includes(
-            selectedTemplate.type
-        );
+        setIsGenerating(true);
+        setStatusMessage("Generate dokumen dengan context Google Sheets...");
+        try {
+            const response = await fetch("/api/documents", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ type: selectedTemplate.type, data }),
+            });
+            const payload = await response.json();
+            if (!response.ok) {
+                throw new Error(payload?.missing?.join(", ") || payload?.error || "Gagal generate dokumen");
+            }
 
-        let ln = "";
-        if (needsLetterNumber) {
-            const letterNum = generateLetterNumber();
-            ln = formatLetterNumber(letterNum);
-            setLetterNumber(ln);
+            const doc: GeneratedDocument = payload.document;
+            setLetterNumber(doc.letterNumber || "");
+            setGeneratedContent(doc.content);
+            setCurrentDocument(doc);
+            saveDocumentToHistory(doc);
+            setHistory(getDocumentHistory());
+            setStatusMessage(`Dokumen berhasil dibuat. Source: ${payload.source}`);
+            setView("preview");
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            setStatusMessage(`Gagal: ${message}`);
+            alert(`Gagal generate dokumen: ${message}`);
+        } finally {
+            setIsGenerating(false);
         }
-
-        // Generate content
-        const content = generateDocumentContent(selectedTemplate.type, data, ln);
-        setGeneratedContent(content);
-
-        // Create and save document
-        const doc = createGeneratedDocument(
-            selectedTemplate.type,
-            selectedTemplate.name,
-            content,
-            ln,
-            data.event || undefined
-        );
-        setCurrentDocument(doc);
-        saveDocumentToHistory(doc);
-        setHistory(getDocumentHistory());
-
-        setView("preview");
     };
 
     const handleBack = () => {
@@ -129,8 +126,13 @@ export default function DocumentsPage() {
             <div>
                 <h2 className="text-2xl font-bold">📄 Document Generator</h2>
                 <p className="text-muted-foreground">
-                    Generate proposals, reports, and official letters
+                    Generate invoice, proposal sponsor, tenant agreement, RAB, dan monthly report dengan konteks Google Sheets.
                 </p>
+                {statusMessage && (
+                    <p className="mt-2 rounded-md border bg-muted px-3 py-2 text-sm text-muted-foreground">
+                        {isGenerating ? "⏳ " : "ℹ️ "}{statusMessage}
+                    </p>
+                )}
             </div>
 
             <RoleGate feature="ai-features">
