@@ -221,6 +221,8 @@ export default function DashboardPage() {
               <ActionLink href="/finance" title="Review finance" detail="Saldo bank dan setoran modal" />
               <ActionLink href="/events" title="Update Fragrantions" detail="Tenant, sponsor, budget, timeline" />
               <ActionLink href="/production" title="Catat batch produksi" detail="Bahan, bottling, packaging, QC" />
+              <ActionLink href="/inventory" title="Cek restock alert" detail="Bahan, packaging, movement stock" />
+              <ActionLink href="/procurement" title="Buat PO / Receiving QC" detail="Supplier, purchase order, barang masuk" />
               <ActionLink href="/brands" title="Analisa brand" detail="Selling, COGS, expense, profit" />
             </CardContent>
           </Card>
@@ -245,11 +247,12 @@ export default function DashboardPage() {
         )}
 
         {/* Quick Links */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-6">
           <QuickLink href="/finance" title="💰 Finance Detail" description="Keuangan, saham, setoran modal" />
           <QuickLink href="/events" title="🎉 Events" description="Fragrantions portfolio & planning" />
           <QuickLink href="/production" title="🏭 Produksi" description="Batch, HPP, QC, dan stock" />
           <QuickLink href="/inventory" title="📦 Inventory" description="Bahan, packaging, movement, alert" />
+          <QuickLink href="/procurement" title="🧾 Procurement" description="Supplier, PO, receiving QC" />
           <QuickLink href="/sheets" title="📋 Google Sheets" description="Buka data spreadsheet langsung" />
         </div>
       </RoleGate>

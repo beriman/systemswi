@@ -48,6 +48,9 @@ export const SHEETS: Record<string, { range: string; description: string }> = {
   BrandDashboard:    { range: "Brand_Dashboard!A1:C50",       description: "Ringkasan analisa brand" },
   InventoryMaster:   { range: "Inventory_Master!A1:O1000",     description: "Master stok bahan baku dan packaging" },
   InventoryMovements:{ range: "Inventory_Movements!A1:J1000",  description: "Mutasi stok masuk/keluar/adjustment" },
+  SupplierMaster:    { range: "Supplier_Master!A1:J1000",       description: "Master supplier bahan baku, packaging, dan vendor operasional" },
+  PurchaseOrders:    { range: "Purchase_Orders!A1:N1000",       description: "Purchase order procurement dan status pembayaran/penerimaan" },
+  GoodsReceipts:     { range: "Goods_Receipts!A1:M1000",        description: "Receiving goods dan QC intake linked ke inventory" },
 };
 
 // ── Auth ──────────────────────────────────────────────────────────
