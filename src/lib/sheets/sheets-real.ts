@@ -51,6 +51,9 @@ export const SHEETS: Record<string, { range: string; description: string }> = {
   SupplierMaster:    { range: "Supplier_Master!A1:J1000",       description: "Master supplier bahan baku, packaging, dan vendor operasional" },
   PurchaseOrders:    { range: "Purchase_Orders!A1:N1000",       description: "Purchase order procurement dan status pembayaran/penerimaan" },
   GoodsReceipts:     { range: "Goods_Receipts!A1:M1000",        description: "Receiving goods dan QC intake linked ke inventory" },
+  ComplianceChecks:  { range: "Compliance_Checks!A1:L1000",     description: "Formula compliance checks, allergen labels, IFRA/BPOM notes" },
+  ProductBatches:    { range: "Product_Batches!A1:M1000",       description: "Batch traceability for finished products" },
+  QCChecklist:       { range: "QC_Checklist!A1:I1000",          description: "QC checklist results per batch and stage" },
 };
 
 // ── Auth ──────────────────────────────────────────────────────────
