@@ -46,6 +46,8 @@ export const SHEETS: Record<string, { range: string; description: string }> = {
   BrandSales:        { range: "Brand_Sales!A1:N1000",         description: "Selling / penjualan per brand" },
   BrandExpenses:     { range: "Brand_Expenses!A1:L1000",      description: "Pengeluaran per brand" },
   BrandDashboard:    { range: "Brand_Dashboard!A1:C50",       description: "Ringkasan analisa brand" },
+  InventoryMaster:   { range: "Inventory_Master!A1:O1000",     description: "Master stok bahan baku dan packaging" },
+  InventoryMovements:{ range: "Inventory_Movements!A1:J1000",  description: "Mutasi stok masuk/keluar/adjustment" },
 };
 
 // ── Auth ──────────────────────────────────────────────────────────
@@ -161,11 +163,12 @@ export async function appendRows(sheetName: string, rows: (string | number)[][])
   const auth = getAuth();
   const sheets = google.sheets({ version: "v4", auth });
   const cfg = SHEETS[sheetName];
-  const match = cfg?.range?.match(/^([A-Z]+)(\d+):([A-Z]+)(\d+)$/);
-  let appendRange = `${sheetName}!A:Z`;
-  if (match) {
-    appendRange = `${sheetName}!${match[1]}:${match[3]}`;
-  }
+  const rangeConfig = cfg?.range || `${sheetName}!A:Z`;
+  const rangeMatch = rangeConfig.match(/^(?:([^!]+)!)?([A-Z]+)\d+:([A-Z]+)\d+$/);
+  const actualSheetName = rangeMatch?.[1] || sheetName;
+  const appendRange = rangeMatch
+    ? `${actualSheetName}!${rangeMatch[2]}:${rangeMatch[3]}`
+    : `${actualSheetName}!A:Z`;
   await sheets.spreadsheets.values.append({
     spreadsheetId: SPREADSHEET_ID,
     range: appendRange,
@@ -177,10 +180,11 @@ export async function appendRows(sheetName: string, rows: (string | number)[][])
 export async function updateRow(sheetName: string, rowNumber: number, values: (string | number)[]): Promise<void> {
   const cfg = SHEETS[sheetName];
   if (!cfg) throw new Error(`Unknown sheet: ${sheetName}`);
-  const match = cfg.range.match(/^([A-Z]+)\d+:([A-Z]+)\d+$/);
-  const colStart = match ? match[1] : "A";
-  const colEnd = match ? match[2] : "Z";
-  const range = `${sheetName}!${colStart}${rowNumber}:${colEnd}${rowNumber}`;
+  const match = cfg.range.match(/^(?:([^!]+)!)?([A-Z]+)\d+:([A-Z]+)\d+$/);
+  const actualSheetName = match?.[1] || sheetName;
+  const colStart = match ? match[2] : "A";
+  const colEnd = match ? match[3] : "Z";
+  const range = `${actualSheetName}!${colStart}${rowNumber}:${colEnd}${rowNumber}`;
   await writeRange(range, [values]);
 }
 

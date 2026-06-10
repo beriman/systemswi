@@ -245,10 +245,11 @@ export default function DashboardPage() {
         )}
 
         {/* Quick Links */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
           <QuickLink href="/finance" title="💰 Finance Detail" description="Keuangan, saham, setoran modal" />
           <QuickLink href="/events" title="🎉 Events" description="Fragrantions portfolio & planning" />
           <QuickLink href="/production" title="🏭 Produksi" description="Batch, HPP, QC, dan stock" />
+          <QuickLink href="/inventory" title="📦 Inventory" description="Bahan, packaging, movement, alert" />
           <QuickLink href="/sheets" title="📋 Google Sheets" description="Buka data spreadsheet langsung" />
         </div>
       </RoleGate>
