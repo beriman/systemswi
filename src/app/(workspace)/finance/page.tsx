@@ -1,10 +1,14 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, type FormEvent } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { RoleGate } from "@/components/auth/role-gate";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 
 interface DashboardData {
   bankAccounts: any[];
@@ -25,6 +29,18 @@ interface DashboardData {
   rekapData: any[];
 }
 
+interface FinanceTransaction {
+  id: string;
+  tanggal: string;
+  deskripsi: string;
+  debit: number;
+  kredit: number;
+  kodeAkun: string;
+  referensi: string;
+  catatan: string;
+  divisi: string;
+}
+
 function formatCurrency(amount: number): string {
   if (!amount && amount !== 0) return "Rp 0";
   return new Intl.NumberFormat("id-ID", {
@@ -36,15 +52,28 @@ function formatCurrency(amount: number): string {
 
 export default function FinancePage() {
   const [data, setData] = useState<DashboardData | null>(null);
+  const [transactions, setTransactions] = useState<FinanceTransaction[]>([]);
   const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [formMessage, setFormMessage] = useState<string | null>(null);
+
+  async function fetchTransactions() {
+    const res = await fetch("/api/finance/transactions", { cache: "no-store" });
+    if (!res.ok) throw new Error("Failed to fetch finance transactions");
+    const json = await res.json();
+    setTransactions(json.transactions || []);
+  }
 
   useEffect(() => {
     async function fetchData() {
       try {
-        const res = await fetch("/api/dashboard");
-        if (!res.ok) throw new Error("Failed to fetch");
-        const json = await res.json();
+        const [dashboardRes] = await Promise.all([
+          fetch("/api/dashboard"),
+          fetchTransactions(),
+        ]);
+        if (!dashboardRes.ok) throw new Error("Failed to fetch dashboard");
+        const json = await dashboardRes.json();
         setData(json);
       } catch (err) {
         setError(String(err));
@@ -54,6 +83,43 @@ export default function FinancePage() {
     }
     fetchData();
   }, []);
+
+  async function handleTransactionSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSubmitting(true);
+    setFormMessage(null);
+    const form = new FormData(event.currentTarget);
+    const payload = {
+      tanggal: String(form.get("tanggal") || ""),
+      jenis: String(form.get("jenis") || "pemasukan"),
+      divisi: String(form.get("divisi") || "Holding"),
+      kodeAkun: String(form.get("kodeAkun") || ""),
+      kategori: String(form.get("kategori") || ""),
+      deskripsi: String(form.get("deskripsi") || ""),
+      jumlah: Number(form.get("jumlah") || 0),
+      sumber: String(form.get("sumber") || "bank"),
+      referensi: String(form.get("referensi") || ""),
+      proofUrl: String(form.get("proofUrl") || ""),
+      catatan: String(form.get("catatan") || ""),
+    };
+
+    try {
+      const res = await fetch("/api/finance/transactions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || json.details || "Gagal menyimpan transaksi");
+      setFormMessage(`✅ Transaksi tersimpan ke ${json.syncedSheets?.join(" + ") || "Google Sheets"}.`);
+      event.currentTarget.reset();
+      await fetchTransactions();
+    } catch (err) {
+      setFormMessage(`❌ ${String(err).replace(/^Error:\s*/, "")}`);
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -85,6 +151,107 @@ export default function FinancePage() {
           </Card>
         ) : data ? (
           <>
+            {/* Transaction Input */}
+            <Card className="border-emerald-200 bg-emerald-50/40">
+              <CardHeader>
+                <CardTitle>Input Transaksi + Bukti</CardTitle>
+                <CardDescription>
+                  Simpan pemasukan/pengeluaran ke Google Sheets Cash_Harian + Buku_Kas. Proof URL dapat diisi dengan link Drive/nota untuk traceability.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-5">
+                <form onSubmit={handleTransactionSubmit} className="grid gap-4 md:grid-cols-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="tanggal">Tanggal</Label>
+                    <Input id="tanggal" name="tanggal" type="date" defaultValue={new Date().toISOString().slice(0, 10)} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="jenis">Jenis</Label>
+                    <select id="jenis" name="jenis" className="h-10 w-full rounded-md border bg-background px-3 text-sm">
+                      <option value="pemasukan">Pemasukan</option>
+                      <option value="pengeluaran">Pengeluaran</option>
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="divisi">Divisi</Label>
+                    <select id="divisi" name="divisi" className="h-10 w-full rounded-md border bg-background px-3 text-sm">
+                      <option>Holding</option>
+                      <option>Produksi</option>
+                      <option>Store</option>
+                      <option>Event</option>
+                      <option>Ecommerse</option>
+                      <option>Digital</option>
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="jumlah">Jumlah (Rp)</Label>
+                    <Input id="jumlah" name="jumlah" type="number" min="1" step="1" placeholder="250000" required />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="kodeAkun">Kode Akun</Label>
+                    <Input id="kodeAkun" name="kodeAkun" placeholder="401 / 501" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="kategori">Kategori</Label>
+                    <Input id="kategori" name="kategori" placeholder="Penjualan / Operasional" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="sumber">Sumber</Label>
+                    <Input id="sumber" name="sumber" placeholder="bank / cash / qris" defaultValue="bank" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="referensi">Referensi</Label>
+                    <Input id="referensi" name="referensi" placeholder="INV-2026-001 / mutasi" />
+                  </div>
+                  <div className="space-y-2 md:col-span-2">
+                    <Label htmlFor="deskripsi">Deskripsi</Label>
+                    <Input id="deskripsi" name="deskripsi" placeholder="Contoh: DP tenant Fragrantions" required />
+                  </div>
+                  <div className="space-y-2 md:col-span-2">
+                    <Label htmlFor="proofUrl">Proof URL</Label>
+                    <Input id="proofUrl" name="proofUrl" type="url" placeholder="https://drive.google.com/..." />
+                  </div>
+                  <div className="space-y-2 md:col-span-4">
+                    <Label htmlFor="catatan">Catatan Audit</Label>
+                    <Textarea id="catatan" name="catatan" placeholder="Catatan approval, PIC, atau konteks transaksi" />
+                  </div>
+                  <div className="md:col-span-4 flex items-center gap-3">
+                    <Button type="submit" disabled={submitting}>{submitting ? "Menyimpan..." : "Simpan Transaksi"}</Button>
+                    {formMessage && <p className="text-sm text-muted-foreground">{formMessage}</p>}
+                  </div>
+                </form>
+
+                <div className="rounded-md border bg-background overflow-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Tanggal</TableHead>
+                        <TableHead>Deskripsi</TableHead>
+                        <TableHead>Divisi</TableHead>
+                        <TableHead className="text-right">Masuk</TableHead>
+                        <TableHead className="text-right">Keluar</TableHead>
+                        <TableHead>Proof/Ref</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {transactions.length === 0 ? (
+                        <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground">Belum ada transaksi terbaru dari Cash_Harian.</TableCell></TableRow>
+                      ) : transactions.map((tx) => (
+                        <TableRow key={tx.id}>
+                          <TableCell>{tx.tanggal}</TableCell>
+                          <TableCell className="max-w-[280px] truncate">{tx.deskripsi}</TableCell>
+                          <TableCell>{tx.divisi}</TableCell>
+                          <TableCell className="text-right text-green-700">{tx.debit ? formatCurrency(tx.debit) : "-"}</TableCell>
+                          <TableCell className="text-right text-red-700">{tx.kredit ? formatCurrency(tx.kredit) : "-"}</TableCell>
+                          <TableCell className="max-w-[240px] truncate text-xs">{tx.referensi || tx.catatan || "-"}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </CardContent>
+            </Card>
+
             {/* Bank Accounts */}
             <Card>
               <CardHeader>
