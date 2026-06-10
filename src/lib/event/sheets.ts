@@ -23,6 +23,38 @@ export const EVENT_SHEETS = {
 // ── Auth (reuse from sheets-real) ──
 let cachedAuth: any = null;
 
+// ── Read cache ────────────────────────────────────────────────────
+const READ_CACHE_TTL_MS = Number.parseInt(process.env.SHEETS_READ_CACHE_TTL_MS || "30000", 10);
+type CacheEntry = { expiresAt: number; values: string[][] };
+const readCache = new Map<string, CacheEntry>();
+
+function cloneRows(rows: string[][]): string[][] {
+  return rows.map((row) => [...row]);
+}
+
+function getCachedRows(cacheKey: string): string[][] | null {
+  if (READ_CACHE_TTL_MS <= 0) return null;
+  const cached = readCache.get(cacheKey);
+  if (!cached) return null;
+  if (cached.expiresAt <= Date.now()) {
+    readCache.delete(cacheKey);
+    return null;
+  }
+  return cloneRows(cached.values);
+}
+
+function setCachedRows(cacheKey: string, rows: string[][]): void {
+  if (READ_CACHE_TTL_MS <= 0) return;
+  readCache.set(cacheKey, {
+    expiresAt: Date.now() + READ_CACHE_TTL_MS,
+    values: cloneRows(rows),
+  });
+}
+
+function invalidateReadCache(): void {
+  readCache.clear();
+}
+
 function loadCredentialsFromFile() {
   try {
     const content = JSON.parse(fs.readFileSync(TOKEN_PATH, "utf-8"));
@@ -80,13 +112,19 @@ function getAuth() {
 
 // ── Read ──
 export async function readEventSheet(sheetName: string): Promise<string[][]> {
+  const cacheKey = `event:${sheetName}`;
+  const cached = getCachedRows(cacheKey);
+  if (cached) return cached;
+
   const auth = getAuth();
   const sheets = google.sheets({ version: "v4", auth });
   const { data } = await sheets.spreadsheets.values.get({
     spreadsheetId: SPREADSHEET_ID,
     range: `${sheetName}!A:Z`,
   });
-  return data.values || [];
+  const rows = data.values || [];
+  setCachedRows(cacheKey, rows);
+  return cloneRows(rows);
 }
 
 // ── Write ──
@@ -99,6 +137,7 @@ export async function writeEventSheet(sheetName: string, values: (string | numbe
     valueInputOption: "USER_ENTERED",
     requestBody: { values },
   });
+  invalidateReadCache();
 }
 
 // ── Append ──
@@ -111,6 +150,7 @@ export async function appendEventRows(sheetName: string, rows: (string | number)
     valueInputOption: "USER_ENTERED",
     requestBody: { values: rows },
   });
+  invalidateReadCache();
 }
 
 // ── Create sheet if not exists ──
@@ -142,6 +182,7 @@ export async function ensureEventSheet(sheetName: string, headers: string[]): Pr
     valueInputOption: "USER_ENTERED",
     requestBody: { values: [headers] },
   });
+  invalidateReadCache();
 }
 
 // ── Initialize all event sheets ──

@@ -59,6 +59,41 @@ export const SHEETS: Record<string, { range: string; description: string }> = {
 // ── Auth ──────────────────────────────────────────────────────────
 let cachedAuth: any = null;
 
+// ── Read cache ────────────────────────────────────────────────────
+// Most workspace pages aggregate the same Google Sheets ranges repeatedly.
+// A short in-memory TTL keeps Google Sheets as source of truth while reducing
+// API latency/rate-limit pressure for dashboards and cron probes.
+const READ_CACHE_TTL_MS = Number.parseInt(process.env.SHEETS_READ_CACHE_TTL_MS || "30000", 10);
+type CacheEntry = { expiresAt: number; values: string[][] };
+const readCache = new Map<string, CacheEntry>();
+
+function cloneRows(rows: string[][]): string[][] {
+  return rows.map((row) => [...row]);
+}
+
+function getCachedRows(cacheKey: string): string[][] | null {
+  if (READ_CACHE_TTL_MS <= 0) return null;
+  const cached = readCache.get(cacheKey);
+  if (!cached) return null;
+  if (cached.expiresAt <= Date.now()) {
+    readCache.delete(cacheKey);
+    return null;
+  }
+  return cloneRows(cached.values);
+}
+
+function setCachedRows(cacheKey: string, rows: string[][]): void {
+  if (READ_CACHE_TTL_MS <= 0) return;
+  readCache.set(cacheKey, {
+    expiresAt: Date.now() + READ_CACHE_TTL_MS,
+    values: cloneRows(rows),
+  });
+}
+
+function invalidateReadCache(): void {
+  readCache.clear();
+}
+
 function loadCredentialsFromFile() {
   try {
     const content = JSON.parse(fs.readFileSync(TOKEN_PATH, "utf-8"));
@@ -120,17 +155,24 @@ export function getAuth() {
 
 export function invalidateAuth() {
   cachedAuth = null;
+  invalidateReadCache();
 }
 
 // ── Read ──────────────────────────────────────────────────────────
 export async function readRange(range: string): Promise<string[][]> {
+  const cacheKey = `range:${range}`;
+  const cached = getCachedRows(cacheKey);
+  if (cached) return cached;
+
   const auth = getAuth();
   const sheets = google.sheets({ version: "v4", auth });
   const { data } = await sheets.spreadsheets.values.get({
     spreadsheetId: SPREADSHEET_ID,
     range,
   });
-  return data.values || [];
+  const rows = data.values || [];
+  setCachedRows(cacheKey, rows);
+  return cloneRows(rows);
 }
 
 export async function readSheet(sheetName: string): Promise<string[][]> {
@@ -140,15 +182,31 @@ export async function readSheet(sheetName: string): Promise<string[][]> {
 }
 
 export async function readRanges(ranges: string[]): Promise<Record<string, string[][]>> {
+  const result: Record<string, string[][]> = {};
+  const missingRanges: string[] = [];
+
+  for (const range of ranges) {
+    const cached = getCachedRows(`range:${range}`);
+    if (cached) {
+      result[range] = cached;
+    } else {
+      missingRanges.push(range);
+    }
+  }
+
+  if (missingRanges.length === 0) return result;
+
   const auth = getAuth();
   const sheets = google.sheets({ version: "v4", auth });
   const { data } = await sheets.spreadsheets.values.batchGet({
     spreadsheetId: SPREADSHEET_ID,
-    ranges,
+    ranges: missingRanges,
   });
-  const result: Record<string, string[][]> = {};
   (data.valueRanges || []).forEach((vr, i) => {
-    result[ranges[i]] = vr.values || [];
+    const range = missingRanges[i];
+    const rows = vr.values || [];
+    setCachedRows(`range:${range}`, rows);
+    result[range] = cloneRows(rows);
   });
   return result;
 }
@@ -163,6 +221,7 @@ export async function writeRange(range: string, values: (string | number)[][]): 
     valueInputOption: "USER_ENTERED",
     requestBody: { values },
   });
+  invalidateReadCache();
 }
 
 export async function appendRows(sheetName: string, rows: (string | number)[][]): Promise<void> {
@@ -181,6 +240,7 @@ export async function appendRows(sheetName: string, rows: (string | number)[][])
     valueInputOption: "USER_ENTERED",
     requestBody: { values: rows },
   });
+  invalidateReadCache();
 }
 
 export async function updateRow(sheetName: string, rowNumber: number, values: (string | number)[]): Promise<void> {
@@ -222,4 +282,5 @@ export async function deleteRow(sheetName: string, rowNumber: number): Promise<v
       }],
     },
   });
+  invalidateReadCache();
 }
