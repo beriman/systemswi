@@ -238,6 +238,7 @@ export default function DashboardPage() {
               <ActionLink href="/compliance" title="Review compliance batch" detail="Formula, QC, traceability, label" />
               <ActionLink href="/alerts" title="Cek alert operasional" detail="Stock, event, finance, deadline" />
               <ActionLink href="/customers" title="Sync customer CRM" detail="WhatsApp intake, consent, CLV, follow-up" />
+              <ActionLink href="/scent-profile" title="AI scent profile" detail="Interview customer → draft aroma brief" />
               <ActionLink href="/automation" title="Preview WhatsApp" detail="FAQ, broadcast, customer intake tanpa auto-send" />
               <ActionLink href="/brands" title="Analisa brand" detail="Selling, COGS, expense, profit" />
             </CardContent>
@@ -263,7 +264,7 @@ export default function DashboardPage() {
         )}
 
         {/* Quick Links */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-11">
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-12">
           <QuickLink href="/finance" title="💰 Finance Detail" description="Keuangan, saham, setoran modal" />
           <QuickLink href="/events" title="🎉 Events" description="Fragrantions portfolio & planning" />
           <QuickLink href="/production" title="🏭 Produksi" description="Batch, HPP, QC, dan stock" />
@@ -273,6 +274,7 @@ export default function DashboardPage() {
           <QuickLink href="/documents" title="📄 Documents" description="Invoice, proposal, RAB, report" />
           <QuickLink href="/alerts" title="🔔 Alerts" description="Prioritas tindakan lintas modul" />
           <QuickLink href="/customers" title="👥 Customers" description="CRM, consent, follow-up" />
+          <QuickLink href="/scent-profile" title="🧪 Scent Profile" description="Interview → draft aroma brief" />
           <QuickLink href="/automation" title="💬 WhatsApp" description="FAQ, broadcast, customer intake" />
           <QuickLink href="/sheets" title="📋 Google Sheets" description="Buka data spreadsheet langsung" />
         </div>
