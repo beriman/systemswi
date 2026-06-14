@@ -22,6 +22,7 @@ const NAV_ITEMS: NavItem[] = [
     { label: "Procurement", href: "/procurement", icon: "🧾", feature: "dashboard:overview" },
     { label: "Compliance", href: "/compliance", icon: "✅", feature: "dashboard:overview" },
     { label: "Alerts", href: "/alerts", icon: "🔔", feature: "dashboard:overview" },
+    { label: "Customers", href: "/customers", icon: "👥", feature: "dashboard:overview" },
     { label: "Documents", href: "/documents", icon: "📄", feature: "ai-features" },
     { label: "Brands", href: "/brands", icon: "🏷️", feature: "dashboard:overview" },
     { label: "Events", href: "/events", icon: "🎉", feature: "event-cde" },
