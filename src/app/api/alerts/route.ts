@@ -177,6 +177,105 @@ function shareholderAlerts(rows: string[][]): AlertItem[] {
   });
 }
 
+function procurementAlerts(poRows: string[][], receiptRows: string[][]): AlertItem[] {
+  const poAlerts = poRows.slice(1).filter((row) => row.some(Boolean)).flatMap((row) => {
+    const poId = text(row[0]);
+    const status = text(row[10]).toLowerCase() || "draft";
+    if (!poId || ["received", "cancelled", "closed"].includes(status)) return [];
+    const expectedDate = text(row[11]);
+    const days = daysUntil(expectedDate);
+    const total = amount(row[9]);
+    const overdue = days !== null && days < 0;
+    const dueSoon = days !== null && days <= 7;
+    if (!overdue && !dueSoon && status !== "partial") return [];
+    return [{
+      id: `procurement-po-${poId}`,
+      category: "procurement" as const,
+      severity: overdue ? "high" as const : "medium" as const,
+      title: `${overdue ? "PO overdue" : "PO perlu follow-up"}: ${poId}`,
+      detail: `${text(row[5]) || "Item TBA"} dari ${text(row[3]) || "Supplier TBA"}; status ${status}; ETA ${expectedDate || "TBA"}${days !== null ? (overdue ? ` (${Math.abs(days)} hari lewat)` : ` (${days} hari lagi)`) : ""}.`,
+      owner: "Procurement/Operations",
+      dueDate: expectedDate || undefined,
+      amount: total || undefined,
+      source: "Purchase_Orders",
+      actionUrl: "/procurement",
+    }];
+  });
+
+  const qcAlerts = receiptRows.slice(1).filter((row) => row.some(Boolean)).flatMap((row) => {
+    const receiptId = text(row[1]);
+    const result = text(row[7]).toLowerCase() || "pending";
+    if (!receiptId || !["failed", "pending", "needs_review"].includes(result)) return [];
+    return [{
+      id: `procurement-qc-${receiptId}`,
+      category: "procurement" as const,
+      severity: result === "failed" ? "high" as const : "medium" as const,
+      title: `${result === "failed" ? "QC receiving gagal" : "QC receiving pending"}: ${receiptId}`,
+      detail: `${text(row[4]) || text(row[5]) || "Item TBA"}; qty ${amount(row[6]).toLocaleString("id-ID")}; PO ${text(row[2]) || "TBA"}. ${text(row[8]) || "Perlu review QC sebelum stok dipakai."}`,
+      owner: text(row[10]) || "QC/Procurement",
+      source: "Goods_Receipts",
+      actionUrl: "/procurement",
+    }];
+  });
+
+  return [...poAlerts, ...qcAlerts];
+}
+
+function complianceAlerts(checkRows: string[][], batchRows: string[][], qcRows: string[][]): AlertItem[] {
+  const checkAlerts = checkRows.slice(1).filter((row) => row.some(Boolean)).flatMap((row) => {
+    const formulaId = text(row[1]);
+    const status = text(row[5]).toLowerCase() || "draft";
+    const riskScore = amount(row[6]);
+    if (!formulaId || status === "passed") return [];
+    return [{
+      id: `compliance-check-${formulaId}`,
+      category: "compliance" as const,
+      severity: status === "blocked" || riskScore >= 75 ? "critical" as const : "medium" as const,
+      title: `Compliance formula perlu review: ${text(row[2]) || formulaId}`,
+      detail: `Produk ${text(row[3]) || "TBA"}; status ${status}; IFRA ${text(row[4]) || "TBA"}; risk score ${riskScore}. ${text(row[7]) || "Butuh verifikasi SDS/COA/BPOM sebelum release."}`,
+      owner: text(row[9]) || "Compliance/QC",
+      source: "Compliance_Checks",
+      actionUrl: "/compliance",
+    }];
+  });
+
+  const batchAlerts = batchRows.slice(1).filter((row) => row.some(Boolean)).flatMap((row) => {
+    const batchId = text(row[1]);
+    const qcStatus = text(row[7]).toLowerCase() || "pending";
+    const traceability = text(row[8]).toLowerCase() || "draft";
+    if (!batchId || (qcStatus === "passed" && ["complete", "completed", "done"].includes(traceability))) return [];
+    return [{
+      id: `compliance-batch-${batchId}`,
+      category: "compliance" as const,
+      severity: qcStatus === "failed" ? "critical" as const : "medium" as const,
+      title: `Batch traceability belum lengkap: ${batchId}`,
+      detail: `${text(row[2]) || "Product TBA"}; QC ${qcStatus}; traceability ${traceability}; inventory ref ${text(row[9]) || "TBA"}.`,
+      owner: text(row[11]) || "Produksi/QC",
+      dueDate: text(row[4]) || undefined,
+      source: "Product_Batches",
+      actionUrl: "/compliance",
+    }];
+  });
+
+  const qcAlerts = qcRows.slice(1).filter((row) => row.some(Boolean)).flatMap((row) => {
+    const checklistId = text(row[1]);
+    const result = text(row[5]).toLowerCase() || "needs_review";
+    if (!checklistId || result === "passed") return [];
+    return [{
+      id: `compliance-qc-${checklistId}`,
+      category: "compliance" as const,
+      severity: result === "failed" ? "high" as const : "medium" as const,
+      title: `QC checklist perlu tindakan: ${text(row[2]) || checklistId}`,
+      detail: `${text(row[3]) || "Stage TBA"} — ${text(row[4]) || "Item QC"}; result ${result}. ${text(row[8]) || "Lengkapi evidence/review QC."}`,
+      owner: text(row[6]) || "QC",
+      source: "QC_Checklist",
+      actionUrl: "/compliance",
+    }];
+  });
+
+  return [...checkAlerts, ...batchAlerts, ...qcAlerts];
+}
+
 function sortAlerts(alerts: AlertItem[]) {
   const weight: Record<Severity, number> = { critical: 4, high: 3, medium: 2, low: 1 };
   return [...alerts].sort((a, b) => weight[b.severity] - weight[a.severity] || (b.amount || 0) - (a.amount || 0));
@@ -184,13 +283,30 @@ function sortAlerts(alerts: AlertItem[]) {
 
 export async function GET() {
   try {
-    const [inventoryRows, tenantRows, sponsorRows, timelineRows, budgetRows, shareholderRows] = await Promise.all([
+    const [
+      inventoryRows,
+      tenantRows,
+      sponsorRows,
+      timelineRows,
+      budgetRows,
+      shareholderRows,
+      poRows,
+      receiptRows,
+      complianceRows,
+      batchRows,
+      qcRows,
+    ] = await Promise.all([
       readRange("Inventory_Master!A1:O1000").catch(() => []),
       readEventSheet(EVENT_SHEETS.Tenants).catch(() => []),
       readEventSheet(EVENT_SHEETS.Sponsors).catch(() => []),
       readEventSheet(EVENT_SHEETS.Timeline).catch(() => []),
       readEventSheet(EVENT_SHEETS.Budget).catch(() => []),
       readRange("PemegangSaham!A1:I100").catch(() => []),
+      readRange("Purchase_Orders!A1:N1000").catch(() => []),
+      readRange("Goods_Receipts!A1:M1000").catch(() => []),
+      readRange("Compliance_Checks!A1:L1000").catch(() => []),
+      readRange("Product_Batches!A1:M1000").catch(() => []),
+      readRange("QC_Checklist!A1:I1000").catch(() => []),
     ]);
 
     const alerts = sortAlerts([
@@ -200,6 +316,8 @@ export async function GET() {
       ...eventTimelineAlerts(timelineRows),
       ...eventBudgetAlerts(budgetRows),
       ...shareholderAlerts(shareholderRows),
+      ...procurementAlerts(poRows, receiptRows),
+      ...complianceAlerts(complianceRows, batchRows, qcRows),
     ]);
 
     const bySeverity = alerts.reduce<Record<Severity, number>>((acc, alert) => {
@@ -213,7 +331,7 @@ export async function GET() {
     }, {});
 
     return NextResponse.json({
-      source: "Google Sheets: Inventory_Master, Event_* sheets, PemegangSaham",
+      source: "Google Sheets: Inventory_Master, Event_* sheets, PemegangSaham, Purchase_Orders, Goods_Receipts, Compliance_Checks, Product_Batches, QC_Checklist",
       generatedAt: new Date().toISOString(),
       summary: {
         total: alerts.length,

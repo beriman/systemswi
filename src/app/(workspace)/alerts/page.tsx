@@ -100,7 +100,7 @@ export default function AlertsPage() {
               <h1 className="text-4xl font-bold">Alerts & Next Actions</h1>
               <p className="mt-3 max-w-3xl text-white/65">
                 Konsolidasi alert dari Google Sheets: low stock, tenant/sponsor follow-up, deadline event,
-                over budget, dan sisa setoran saham. Data dibaca real-time tanpa mengubah sheet.
+                over budget, sisa setoran saham, PO/QC procurement, dan compliance/batch traceability. Data dibaca real-time tanpa mengubah sheet.
               </p>
             </div>
             <button
