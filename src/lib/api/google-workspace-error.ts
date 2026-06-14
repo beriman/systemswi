@@ -17,3 +17,13 @@ export function googleWorkspaceDegradedSource(source: string, error: unknown) {
     details: String(error),
   };
 }
+
+export function googleWorkspaceWriteBlockedSource(target: string, error: unknown) {
+  return {
+    source: target,
+    sourceStatus: "blocked" as const,
+    warning:
+      "Google Workspace OAuth token is expired/revoked, so systemswi cannot complete this write safely. Re-authenticate Google Workspace before retrying; no fallback/mock write was performed.",
+    details: String(error),
+  };
+}

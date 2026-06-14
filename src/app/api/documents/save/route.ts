@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { google } from "googleapis";
+import { googleWorkspaceWriteBlockedSource, isGoogleWorkspaceAuthError } from "@/lib/api/google-workspace-error";
 import { getAuth } from "@/lib/sheets/sheets-real";
 import { appendSwiMemoryLog } from "@/lib/google/audit-log";
 import { getTemplateByType } from "@/lib/document";
@@ -124,6 +125,16 @@ export async function POST(req: NextRequest) {
       { status: 201 },
     );
   } catch (error) {
+    if (isGoogleWorkspaceAuthError(error)) {
+      return NextResponse.json(
+        {
+          error: "Google Workspace perlu re-auth sebelum dokumen bisa disimpan",
+          ...googleWorkspaceWriteBlockedSource("Google Docs + SWI Memory Log", error),
+        },
+        { status: 503 },
+      );
+    }
+
     return NextResponse.json({ error: "Gagal simpan dokumen ke Google Docs", details: String(error) }, { status: 500 });
   }
 }

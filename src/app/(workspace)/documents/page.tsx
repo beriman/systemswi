@@ -124,7 +124,8 @@ export default function DocumentsPage() {
             });
             const payload = await response.json();
             if (!response.ok) {
-                throw new Error(payload?.error || payload?.details || "Gagal simpan ke Google Docs");
+                const blocker = payload?.sourceStatus === "blocked" ? " Re-auth Google Workspace diperlukan; tidak ada draft/mock yang dibuat." : "";
+                throw new Error(payload?.warning ? `${payload.error || "Gagal simpan ke Google Docs"}. ${payload.warning}${blocker}` : payload?.error || payload?.details || "Gagal simpan ke Google Docs");
             }
 
             const updatedDocument: GeneratedDocument = {
