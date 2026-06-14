@@ -42,6 +42,17 @@ type Recommendation = {
     alternatives: Archetype[];
     scores: Record<string, number>;
   };
+  datasetDraft?: {
+    canSaveToCrm: boolean;
+    customerName: string;
+    whatsapp: string;
+    consent: string;
+    interest: string;
+    recommendedFormula: string;
+    source: string;
+    summary: string;
+    guardrail: string;
+  };
   nextActions: string[];
 };
 
@@ -51,6 +62,8 @@ const initialForm: Record<string, string | string[]> = {
   intensity: "medium",
   avoid: "",
   customerName: "",
+  whatsapp: "",
+  consent: "TBA",
 };
 
 export default function ScentProfilePage() {
@@ -58,7 +71,9 @@ export default function ScentProfilePage() {
   const [form, setForm] = useState(initialForm);
   const [result, setResult] = useState<Recommendation | null>(null);
   const [status, setStatus] = useState("Memuat AI Scent Profile...");
+  const [datasetStatus, setDatasetStatus] = useState("Dataset preference belum disimpan.");
   const [loading, setLoading] = useState(false);
+  const [savingDataset, setSavingDataset] = useState(false);
 
   useEffect(() => {
     fetch("/api/scent-profile")
@@ -103,11 +118,53 @@ export default function ScentProfilePage() {
         throw new Error(payload?.missing?.join(", ") || payload?.error || "Gagal membuat rekomendasi");
       }
       setResult(payload);
+      setDatasetStatus(payload?.datasetDraft?.canSaveToCrm ? "Siap disimpan ke Customer CRM jika consent sudah jelas." : "Isi nama + WhatsApp jika ingin menyimpan dataset preference ke CRM.");
       setStatus("✅ Rekomendasi draft siap. Lanjutkan review perfumer/compliance sebelum produksi.");
     } catch (error) {
       setStatus(`⚠️ ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function saveDatasetToCrm() {
+    if (!result?.datasetDraft) return;
+    if (!result.datasetDraft.canSaveToCrm) {
+      setDatasetStatus("⚠️ Nama customer dan WhatsApp wajib diisi sebelum save dataset.");
+      return;
+    }
+    if (result.datasetDraft.consent !== "yes") {
+      setDatasetStatus("⚠️ Consent masih TBA/no. Minta persetujuan customer sebelum menyimpan ke CRM.");
+      return;
+    }
+    setSavingDataset(true);
+    setDatasetStatus("Menyimpan scent preference ke Customer CRM...");
+    try {
+      const response = await fetch("/api/customers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "upsert-customer",
+          name: result.datasetDraft.customerName,
+          whatsapp: result.datasetDraft.whatsapp,
+          consent: result.datasetDraft.consent,
+          source: result.datasetDraft.source,
+          interest: result.datasetDraft.interest,
+          recommendedFormula: result.datasetDraft.recommendedFormula,
+          summary: result.datasetDraft.summary,
+          notes: `${result.sessionId} — ${result.datasetDraft.guardrail}`,
+          pic: "HemuHemu/OWL",
+        }),
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload?.warning || payload?.error || "Gagal menyimpan dataset");
+      }
+      setDatasetStatus(`✅ Dataset tersimpan ke CRM: ${payload.customer?.id || "customer updated"}; audit=${payload.auditStatus || "TBA"}`);
+    } catch (error) {
+      setDatasetStatus(`⚠️ ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setSavingDataset(false);
     }
   }
 
@@ -121,7 +178,7 @@ export default function ScentProfilePage() {
             Tool interview cepat untuk operator store: ubah preferensi customer menjadi brief aroma awal tanpa mengklaim formula final.
           </p>
         </div>
-        <Button variant="outline" onClick={() => { setForm(initialForm); setResult(null); }}>Reset Session</Button>
+        <Button variant="outline" onClick={() => { setForm(initialForm); setResult(null); setDatasetStatus("Dataset preference belum disimpan."); }}>Reset Session</Button>
       </div>
 
       <Card className="border-amber-300/60 bg-amber-50 text-amber-950">
@@ -212,6 +269,14 @@ export default function ScentProfilePage() {
                     <ul className="mt-2 list-disc pl-5">
                       {result.nextActions.map((action) => <li key={action}>{action}</li>)}
                     </ul>
+                  </div>
+                  <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-950">
+                    <div className="font-medium">Scent Preference Dataset</div>
+                    <p className="mt-1">{result.datasetDraft?.guardrail}</p>
+                    <p className="mt-2 text-xs">{datasetStatus}</p>
+                    <Button type="button" className="mt-3" variant="outline" disabled={savingDataset} onClick={saveDatasetToCrm}>
+                      {savingDataset ? "Menyimpan..." : "Save to CRM Dataset"}
+                    </Button>
                   </div>
                 </div>
               )}

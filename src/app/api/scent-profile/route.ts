@@ -70,6 +70,21 @@ const QUESTIONS: Question[] = [
     label: "Nama customer / kode sesi",
     type: "text",
   },
+  {
+    id: "whatsapp",
+    label: "WhatsApp customer (opsional, untuk simpan dataset dengan consent)",
+    type: "text",
+  },
+  {
+    id: "consent",
+    label: "Consent follow-up / CRM (yes/no/TBA)",
+    type: "select",
+    options: [
+      { value: "TBA", label: "TBA — belum dikonfirmasi" },
+      { value: "yes", label: "Yes — customer setuju follow-up" },
+      { value: "no", label: "No — jangan follow-up" },
+    ],
+  },
 ];
 
 const ARCHETYPES: Record<MoodKey, ScentArchetype> = {
@@ -198,21 +213,37 @@ export async function POST(request: NextRequest) {
     }
 
     const recommendation = scorePayload(body);
+    const primary = recommendation.primary;
+    const customerName = text(body.customerName) || "TBA";
+    const whatsapp = text(body.whatsapp);
     return NextResponse.json({
       success: true,
       sessionId: `SP-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-${Math.random().toString(36).slice(2, 7).toUpperCase()}`,
-      customerName: text(body.customerName) || "TBA",
+      customerName,
       inputs: {
         occasion: text(body.occasion),
         preferredFamily: asArray(body.preferredFamily),
         intensity: text(body.intensity),
         avoid: text(body.avoid) || "TBA",
+        whatsapp: whatsapp || "TBA",
+        consent: text(body.consent) || "TBA",
       },
       recommendation,
+      datasetDraft: {
+        canSaveToCrm: Boolean(customerName && customerName !== "TBA" && whatsapp),
+        customerName,
+        whatsapp: whatsapp || "TBA",
+        consent: text(body.consent) || "TBA",
+        interest: `${primary.title} / ${primary.brandFit}`,
+        recommendedFormula: primary.recommendedFormula,
+        source: "AI Scent Profile / Store Kiosk",
+        summary: `Scent profile draft: ${primary.title}; notes=${primary.notes.join(", ")}; intensity=${text(body.intensity)}; avoid=${text(body.avoid) || "TBA"}`,
+        guardrail: "Save hanya jika customer memberi consent jelas; hasil tetap draft dan perlu review perfumer/compliance.",
+      },
       nextActions: [
         "Review dengan perfumer sebelum mixing.",
         "Jika akan diproduksi, catat formula di Compliance dan jalankan IFRA/allergen checklist.",
-        "Jika customer consent jelas, salin rekomendasi ke Customer CRM.",
+        "Jika customer consent jelas, klik Save to CRM Dataset untuk mencatat preferensi ke Customer CRM.",
       ],
     }, { status: 201 });
   } catch (error) {
