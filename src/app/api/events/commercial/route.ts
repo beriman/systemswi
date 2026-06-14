@@ -8,6 +8,7 @@ import {
   readEventSheet,
   writeEventSheet,
 } from "@/lib/event/sheets";
+import { appendSwiMemoryLog } from "@/lib/google/audit-log";
 
 const TENANT_HEADERS = [
   "ID", "Event ID", "Brand Name", "Contact Person", "Email", "Phone",
@@ -143,6 +144,19 @@ async function syncEventCommercialRollups(eventId: string) {
   await writeEventSheet(EVENT_SHEETS.Events, updated);
 }
 
+async function appendCommercialAudit(entry: { kind: "tenant" | "sponsor"; id: string; eventId: string; name: string; status: string; amount: number }) {
+  try {
+    await appendSwiMemoryLog({
+      action: "Event Commercial Pipeline",
+      target: `${entry.kind}:${entry.id}`,
+      summary: `Saved ${entry.kind} ${entry.name || "TBA"} for event ${entry.eventId}; status ${entry.status}; value ${entry.amount}`,
+    });
+    return "ok";
+  } catch (error) {
+    return isGoogleWorkspaceAuthError(error) ? "blocked" : `warning:${String(error).slice(0, 160)}`;
+  }
+}
+
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
@@ -194,18 +208,24 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    await ensureCommercialSheets();
     const body = await req.json();
     const eventId = String(body.eventId || "").trim();
     const kind = String(body.kind || "tenant").toLowerCase();
     if (!eventId) {
       return NextResponse.json({ error: "eventId is required" }, { status: 400 });
     }
+    if (!["tenant", "sponsor"].includes(kind)) {
+      return NextResponse.json({ error: "kind must be tenant or sponsor" }, { status: 400 });
+    }
 
+    await ensureCommercialSheets();
     const now = new Date().toISOString().split("T")[0];
 
     if (kind === "tenant") {
       const id = `tenant-${Date.now()}`;
+      const paymentStatus = normalizeStatus(body.paymentStatus);
+      const fee = parseAmount(body.fee);
+      const paymentAmount = parseAmount(body.paymentAmount);
       const row = [
         id,
         eventId,
@@ -216,20 +236,31 @@ export async function POST(req: NextRequest) {
         body.boothNumber || "TBA",
         body.boothSize || "TBA",
         body.packageType || "standard",
-        parseAmount(body.fee),
-        normalizeStatus(body.paymentStatus),
-        parseAmount(body.paymentAmount),
+        fee,
+        paymentStatus,
+        paymentAmount,
         body.contractDate || "",
         body.notes || "",
         now,
       ];
       await appendEventRows(EVENT_SHEETS.Tenants, [row]);
       await syncEventCommercialRollups(eventId);
-      return NextResponse.json({ success: true, kind, id }, { status: 201 });
+      const auditStatus = await appendCommercialAudit({
+        kind: "tenant",
+        id,
+        eventId,
+        name: String(body.brandName || "TBA"),
+        status: paymentStatus,
+        amount: Math.max(fee, paymentAmount),
+      });
+      return NextResponse.json({ success: true, kind, id, auditStatus }, { status: 201 });
     }
 
     if (kind === "sponsor") {
       const id = `sponsor-${Date.now()}`;
+      const paymentStatus = normalizeStatus(body.paymentStatus);
+      const sponsorshipAmount = parseAmount(body.sponsorshipAmount);
+      const inKindValue = parseAmount(body.inKindValue);
       const row = [
         id,
         eventId,
@@ -238,11 +269,11 @@ export async function POST(req: NextRequest) {
         body.email || "",
         body.phone || "",
         body.tier || "bronze",
-        parseAmount(body.sponsorshipAmount),
+        sponsorshipAmount,
         body.inKind ? "true" : "false",
         body.inKindDescription || "",
-        parseAmount(body.inKindValue),
-        normalizeStatus(body.paymentStatus),
+        inKindValue,
+        paymentStatus,
         body.contractDate || "",
         body.logoUrl || "",
         body.notes || "",
@@ -250,11 +281,27 @@ export async function POST(req: NextRequest) {
       ];
       await appendEventRows(EVENT_SHEETS.Sponsors, [row]);
       await syncEventCommercialRollups(eventId);
-      return NextResponse.json({ success: true, kind, id }, { status: 201 });
+      const auditStatus = await appendCommercialAudit({
+        kind: "sponsor",
+        id,
+        eventId,
+        name: String(body.companyName || "TBA"),
+        status: paymentStatus,
+        amount: sponsorshipAmount + inKindValue,
+      });
+      return NextResponse.json({ success: true, kind, id, auditStatus }, { status: 201 });
     }
 
     return NextResponse.json({ error: "kind must be tenant or sponsor" }, { status: 400 });
   } catch (error) {
+    if (isGoogleWorkspaceAuthError(error)) {
+      return NextResponse.json({
+        sourceStatus: "blocked",
+        source: "Google Sheets: Event_Tenants + Event_Sponsors",
+        error: "Google Workspace OAuth perlu re-auth sebelum bisa menyimpan commercial pipeline",
+        details: String(error),
+      }, { status: 503 });
+    }
     return NextResponse.json({ error: "Failed to save commercial pipeline item", details: String(error) }, { status: 500 });
   }
 }

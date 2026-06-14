@@ -2,6 +2,10 @@
 // POST /api/events — Create new event
 import { NextRequest, NextResponse } from "next/server";
 import { readEventSheet, appendEventRows, writeEventSheet, ensureEventSheet, EVENT_SHEETS } from "@/lib/event/sheets";
+import { googleWorkspaceDegradedSource, isGoogleWorkspaceAuthError } from "@/lib/api/google-workspace-error";
+import { appendSwiMemoryLog } from "@/lib/google/audit-log";
+
+const EVENTS_SOURCE = "Google Sheets: Events";
 
 export async function GET() {
   try {
@@ -42,8 +46,14 @@ export async function GET() {
       updated: row[21] || "",
     }));
 
-    return NextResponse.json({ events });
+    return NextResponse.json({ source: EVENTS_SOURCE, sourceStatus: "live", events });
   } catch (error) {
+    if (isGoogleWorkspaceAuthError(error)) {
+      return NextResponse.json({
+        ...googleWorkspaceDegradedSource(EVENTS_SOURCE, error),
+        events: [],
+      });
+    }
     return NextResponse.json({ error: "Failed to fetch events", details: String(error) }, { status: 500 });
   }
 }
@@ -80,8 +90,26 @@ export async function POST(req: NextRequest) {
     ];
 
     await appendEventRows(EVENT_SHEETS.Events, [row]);
-    return NextResponse.json({ success: true, eventId });
+    let auditStatus = "ok";
+    try {
+      await appendSwiMemoryLog({
+        action: "Event Created",
+        target: `Events:${eventId}`,
+        summary: `Created event ${body.name || "TBA"} with status ${body.status || "planning"}`,
+      });
+    } catch (auditError) {
+      auditStatus = isGoogleWorkspaceAuthError(auditError) ? "blocked" : `warning:${String(auditError).slice(0, 160)}`;
+    }
+    return NextResponse.json({ success: true, eventId, auditStatus }, { status: 201 });
   } catch (error) {
+    if (isGoogleWorkspaceAuthError(error)) {
+      return NextResponse.json({
+        sourceStatus: "blocked",
+        source: EVENTS_SOURCE,
+        error: "Google Workspace OAuth perlu re-auth sebelum bisa membuat event",
+        details: String(error),
+      }, { status: 503 });
+    }
     return NextResponse.json({ error: "Failed to create event", details: String(error) }, { status: 500 });
   }
 }

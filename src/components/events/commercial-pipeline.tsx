@@ -156,7 +156,8 @@ export function CommercialPipeline({ events }: { events: EventOption[] }) {
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || json.details || `HTTP ${res.status}`);
-      setMessage(`✅ ${kind === "tenant" ? "Tenant" : "Sponsor"} tersimpan ke Google Sheets.`);
+      const auditNote = json.auditStatus ? ` Audit: ${json.auditStatus}.` : "";
+      setMessage(`✅ ${kind === "tenant" ? "Tenant" : "Sponsor"} tersimpan ke Google Sheets.${auditNote}`);
       await loadCommercialData();
     } catch (error) {
       setMessage(`Gagal menyimpan: ${String(error)}`);
