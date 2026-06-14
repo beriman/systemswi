@@ -237,6 +237,7 @@ export default function DashboardPage() {
               <ActionLink href="/documents" title="Generate dokumen" detail="Invoice, proposal sponsor, agreement, RAB" />
               <ActionLink href="/compliance" title="Review compliance batch" detail="Formula, QC, traceability, label" />
               <ActionLink href="/alerts" title="Cek alert operasional" detail="Stock, event, finance, deadline" />
+              <ActionLink href="/automation" title="Preview WhatsApp" detail="FAQ, broadcast, customer intake tanpa auto-send" />
               <ActionLink href="/brands" title="Analisa brand" detail="Selling, COGS, expense, profit" />
             </CardContent>
           </Card>
@@ -261,7 +262,7 @@ export default function DashboardPage() {
         )}
 
         {/* Quick Links */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-9">
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-10">
           <QuickLink href="/finance" title="💰 Finance Detail" description="Keuangan, saham, setoran modal" />
           <QuickLink href="/events" title="🎉 Events" description="Fragrantions portfolio & planning" />
           <QuickLink href="/production" title="🏭 Produksi" description="Batch, HPP, QC, dan stock" />
@@ -270,6 +271,7 @@ export default function DashboardPage() {
           <QuickLink href="/compliance" title="✅ Compliance" description="Formula, batch, QC, label" />
           <QuickLink href="/documents" title="📄 Documents" description="Invoice, proposal, RAB, report" />
           <QuickLink href="/alerts" title="🔔 Alerts" description="Prioritas tindakan lintas modul" />
+          <QuickLink href="/automation" title="💬 WhatsApp" description="FAQ, broadcast, customer intake" />
           <QuickLink href="/sheets" title="📋 Google Sheets" description="Buka data spreadsheet langsung" />
         </div>
       </RoleGate>
