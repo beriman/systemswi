@@ -23,6 +23,8 @@ type Archetype = {
   notes: string[];
   recommendedFormula: string;
   operatorNotes: string;
+  bestFor?: string[];
+  avoidIf?: string[];
   score?: number;
 };
 
@@ -41,6 +43,14 @@ type Recommendation = {
     primary: Archetype;
     alternatives: Archetype[];
     scores: Record<string, number>;
+    confidence: number;
+    scoringDetails: Array<{ source: string; profile: string; points: number; reason: string }>;
+    riskFlags: string[];
+    formulaBrief: {
+      accordDirection: string;
+      concentrationDraft: string;
+      validationRequired: string[];
+    };
   };
   datasetDraft?: {
     canSaveToCrm: boolean;
@@ -61,6 +71,7 @@ const initialForm: Record<string, string | string[]> = {
   preferredFamily: [],
   intensity: "medium",
   avoid: "",
+  impression: "",
   customerName: "",
   whatsapp: "",
   consent: "TBA",
@@ -258,10 +269,31 @@ export default function ScentProfilePage() {
               ) : (
                 <div className="space-y-4">
                   <ArchetypeCard archetype={result.recommendation.primary} primary />
+                  <div className="grid gap-3 md:grid-cols-3">
+                    <div className="rounded-lg border bg-muted/40 p-3 text-sm">
+                      <div className="text-xs uppercase tracking-wide text-muted-foreground">Confidence</div>
+                      <div className="mt-1 text-2xl font-bold">{result.recommendation.confidence}%</div>
+                      <p className="text-xs text-muted-foreground">Berdasarkan jarak skor antar archetype + jumlah sinyal positif.</p>
+                    </div>
+                    <div className="rounded-lg border bg-muted/40 p-3 text-sm md:col-span-2">
+                      <div className="text-xs uppercase tracking-wide text-muted-foreground">Formula brief draft</div>
+                      <div className="mt-1 font-medium">{result.recommendation.formulaBrief.accordDirection}</div>
+                      <p className="text-xs text-muted-foreground">{result.recommendation.formulaBrief.concentrationDraft}</p>
+                    </div>
+                  </div>
                   <div>
                     <div className="mb-2 text-sm font-medium text-muted-foreground">Alternatif</div>
                     <div className="grid gap-3 md:grid-cols-2">
                       {result.recommendation.alternatives.map((item) => <ArchetypeCard key={item.id} archetype={item} />)}
+                    </div>
+                  </div>
+                  <div className="rounded-lg border border-orange-200 bg-orange-50 p-3 text-sm text-orange-950">
+                    <div className="font-medium">Risk flags & validasi wajib</div>
+                    <ul className="mt-2 list-disc pl-5">
+                      {result.recommendation.riskFlags.map((flag) => <li key={flag}>{flag}</li>)}
+                    </ul>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {result.recommendation.formulaBrief.validationRequired.map((item) => <Badge key={item} variant="outline">{item}</Badge>)}
                     </div>
                   </div>
                   <div className="rounded-lg bg-muted p-3 text-sm">
@@ -289,12 +321,28 @@ export default function ScentProfilePage() {
               <CardDescription>Transparansi heuristic untuk operator — bukan model black box.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-2">
-              {profileScores.length === 0 ? <p className="text-sm text-muted-foreground">Belum ada score.</p> : profileScores.map(([key, value]) => (
-                <div key={key} className="flex items-center justify-between rounded-lg border p-2 text-sm">
-                  <span className="font-medium capitalize">{key}</span>
-                  <Badge variant="outline">{value}</Badge>
-                </div>
-              ))}
+              {profileScores.length === 0 ? <p className="text-sm text-muted-foreground">Belum ada score.</p> : (
+                <>
+                  {profileScores.map(([key, value]) => (
+                    <div key={key} className="flex items-center justify-between rounded-lg border p-2 text-sm">
+                      <span className="font-medium capitalize">{key}</span>
+                      <Badge variant="outline">{value}</Badge>
+                    </div>
+                  ))}
+                  <div className="mt-4 space-y-2">
+                    <div className="text-sm font-medium text-muted-foreground">Sinyal scoring</div>
+                    {result?.recommendation.scoringDetails.slice(0, 8).map((signal, index) => (
+                      <div key={`${signal.source}-${signal.profile}-${index}`} className="rounded-lg border p-2 text-xs">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-medium capitalize">{signal.profile}</span>
+                          <Badge variant={signal.points < 0 ? "destructive" : "outline"}>{signal.points > 0 ? "+" : ""}{signal.points}</Badge>
+                        </div>
+                        <p className="mt-1 text-muted-foreground">{signal.reason}</p>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -316,6 +364,22 @@ function ArchetypeCard({ archetype, primary = false }: { archetype: Archetype; p
       <div className="mt-3 flex flex-wrap gap-2">
         {archetype.notes.map((note) => <Badge key={note} variant="outline">{note}</Badge>)}
       </div>
+      {primary ? (
+        <div className="mt-3 grid gap-3 text-xs md:grid-cols-2">
+          <div className="rounded-lg bg-emerald-50 p-2 text-emerald-950">
+            <div className="font-medium">Best for</div>
+            <ul className="mt-1 list-disc pl-4">
+              {(archetype.bestFor || []).map((item) => <li key={item}>{item}</li>)}
+            </ul>
+          </div>
+          <div className="rounded-lg bg-rose-50 p-2 text-rose-950">
+            <div className="font-medium">Avoid / cek ulang jika</div>
+            <ul className="mt-1 list-disc pl-4">
+              {(archetype.avoidIf || []).map((item) => <li key={item}>{item}</li>)}
+            </ul>
+          </div>
+        </div>
+      ) : null}
       <p className="mt-3 text-sm font-medium">{archetype.recommendedFormula}</p>
       <p className="mt-1 text-sm text-muted-foreground">{archetype.operatorNotes}</p>
     </div>
