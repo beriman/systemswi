@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { googleWorkspaceDegradedSource, isGoogleWorkspaceAuthError } from "@/lib/api/google-workspace-error";
 import { appendRows, readRange, updateRow } from "@/lib/sheets/sheets-real";
 
 export const runtime = "nodejs";
@@ -131,6 +132,15 @@ export async function GET() {
       summary: summarize(items),
     });
   } catch (error) {
+    if (isGoogleWorkspaceAuthError(error)) {
+      const items: InventoryItem[] = [];
+      return NextResponse.json({
+        ...googleWorkspaceDegradedSource("Google Sheets: Inventory_Master + Inventory_Movements", error),
+        items,
+        movements: [],
+        summary: summarize(items),
+      });
+    }
     return NextResponse.json(
       { error: "Gagal membaca inventory", details: String(error) },
       { status: 500 }

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { googleWorkspaceDegradedSource, isGoogleWorkspaceAuthError } from "@/lib/api/google-workspace-error";
 import { appendRows, readRange, updateRow } from "@/lib/sheets/sheets-real";
 
 export const runtime = "nodejs";
@@ -198,6 +199,15 @@ export async function GET() {
       summary: summarize(purchaseOrders, receipts),
     });
   } catch (error) {
+    if (isGoogleWorkspaceAuthError(error)) {
+      return NextResponse.json({
+        ...googleWorkspaceDegradedSource("Google Sheets: Supplier_Master + Purchase_Orders + Goods_Receipts", error),
+        suppliers: [],
+        purchaseOrders: [],
+        receipts: [],
+        summary: summarize([], []),
+      });
+    }
     return NextResponse.json({ error: "Gagal membaca procurement", details: String(error) }, { status: 500 });
   }
 }

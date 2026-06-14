@@ -1,5 +1,6 @@
 // GET/POST /api/events/commercial — Tenant & sponsor commercial pipeline for Fragrantions
 import { NextRequest, NextResponse } from "next/server";
+import { googleWorkspaceDegradedSource, isGoogleWorkspaceAuthError } from "@/lib/api/google-workspace-error";
 import {
   EVENT_SHEETS,
   appendEventRows,
@@ -166,6 +167,27 @@ export async function GET(req: NextRequest) {
       },
     });
   } catch (error) {
+    if (isGoogleWorkspaceAuthError(error)) {
+      const fallback = {
+        tenants: [],
+        sponsors: [],
+        summary: {
+          tenantCount: 0,
+          sponsorCount: 0,
+          paidTenants: 0,
+          paidSponsors: 0,
+          tenantRevenue: 0,
+          sponsorRevenue: 0,
+          commercialRevenue: 0,
+          outstanding: 0,
+          followUpsDue: 0,
+        },
+      };
+      return NextResponse.json({
+        ...googleWorkspaceDegradedSource("Google Sheets: Event_Tenants + Event_Sponsors", error),
+        ...fallback,
+      });
+    }
     return NextResponse.json({ error: "Failed to fetch commercial pipeline", details: String(error) }, { status: 500 });
   }
 }

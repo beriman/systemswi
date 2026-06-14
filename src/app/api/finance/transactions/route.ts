@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { googleWorkspaceDegradedSource, isGoogleWorkspaceAuthError } from "@/lib/api/google-workspace-error";
 import { appendRows, readRange } from "@/lib/sheets/sheets-real";
 
 export const runtime = "nodejs";
@@ -142,6 +143,13 @@ export async function GET() {
       summary,
     });
   } catch (error) {
+    if (isGoogleWorkspaceAuthError(error)) {
+      return NextResponse.json({
+        ...googleWorkspaceDegradedSource("Google Sheets: Cash_Harian", error),
+        transactions: [],
+        summary: { totalPemasukan: 0, totalPengeluaran: 0, totalTransaksi: 0 },
+      });
+    }
     return NextResponse.json(
       { error: "Gagal membaca transaksi finance", details: String(error) },
       { status: 500 }
