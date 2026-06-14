@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 import { readRanges, readSheet } from "@/lib/sheets/sheets-real";
 import { EVENT_SHEETS, readEventSheet } from "@/lib/event/sheets";
+import { googleWorkspaceDegradedSource, isGoogleWorkspaceAuthError } from "@/lib/api/google-workspace-error";
 
 function parseMoney(value: unknown): number {
   if (typeof value === "number") return value;
@@ -102,6 +103,14 @@ function summarizeEvents(rows: string[][]) {
 
 export async function GET() {
   try {
+    let googleAuthError: unknown = null;
+    const emptyOnAuthError = <T,>(fallback: T) => (error: unknown): T => {
+      if (isGoogleWorkspaceAuthError(error)) {
+        googleAuthError ||= error;
+      }
+      return fallback;
+    };
+
     // ── Read all finance data from Google Sheets ──
     const [
       rekeningKoran,
@@ -115,21 +124,21 @@ export async function GET() {
       brandRanges,
       eventRows,
     ] = await Promise.all([
-      readSheet("RekeningKoran").catch(() => []),
-      readSheet("RekapRekening").catch(() => []),
-      readSheet("PemegangSaham").catch(() => []),
-      readSheet("SukukStore").catch(() => []),
-      readSheet("SukukInvestor").catch(() => []),
-      readSheet("LaporanBulanan").catch(() => []),
-      readSheet("BudgetVsActual").catch(() => []),
-      readSheet("DivisiShareholders").catch(() => []),
+      readSheet("RekeningKoran").catch(emptyOnAuthError([])),
+      readSheet("RekapRekening").catch(emptyOnAuthError([])),
+      readSheet("PemegangSaham").catch(emptyOnAuthError([])),
+      readSheet("SukukStore").catch(emptyOnAuthError([])),
+      readSheet("SukukInvestor").catch(emptyOnAuthError([])),
+      readSheet("LaporanBulanan").catch(emptyOnAuthError([])),
+      readSheet("BudgetVsActual").catch(emptyOnAuthError([])),
+      readSheet("DivisiShareholders").catch(emptyOnAuthError([])),
       readRanges([
         "Brand_Master!A1:K200",
         "Brand_Production!A1:T1000",
         "Brand_Sales!A1:N1000",
         "Brand_Expenses!A1:L1000",
-      ]).catch(() => ({})),
-      readEventSheet(EVENT_SHEETS.Events).catch(() => []),
+      ]).catch(emptyOnAuthError({})),
+      readEventSheet(EVENT_SHEETS.Events).catch(emptyOnAuthError([])),
     ]);
 
     // ── Parse bank balances from RekeningKoran ──
@@ -275,6 +284,8 @@ export async function GET() {
     const eventSummary = summarizeEvents(eventRows);
 
     return NextResponse.json({
+      source: "Google Sheets: finance + events + production",
+      ...(googleAuthError ? googleWorkspaceDegradedSource("Google Sheets: finance + events + production", googleAuthError) : { sourceStatus: "live" as const }),
       bankAccounts,
       totalSaldoAkhir,
       shareholders,

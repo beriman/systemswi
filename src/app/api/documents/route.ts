@@ -3,6 +3,7 @@ import { generateDocumentContent, getTemplateByType, getAllTemplates } from "@/l
 import type { DocumentType } from "@/lib/document";
 import { readRange } from "@/lib/sheets/sheets-real";
 import { EVENT_SHEETS, readEventSheet } from "@/lib/event/sheets";
+import { googleWorkspaceDegradedSource, isGoogleWorkspaceAuthError } from "@/lib/api/google-workspace-error";
 
 export const runtime = "nodejs";
 
@@ -12,6 +13,9 @@ type SheetContext = {
   sponsorRows: number;
   inventoryRows: number;
   notes: string[];
+  sourceStatus: "live" | "degraded";
+  warning?: string;
+  details?: string;
 };
 
 const text = (value: unknown) => String(value ?? "").trim();
@@ -35,11 +39,19 @@ function validateRequired(type: DocumentType, data: Record<string, string>) {
 }
 
 async function readContext(): Promise<SheetContext> {
+  let googleAuthError: unknown = null;
+  const emptyOnAuthError = (error: unknown): string[][] => {
+    if (isGoogleWorkspaceAuthError(error)) {
+      googleAuthError ||= error;
+    }
+    return [];
+  };
+
   const [finance, tenants, sponsors, inventory] = await Promise.all([
-    readRange("Laporan_Bulanan!A1:P16").catch(() => []),
-    readEventSheet(EVENT_SHEETS.Tenants).catch(() => []),
-    readEventSheet(EVENT_SHEETS.Sponsors).catch(() => []),
-    readRange("Inventory_Master!A1:O1000").catch(() => []),
+    readRange("Laporan_Bulanan!A1:P16").catch(emptyOnAuthError),
+    readEventSheet(EVENT_SHEETS.Tenants).catch(emptyOnAuthError),
+    readEventSheet(EVENT_SHEETS.Sponsors).catch(emptyOnAuthError),
+    readRange("Inventory_Master!A1:O1000").catch(emptyOnAuthError),
   ]);
 
   const unpaidTenants = tenants.slice(1).filter((row) => {
@@ -59,16 +71,24 @@ async function readContext(): Promise<SheetContext> {
     return text(row[0]) && min > 0 && qty <= min;
   }).length;
 
+  const degraded = googleAuthError
+    ? googleWorkspaceDegradedSource("Google Sheets context for Document Generator", googleAuthError)
+    : null;
+
   return {
     financeRows: Math.max(finance.length - 1, 0),
     tenantRows: Math.max(tenants.length - 1, 0),
     sponsorRows: Math.max(sponsors.length - 1, 0),
     inventoryRows: Math.max(inventory.length - 1, 0),
+    sourceStatus: degraded ? "degraded" : "live",
+    warning: degraded?.warning,
+    details: degraded?.details,
     notes: [
       `Finance source: Laporan_Bulanan (${Math.max(finance.length - 1, 0)} data rows).`,
       `Commercial source: Event_Tenants ${Math.max(tenants.length - 1, 0)} rows; ${unpaidTenants} tenant belum lunas.`,
       `Sponsor source: Event_Sponsors ${Math.max(sponsors.length - 1, 0)} rows; ${followUpSponsors} sponsor perlu follow-up.`,
       `Inventory source: Inventory_Master ${Math.max(inventory.length - 1, 0)} rows; ${lowStock} item low/critical.`,
+      ...(degraded ? [degraded.warning] : []),
     ],
   };
 }
@@ -107,6 +127,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       success: true,
       source: "Google Sheets context + systemswi template",
+      sourceStatus: context.sourceStatus,
+      warning: context.warning,
       generatedAt: new Date().toISOString(),
       document: {
         id: `doc-${Date.now()}`,

@@ -62,7 +62,11 @@ export default function DocumentsPage() {
             setCurrentDocument(doc);
             saveDocumentToHistory(doc);
             setHistory(getDocumentHistory());
-            setStatusMessage(`Dokumen berhasil dibuat. Source: ${payload.source}`);
+            setStatusMessage(
+                payload.sourceStatus === "degraded"
+                    ? `Dokumen berhasil dibuat dengan fallback read-only: ${payload.warning}`
+                    : `Dokumen berhasil dibuat. Source: ${payload.source}`
+            );
             setView("preview");
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error);

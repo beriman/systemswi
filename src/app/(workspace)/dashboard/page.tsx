@@ -71,6 +71,17 @@ export default function DashboardPage() {
         </p>
       </div>
 
+      {data?.sourceStatus === "degraded" && (
+        <Card className="border-amber-200 bg-amber-50 text-amber-950">
+          <CardContent className="pt-6">
+            <div className="font-semibold">⚠️ Google Workspace perlu re-auth</div>
+            <p className="text-sm">
+              Dashboard sedang menampilkan empty read-only fallback, bukan data palsu. {data.warning}
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
       {/* KPI Cards */}
       <RoleGate feature="dashboard:overview">
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -100,7 +111,7 @@ export default function DashboardPage() {
                 </div>
               )}
               <p className="text-xs text-muted-foreground mt-1">
-                dari {formatCurrency(data?.totalModalDitempatkan || 250000000)} ({data?.totalSetoranPercent?.toFixed(1) || 0}%)
+                dari {formatCurrency(data?.totalModalDitempatkan || 0)} ({data?.totalSetoranPercent?.toFixed(1) || 0}%)
               </p>
             </CardContent>
           </Card>
@@ -110,10 +121,10 @@ export default function DashboardPage() {
             </CardHeader>
             <CardContent>
               {loading ? <Skeleton className="h-8 w-16" /> : (
-                <div className="text-2xl font-bold">{data?.shareholders?.length || 3}</div>
+                <div className="text-2xl font-bold">{data?.shareholders?.length || 0}</div>
               )}
               <p className="text-xs text-muted-foreground mt-1">
-                2,500 saham ditempatkan
+                {formatNumber(data?.totalJumlahSaham || 0)} saham ditempatkan
               </p>
             </CardContent>
           </Card>
