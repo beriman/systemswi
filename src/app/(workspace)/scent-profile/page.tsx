@@ -85,6 +85,7 @@ export default function ScentProfilePage() {
   const [datasetStatus, setDatasetStatus] = useState("Dataset preference belum disimpan.");
   const [loading, setLoading] = useState(false);
   const [savingDataset, setSavingDataset] = useState(false);
+  const [kioskMode, setKioskMode] = useState(true);
 
   useEffect(() => {
     fetch("/api/scent-profile")
@@ -100,6 +101,17 @@ export default function ScentProfilePage() {
     if (!result?.recommendation.scores) return [];
     return Object.entries(result.recommendation.scores).sort((a, b) => b[1] - a[1]);
   }, [result]);
+
+  const questionProgress = useMemo(() => {
+    const required = meta?.questions.filter((question) => question.required) || [];
+    const completed = required.filter((question) => {
+      const value = form[question.id];
+      return Array.isArray(value) ? value.length > 0 : Boolean(String(value || "").trim());
+    }).length;
+    return { completed, total: required.length, percent: required.length ? Math.round((completed / required.length) * 100) : 0 };
+  }, [form, meta]);
+
+  const fieldClass = kioskMode ? "min-h-12 text-base" : "";
 
   function setTextValue(id: string, value: string) {
     setForm((current) => ({ ...current, [id]: value }));
@@ -180,17 +192,48 @@ export default function ScentProfilePage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className={kioskMode ? "mx-auto max-w-7xl space-y-6 text-base" : "space-y-6"}>
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
           <p className="text-sm uppercase tracking-[0.3em] text-muted-foreground">Store Experience / AI Profile</p>
-          <h1 className="text-3xl font-bold">🧪 AI Scent Profile</h1>
+          <h1 className={kioskMode ? "text-4xl font-bold" : "text-3xl font-bold"}>🧪 AI Scent Profile</h1>
           <p className="text-muted-foreground">
             Tool interview cepat untuk operator store: ubah preferensi customer menjadi brief aroma awal tanpa mengklaim formula final.
           </p>
         </div>
-        <Button variant="outline" onClick={() => { setForm(initialForm); setResult(null); setDatasetStatus("Dataset preference belum disimpan."); }}>Reset Session</Button>
+        <div className="flex flex-wrap gap-2">
+          <Button variant={kioskMode ? "default" : "outline"} onClick={() => setKioskMode((value) => !value)}>
+            {kioskMode ? "Tablet/Kiosk ON" : "Tablet/Kiosk OFF"}
+          </Button>
+          <Button variant="outline" onClick={() => { setForm(initialForm); setResult(null); setDatasetStatus("Dataset preference belum disimpan."); }}>Reset Session</Button>
+        </div>
       </div>
+
+      {kioskMode && (
+        <div className="grid gap-3 md:grid-cols-3">
+          <Card className="border-emerald-200 bg-emerald-50 text-emerald-950">
+            <CardContent className="pt-5">
+              <div className="text-sm font-semibold uppercase tracking-wide">Step 1</div>
+              <p className="text-lg font-bold">Tanya kebutuhan customer</p>
+              <p className="text-sm">Gunakan pilihan besar agar nyaman di tablet booth/store.</p>
+            </CardContent>
+          </Card>
+          <Card className="border-blue-200 bg-blue-50 text-blue-950">
+            <CardContent className="pt-5">
+              <div className="text-sm font-semibold uppercase tracking-wide">Step 2</div>
+              <p className="text-lg font-bold">Review scent brief</p>
+              <p className="text-sm">Jelaskan confidence, risk flags, dan alternatif secara transparan.</p>
+            </CardContent>
+          </Card>
+          <Card className="border-amber-200 bg-amber-50 text-amber-950">
+            <CardContent className="pt-5">
+              <div className="text-sm font-semibold uppercase tracking-wide">Step 3</div>
+              <p className="text-lg font-bold">Consent sebelum CRM</p>
+              <p className="text-sm">Simpan dataset hanya jika customer setuju follow-up.</p>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       <Card className="border-amber-300/60 bg-amber-50 text-amber-950">
         <CardHeader>
@@ -209,8 +252,16 @@ export default function ScentProfilePage() {
       <div className="grid gap-6 lg:grid-cols-[420px_1fr]">
         <Card>
           <CardHeader>
-            <CardTitle>Questionnaire Customer</CardTitle>
-            <CardDescription>Isi berdasarkan jawaban customer. Hindari asumsi alergi atau klaim medis.</CardDescription>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <CardTitle>Questionnaire Customer</CardTitle>
+                <CardDescription>Isi berdasarkan jawaban customer. Hindari asumsi alergi atau klaim medis.</CardDescription>
+              </div>
+              <Badge variant="outline">{questionProgress.completed}/{questionProgress.total} wajib</Badge>
+            </div>
+            <div className="h-2 overflow-hidden rounded-full bg-muted">
+              <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${questionProgress.percent}%` }} />
+            </div>
           </CardHeader>
           <CardContent>
             <form className="space-y-5" onSubmit={submitProfile}>
@@ -219,7 +270,7 @@ export default function ScentProfilePage() {
                   <Label>{question.label}{question.required ? " *" : ""}</Label>
                   {question.type === "select" ? (
                     <select
-                      className="w-full rounded-md border bg-background px-3 py-2"
+                      className={`w-full rounded-md border bg-background px-3 py-2 ${fieldClass}`}
                       value={String(form[question.id] || "")}
                       onChange={(event) => setTextValue(question.id, event.target.value)}
                       required={question.required}
@@ -235,7 +286,7 @@ export default function ScentProfilePage() {
                           <button
                             type="button"
                             key={option.value}
-                            className={`rounded-lg border px-3 py-2 text-left text-sm transition-colors ${selected ? "border-primary bg-primary text-primary-foreground" : "hover:bg-muted"}`}
+                            className={`rounded-lg border px-3 py-2 text-left text-sm transition-colors ${kioskMode ? "min-h-14 text-base" : ""} ${selected ? "border-primary bg-primary text-primary-foreground" : "hover:bg-muted"}`}
                             onClick={() => toggleMulti(question.id, option.value)}
                           >
                             {option.label}
@@ -244,13 +295,13 @@ export default function ScentProfilePage() {
                       })}
                     </div>
                   ) : question.id === "avoid" ? (
-                    <Textarea value={String(form[question.id] || "")} onChange={(event) => setTextValue(question.id, event.target.value)} placeholder="Contoh: tidak suka aroma terlalu manis; alergi TBA" />
+                    <Textarea className={kioskMode ? "min-h-28 text-base" : ""} value={String(form[question.id] || "")} onChange={(event) => setTextValue(question.id, event.target.value)} placeholder="Contoh: tidak suka aroma terlalu manis; alergi TBA" />
                   ) : (
-                    <Input value={String(form[question.id] || "")} onChange={(event) => setTextValue(question.id, event.target.value)} placeholder="Opsional" />
+                    <Input className={fieldClass} value={String(form[question.id] || "")} onChange={(event) => setTextValue(question.id, event.target.value)} placeholder="Opsional" />
                   )}
                 </div>
               ))}
-              <Button type="submit" className="w-full" disabled={loading}>{loading ? "Menghitung..." : "Generate Scent Brief"}</Button>
+              <Button type="submit" className={kioskMode ? "h-14 w-full text-base" : "w-full"} disabled={loading || questionProgress.completed < questionProgress.total}>{loading ? "Menghitung..." : "Generate Scent Brief"}</Button>
             </form>
           </CardContent>
         </Card>
