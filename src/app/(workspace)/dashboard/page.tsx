@@ -272,6 +272,7 @@ export default function DashboardPage() {
           <QuickLink href="/procurement" title="🧾 Procurement" description="Supplier, PO, receiving QC" />
           <QuickLink href="/compliance" title="✅ Compliance" description="Formula, batch, QC, label" />
           <QuickLink href="/documents" title="📄 Documents" description="Invoice, proposal, RAB, report" />
+          <QuickLink href="/reports" title="📊 Reports" description="Weekly/monthly auto report" />
           <QuickLink href="/alerts" title="🔔 Alerts" description="Prioritas tindakan lintas modul" />
           <QuickLink href="/customers" title="👥 Customers" description="CRM, consent, follow-up" />
           <QuickLink href="/scent-profile" title="🧪 Scent Profile" description="Interview → draft aroma brief" />
