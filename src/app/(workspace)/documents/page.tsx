@@ -106,8 +106,41 @@ export default function DocumentsPage() {
         }
     };
 
-    const handleSaveToDrive = () => {
-        alert("Document saved to Drive (mock)");
+    const handleSaveToDrive = async () => {
+        if (!currentDocument) return;
+
+        setStatusMessage("Menyimpan draft ke Google Docs dan mencatat audit...");
+        try {
+            const response = await fetch("/api/documents/save", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    id: currentDocument.id,
+                    type: currentDocument.type,
+                    title: currentDocument.title,
+                    content: generatedContent,
+                    letterNumber: currentDocument.letterNumber,
+                }),
+            });
+            const payload = await response.json();
+            if (!response.ok) {
+                throw new Error(payload?.error || payload?.details || "Gagal simpan ke Google Docs");
+            }
+
+            const updatedDocument: GeneratedDocument = {
+                ...currentDocument,
+                driveFileId: payload.document?.driveFileId,
+                driveUrl: payload.document?.driveUrl,
+            };
+            setCurrentDocument(updatedDocument);
+            saveDocumentToHistory(updatedDocument);
+            setHistory(getDocumentHistory());
+            setStatusMessage(`Tersimpan ke Google Docs: ${payload.document?.driveUrl || payload.document?.driveFileId}`);
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            setStatusMessage(`Gagal simpan Google Docs: ${message}`);
+            alert(`Gagal simpan Google Docs: ${message}`);
+        }
     };
 
     const handleExportPDF = () => {

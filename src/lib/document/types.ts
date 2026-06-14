@@ -42,6 +42,7 @@ export interface GeneratedDocument {
     createdBy: string;
     eventId?: string;
     driveFileId?: string;
+    driveUrl?: string;
 }
 
 // Letter numbering format: 001/SWI/I/2026
