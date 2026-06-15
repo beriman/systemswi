@@ -35,6 +35,15 @@ type OperationsResponse = {
   };
   steps: Step[];
   recentActivity: Record<string, string[][]>;
+  weeklyCadence: Array<{
+    id: string;
+    agenda: string;
+    owner: string;
+    cadence: string;
+    prepSource: string;
+    output: string;
+    href: string;
+  }>;
   guardrails: string[];
 };
 
@@ -208,6 +217,27 @@ export default function OperationsPage() {
               <ul className="mt-3 list-disc space-y-2 pl-5 text-sm text-white/65">
                 {(data?.guardrails || []).map((item) => <li key={item}>{item}</li>)}
               </ul>
+            </section>
+
+            <section className="rounded-3xl bg-white/[0.04] p-5 ring-1 ring-white/10">
+              <h2 className="text-xl font-semibold">Weekly cadence & reporting</h2>
+              <p className="mt-2 text-sm text-white/55">Ritme rapat lintas divisi agar data operasional masuk ke laporan mingguan tanpa write otomatis dari halaman Operations.</p>
+              <div className="mt-4 space-y-3">
+                {(data?.weeklyCadence || []).map((item) => (
+                  <div key={item.id} className="rounded-2xl bg-black/20 p-4 text-sm">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="font-semibold text-white">{item.agenda}</div>
+                        <div className="mt-1 text-xs text-[#9ee7dc]">Owner: {item.owner}</div>
+                      </div>
+                      <Link href={item.href} className="rounded-full bg-white/10 px-3 py-1 text-xs text-white/80 hover:bg-white/20">Buka</Link>
+                    </div>
+                    <p className="mt-3 text-white/60">{item.cadence}</p>
+                    <p className="mt-2 text-xs text-white/40">Prep: {item.prepSource}</p>
+                    <p className="mt-1 text-xs text-white/50">Output: {item.output}</p>
+                  </div>
+                ))}
+              </div>
             </section>
 
             <section className="rounded-3xl bg-white/[0.04] p-5 ring-1 ring-white/10">

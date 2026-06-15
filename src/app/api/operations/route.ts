@@ -16,6 +16,16 @@ type WorkflowStep = {
   href: string;
 };
 
+type CadenceItem = {
+  id: string;
+  agenda: string;
+  owner: string;
+  cadence: string;
+  prepSource: string;
+  output: string;
+  href: string;
+};
+
 const SOURCE = "Google Sheets: Inventory_Master, Inventory_Movements, Purchase_Orders, Goods_Receipts, Brand_Production, Brand_Sales, Customer_Master, Compliance_Checks, Product_Batches, QC_Checklist";
 
 const ranges = [
@@ -29,6 +39,36 @@ const ranges = [
   "Compliance_Checks!A1:L1000",
   "Product_Batches!A1:M1000",
   "QC_Checklist!A1:I1000",
+];
+
+const weeklyCadence: CadenceItem[] = [
+  {
+    id: "finance-event-commercial",
+    agenda: "Finance + Event Commercial Pipeline",
+    owner: "Finance + Event PIC",
+    cadence: "Senin 09.00 — review cash position, tenant/sponsor invoice, outstanding payment, dan budget event.",
+    prepSource: "Rekening_Koran, Cash_Harian, Event_Tenants, Event_Sponsors, Event_Budget, Alerts",
+    output: "Daftar invoice/follow-up sponsor/tenant dan keputusan budget minggu berjalan.",
+    href: "/reports",
+  },
+  {
+    id: "ops-inventory-procurement",
+    agenda: "Operations + Inventory + Procurement",
+    owner: "COO / Ops Lead",
+    cadence: "Selasa 10.00 — review low stock, open PO, receiving/QC, dan reorder plan.",
+    prepSource: "Inventory_Master, Purchase_Orders, Goods_Receipts, QC_Checklist",
+    output: "Prioritas PO/receiving/QC dan PIC proof URL untuk setiap movement.",
+    href: "/operations",
+  },
+  {
+    id: "production-compliance-crm",
+    agenda: "Production + Compliance + CRM",
+    owner: "Production + Compliance + Store/CRM",
+    cadence: "Rabu 15.00 — review batch produksi, compliance/QC release, sales rows, consent, dan follow-up customer.",
+    prepSource: "Brand_Production, Product_Batches, Compliance_Checks, Brand_Sales, Customer_Interactions",
+    output: "Batch yang boleh lanjut jual, batch perlu review, dan daftar follow-up manual consent-safe.",
+    href: "/compliance",
+  },
 ];
 
 function text(value: unknown) {
@@ -206,6 +246,7 @@ function buildWorkflow(data: Record<string, string[][]>) {
       production: latestRows(data["Brand_Production!A1:T1000"]),
       sales: latestRows(data["Brand_Sales!A1:N1000"]),
     },
+    weeklyCadence,
     guardrails: [
       "Google Sheets tetap source of truth; halaman ini tidak mengarang angka jika OAuth degraded.",
       "Jangan release batch produk final sebelum Compliance/QC review selesai.",
@@ -227,6 +268,7 @@ export async function GET() {
         summary: { totalSteps: 7, ready: 0, attention: 0, blocked: 0, draft: 7, stockAlerts: 0, openPo: 0, qcPending: 0, productionRows: 0, salesRows: 0, customerRows: 0 },
         steps: buildWorkflow(Object.fromEntries(ranges.map((range) => [range, []]))).steps,
         recentActivity: { inventoryMovements: [], purchaseOrders: [], production: [], sales: [] },
+        weeklyCadence,
         guardrails: ["OAuth Google Workspace perlu re-auth; tidak ada data palsu yang ditampilkan."],
       });
     }
@@ -243,16 +285,29 @@ export async function POST(request: NextRequest) {
     const stepId = text(body.stepId);
     const reference = text(body.reference);
     if (!stepId) return NextResponse.json({ error: "stepId wajib diisi" }, { status: 400 });
-    const data = await readRanges(ranges);
-    const workflow = buildWorkflow(data);
+    let workflow: ReturnType<typeof buildWorkflow>;
+    let sourceStatus: "live" | "degraded" = "live";
+    let warning: string | undefined;
+    try {
+      const data = await readRanges(ranges);
+      workflow = buildWorkflow(data);
+    } catch (error) {
+      if (!isGoogleWorkspaceAuthError(error)) throw error;
+      const degraded = googleWorkspaceDegradedSource(SOURCE, error);
+      workflow = buildWorkflow(Object.fromEntries(ranges.map((range) => [range, []])));
+      sourceStatus = "degraded";
+      warning = degraded.warning;
+    }
     const step = workflow.steps.find((item) => item.id === stepId);
     if (!step) return NextResponse.json({ error: "stepId tidak dikenal" }, { status: 404 });
     return NextResponse.json({
       source: workflow.source,
-      sourceStatus: "live",
+      sourceStatus,
+      warning,
       action: "prepare_handoff",
       step,
       reference: reference || "TBA",
+      cadence: weeklyCadence.find((item) => item.href === step.href) || weeklyCadence[1],
       checklist: [
         `Buka ${step.href} dan cocokkan reference: ${reference || "TBA"}`,
         "Pastikan PIC, tanggal, proof URL, dan notes terisi sebelum write.",
