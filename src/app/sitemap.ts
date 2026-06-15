@@ -12,6 +12,7 @@ const publicRoutes = [
 
 const workspaceRoutes = [
   "/dashboard",
+  "/operations",
   "/finance",
   "/events",
   "/brands",

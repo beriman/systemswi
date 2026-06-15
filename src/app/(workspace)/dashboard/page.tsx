@@ -229,6 +229,7 @@ export default function DashboardPage() {
               <CardDescription>Shortcut operasional harian</CardDescription>
             </CardHeader>
             <CardContent className="space-y-2">
+              <ActionLink href="/operations" title="Operations command center" detail="PO → receive → inventory → produksi → QC → jual → CRM → report" />
               <ActionLink href="/finance" title="Review finance" detail="Saldo bank dan setoran modal" />
               <ActionLink href="/events" title="Update Fragrantions" detail="Tenant, sponsor, budget, timeline" />
               <ActionLink href="/production" title="Catat batch produksi" detail="Bahan, bottling, packaging, QC" />
@@ -265,6 +266,7 @@ export default function DashboardPage() {
 
         {/* Quick Links */}
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-12">
+          <QuickLink href="/operations" title="🧭 Operations" description="End-to-end workflow command center" />
           <QuickLink href="/finance" title="💰 Finance Detail" description="Keuangan, saham, setoran modal" />
           <QuickLink href="/events" title="🎉 Events" description="Fragrantions portfolio & planning" />
           <QuickLink href="/production" title="🏭 Produksi" description="Batch, HPP, QC, dan stock" />
