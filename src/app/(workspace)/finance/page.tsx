@@ -86,6 +86,32 @@ interface FinanceCashflowProjection {
   nextActions: string[];
 }
 
+interface HoldingSetoranProjection {
+  sourceStatus?: string;
+  warning?: string;
+  generatedAt?: string;
+  policy: { rate: number; rateLabel: string; note: string };
+  summary: {
+    totalRevenue: number;
+    totalObligation: number;
+    totalPaid: number;
+    totalOutstanding: number;
+    divisionCount: number;
+    dueCount: number;
+    rekapRows: number;
+  };
+  perDivision: Array<{
+    division: string;
+    revenue: number;
+    obligation: number;
+    paid: number;
+    outstanding: number;
+    status: string;
+    suggestedReference: string;
+  }>;
+  nextActions: string[];
+}
+
 function formatCurrency(amount: number): string {
   if (!amount && amount !== 0) return "Rp 0";
   return new Intl.NumberFormat("id-ID", {
@@ -100,6 +126,7 @@ export default function FinancePage() {
   const [transactions, setTransactions] = useState<FinanceTransaction[]>([]);
   const [reconciliation, setReconciliation] = useState<FinanceReconciliation | null>(null);
   const [cashflowProjection, setCashflowProjection] = useState<FinanceCashflowProjection | null>(null);
+  const [holdingSetoran, setHoldingSetoran] = useState<HoldingSetoranProjection | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [uploadingProof, setUploadingProof] = useState(false);
@@ -118,10 +145,11 @@ export default function FinancePage() {
   useEffect(() => {
     async function fetchData() {
       try {
-        const [dashboardRes, reconciliationRes, cashflowRes] = await Promise.all([
+        const [dashboardRes, reconciliationRes, cashflowRes, setoranRes] = await Promise.all([
           fetch("/api/dashboard"),
           fetch("/api/finance/reconciliation", { cache: "no-store" }),
           fetch("/api/finance/cashflow", { cache: "no-store" }),
+          fetch("/api/finance/setoran", { cache: "no-store" }),
           fetchTransactions(),
         ]);
         if (!dashboardRes.ok) throw new Error("Failed to fetch dashboard");
@@ -132,6 +160,9 @@ export default function FinancePage() {
         }
         if (cashflowRes.ok) {
           setCashflowProjection(await cashflowRes.json());
+        }
+        if (setoranRes.ok) {
+          setHoldingSetoran(await setoranRes.json());
         }
       } catch (err) {
         setError(String(err));
@@ -511,6 +542,82 @@ export default function FinancePage() {
                   </>
                 ) : (
                   <div className="text-sm text-muted-foreground">Memuat proyeksi cashflow...</div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Holding 30% Setoran */}
+            <Card className="border-amber-200 bg-amber-50/40">
+              <CardHeader>
+                <CardTitle>Setoran 30% Divisi → Holding</CardTitle>
+                <CardDescription>
+                  Kalkulasi otomatis dari pemasukan Cash_Harian per divisi. Ini draft operasional untuk diposting sebagai transfer divisi ke Holding setelah mutasi bank diverifikasi.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {holdingSetoran ? (
+                  <>
+                    {holdingSetoran.sourceStatus === "degraded" && (
+                      <div className="rounded-md border border-yellow-300 bg-yellow-50 px-3 py-2 text-sm text-yellow-800">
+                        ⚠️ {holdingSetoran.warning || "Google Workspace OAuth degraded; setoran 30% belum bisa dihitung live."}
+                      </div>
+                    )}
+                    <div className="grid gap-3 md:grid-cols-4">
+                      <div className="rounded-lg border bg-background p-3">
+                        <div className="text-xs text-muted-foreground">Revenue divisi</div>
+                        <div className="text-lg font-bold">{formatCurrency(holdingSetoran.summary.totalRevenue)}</div>
+                      </div>
+                      <div className="rounded-lg border bg-background p-3">
+                        <div className="text-xs text-muted-foreground">Kewajiban {holdingSetoran.policy.rateLabel}</div>
+                        <div className="text-lg font-bold text-amber-700">{formatCurrency(holdingSetoran.summary.totalObligation)}</div>
+                      </div>
+                      <div className="rounded-lg border bg-background p-3">
+                        <div className="text-xs text-muted-foreground">Terdeteksi sudah setor</div>
+                        <div className="text-lg font-bold text-green-700">{formatCurrency(holdingSetoran.summary.totalPaid)}</div>
+                      </div>
+                      <div className="rounded-lg border bg-background p-3">
+                        <div className="text-xs text-muted-foreground">Outstanding</div>
+                        <div className="text-lg font-bold text-red-700">{formatCurrency(holdingSetoran.summary.totalOutstanding)}</div>
+                      </div>
+                    </div>
+                    <div className="rounded-md border bg-background overflow-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Divisi</TableHead>
+                            <TableHead className="text-right">Revenue</TableHead>
+                            <TableHead className="text-right">Setoran 30%</TableHead>
+                            <TableHead className="text-right">Sudah Setor</TableHead>
+                            <TableHead className="text-right">Sisa</TableHead>
+                            <TableHead>Ref posting</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {holdingSetoran.perDivision.length === 0 ? (
+                            <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground">Data setoran belum tersedia sampai Google OAuth live kembali.</TableCell></TableRow>
+                          ) : holdingSetoran.perDivision.map((row) => (
+                            <TableRow key={row.division}>
+                              <TableCell className="font-medium">{row.division}</TableCell>
+                              <TableCell className="text-right">{formatCurrency(row.revenue)}</TableCell>
+                              <TableCell className="text-right text-amber-700">{formatCurrency(row.obligation)}</TableCell>
+                              <TableCell className="text-right text-green-700">{formatCurrency(row.paid)}</TableCell>
+                              <TableCell className="text-right font-medium text-red-700">{formatCurrency(row.outstanding)}</TableCell>
+                              <TableCell className="font-mono text-xs">{row.suggestedReference}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                    <div className="rounded-lg border bg-background p-3 text-sm text-muted-foreground">
+                      <div className="font-medium text-foreground">Catatan kontrol</div>
+                      <p className="mt-1">{holdingSetoran.policy.note}</p>
+                      <ul className="mt-2 list-disc space-y-1 pl-5">
+                        {holdingSetoran.nextActions.map((action, index) => <li key={index}>{action}</li>)}
+                      </ul>
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-sm text-muted-foreground">Memuat kalkulasi setoran 30%...</div>
                 )}
               </CardContent>
             </Card>
