@@ -16,6 +16,8 @@ type ReportTemplate = {
   requiredFields: string[];
 };
 
+const REPORT_TYPES: ReportType[] = ["weekly_dashboard", "monthly_financial", "quarterly_investor", "annual_report"];
+
 type ReportContext = {
   sourceStatus: SourceStatus;
   warning?: string;
@@ -75,6 +77,13 @@ const rupiah = (value: number) => `Rp ${Math.round(value).toLocaleString("id-ID"
 
 function isReportType(value: string): value is ReportType {
   return REPORT_TEMPLATES.some((template) => template.type === value);
+}
+
+function defaultPeriodFor(type: ReportType, fallback: string) {
+  if (fallback) return fallback;
+  const now = new Date();
+  if (type === "annual_report") return String(now.getFullYear());
+  return now.toLocaleDateString("id-ID", { month: "long", year: "numeric" });
 }
 
 function isShareholderRow(row: string[]) {
@@ -204,15 +213,51 @@ export async function GET() {
     source: "systemswi reports generator",
     generatedAt: new Date().toISOString(),
     templates: REPORT_TEMPLATES,
+    automation: {
+      supportedAction: "generate_all",
+      description: "Generate weekly, monthly, quarterly investor, dan annual draft dalam satu request tanpa menulis ke Google Drive/Docs.",
+    },
   });
 }
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
+    const action = text(body.action);
     const type = text(body.type);
     const period = text(body.period || body.year);
     const notes = text(body.notes);
+
+    if (action === "generate_all") {
+      const context = await readContext();
+      const reports = REPORT_TYPES.map((reportType) => {
+        const reportPeriod = defaultPeriodFor(reportType, period);
+        return {
+          id: `report-${reportType}-${Date.now()}`,
+          type: reportType,
+          title: REPORT_TEMPLATES.find((template) => template.type === reportType)?.name || reportType,
+          period: reportPeriod,
+          content: generateReport(reportType, reportPeriod, context, notes),
+          createdAt: new Date().toISOString(),
+          createdBy: "systemswi",
+        };
+      });
+
+      return NextResponse.json({
+        success: true,
+        source: "Google Sheets context + systemswi reports generator",
+        sourceStatus: context.sourceStatus,
+        warning: context.warning,
+        generatedAt: new Date().toISOString(),
+        reports,
+        summary: {
+          totalReports: reports.length,
+          types: reports.map((report) => report.type),
+          markers: ["Executive Snapshot", "Investor Readiness Checklist", "Annual Report Template"],
+        },
+        context,
+      }, { status: 201 });
+    }
 
     if (!isReportType(type)) {
       return NextResponse.json({ error: "type tidak valid", supportedTypes: REPORT_TEMPLATES.map((template) => template.type) }, { status: 400 });

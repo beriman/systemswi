@@ -30,6 +30,7 @@ export default function ReportsPage() {
   const [report, setReport] = useState<any>(null);
   const [reportStatus, setReportStatus] = useState("");
   const [generating, setGenerating] = useState(false);
+  const [batchReports, setBatchReports] = useState<any[]>([]);
 
   useEffect(() => {
     Promise.all([
@@ -58,7 +59,32 @@ export default function ReportsPage() {
         throw new Error(payload?.warning || payload?.error || "Gagal generate report");
       }
       setReport(payload.report);
+      setBatchReports([]);
       setReportStatus(payload.sourceStatus === "degraded" ? `Report dibuat dengan degraded context: ${payload.warning}` : "Report berhasil dibuat dari Google Sheets live context.");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setReportStatus(`Gagal: ${message}`);
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const generateAllReports = async () => {
+    setGenerating(true);
+    setReportStatus("Generate paket semua report otomatis...");
+    try {
+      const response = await fetch("/api/reports", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "generate_all", period, notes }),
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload?.warning || payload?.error || "Gagal generate paket report");
+      }
+      setBatchReports(payload.reports || []);
+      setReport(payload.reports?.[0] || null);
+      setReportStatus(payload.sourceStatus === "degraded" ? `Paket ${payload.summary?.totalReports || 0} report dibuat dengan degraded context: ${payload.warning}` : `Paket ${payload.summary?.totalReports || 0} report berhasil dibuat dari Google Sheets live context.`);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setReportStatus(`Gagal: ${message}`);
@@ -108,9 +134,15 @@ export default function ReportsPage() {
                     <label className="text-sm font-medium">Catatan operator</label>
                     <textarea value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Insight dari meeting, blocker, next action manual..." rows={5} className="w-full rounded-md border bg-background px-3 py-2 text-sm" />
                   </div>
-                  <Button onClick={generateReport} disabled={generating || !period} className="w-full">
-                    {generating ? "Generating..." : "Generate Report"}
-                  </Button>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <Button onClick={generateReport} disabled={generating || !period} className="w-full">
+                      {generating ? "Generating..." : "Generate Report"}
+                    </Button>
+                    <Button onClick={generateAllReports} disabled={generating || !period} variant="outline" className="w-full">
+                      Generate Semua Report
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">QA otomatis: membuat weekly, monthly, quarterly investor, dan annual report dalam satu request tanpa menulis ke Drive/Docs.</p>
                   {reportStatus && <p className="rounded-md border bg-muted px-3 py-2 text-sm text-muted-foreground">ℹ️ {reportStatus}</p>}
                 </CardContent>
               </Card>
@@ -141,6 +173,16 @@ export default function ReportsPage() {
                     <CardDescription>{report ? `Periode ${report.period} • ${report.createdAt}` : "Klik Generate Report untuk membuat draft markdown internal."}</CardDescription>
                   </CardHeader>
                   <CardContent>
+                    {batchReports.length > 0 && (
+                      <div className="mb-4 grid gap-2 md:grid-cols-4">
+                        {batchReports.map((item) => (
+                          <button key={item.id} onClick={() => setReport(item)} className="rounded-lg border bg-background p-3 text-left text-sm hover:border-primary">
+                            <div className="font-medium">{item.title}</div>
+                            <div className="text-xs text-muted-foreground">{item.period}</div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
                     {report ? (
                       <pre className="max-h-[620px] overflow-auto whitespace-pre-wrap rounded-xl border bg-muted/50 p-4 text-sm leading-relaxed">{report.content}</pre>
                     ) : (
