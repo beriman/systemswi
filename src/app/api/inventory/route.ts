@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { googleWorkspaceDegradedSource, isGoogleWorkspaceAuthError } from "@/lib/api/google-workspace-error";
+import { googleWorkspaceDegradedSource, googleWorkspaceWriteBlockedSource, isGoogleWorkspaceAuthError } from "@/lib/api/google-workspace-error";
 import { appendRows, readRange, updateRow } from "@/lib/sheets/sheets-real";
+import { appendSwiMemoryLog } from "@/lib/google/audit-log";
 
 export const runtime = "nodejs";
 
@@ -94,6 +95,15 @@ function summarize(items: InventoryItem[]) {
     byCategory,
     alerts: alerts.slice(0, 20),
   };
+}
+
+async function appendInventoryAudit(entry: { action: string; target: string; summary: string }) {
+  try {
+    await appendSwiMemoryLog(entry);
+    return "ok";
+  } catch (error) {
+    return isGoogleWorkspaceAuthError(error) ? "blocked" : `warning:${String(error).slice(0, 160)}`;
+  }
 }
 
 async function readMovements() {
@@ -217,17 +227,33 @@ export async function POST(request: NextRequest) {
       body.reference || body.proofUrl || "",
     ]);
 
+    const auditStatus = await appendInventoryAudit({
+      action: "Inventory Movement Recorded",
+      target: `Inventory_Movements:${item.id}`,
+      summary: `Recorded ${type} movement for ${item.name} (${item.sku || item.id}); qty ${quantity} ${item.unit}; final stock ${newQty} ${item.unit}; status ${status}; reference ${body.reference || body.proofUrl || "TBA"}`,
+    });
+
     return NextResponse.json(
       {
         success: true,
         source: "Google Sheets",
         item: { ...item, qty: newQty, unitCost, status, lastMovementAt: timestamp },
         movement: { timestamp, date, type, quantity, reference: body.reference || "", proofUrl: body.proofUrl || "" },
+        auditStatus,
         syncedSheets: ["Inventory_Master", "Inventory_Movements"],
       },
       { status: 201 }
     );
   } catch (error) {
+    if (isGoogleWorkspaceAuthError(error)) {
+      return NextResponse.json(
+        {
+          ...googleWorkspaceWriteBlockedSource("Google Sheets: Inventory_Master + Inventory_Movements", error),
+          error: "Google Workspace OAuth perlu re-auth sebelum bisa menyimpan movement inventory. Tidak ada write mock/fallback yang dibuat.",
+        },
+        { status: 503 }
+      );
+    }
     return NextResponse.json(
       { error: "Gagal menyimpan movement inventory", details: String(error) },
       { status: 500 }

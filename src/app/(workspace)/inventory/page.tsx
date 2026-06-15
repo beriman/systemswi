@@ -35,6 +35,8 @@ type Movement = {
 
 type InventoryResponse = {
   source: string;
+  sourceStatus?: "live" | "degraded" | "blocked";
+  warning?: string;
   items: InventoryItem[];
   movements: Movement[];
   summary: {
@@ -152,6 +154,11 @@ export default function InventoryPage() {
         </header>
 
         {message && <div className="rounded-2xl bg-white/[0.06] p-4 text-sm text-white/80 ring-1 ring-white/10">{message}</div>}
+        {data?.sourceStatus === "degraded" && (
+          <div className="rounded-2xl bg-amber-500/10 p-4 text-sm text-amber-100 ring-1 ring-amber-400/30">
+            ⚠️ Google Workspace perlu re-auth. Inventory tampil read-only/fallback kosong; movement stock diblokir sampai OAuth aktif kembali. {data.warning}
+          </div>
+        )}
 
         <section className="grid gap-4 md:grid-cols-4">
           <MetricCard label="Total SKU" value={String(data?.summary.totalItems || 0)} hint="bahan, packaging, barang jadi" />
