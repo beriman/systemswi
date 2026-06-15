@@ -28,6 +28,8 @@ type WhatsAppTemplate = {
     defaultAudience: string;
     requiredFields: string[];
     body: string;
+    consentRequired?: boolean;
+    category?: string;
 };
 
 type FaqItem = {
@@ -233,6 +235,10 @@ export default function AutomationPage() {
                                             <div className="rounded-lg border bg-muted/40 p-3 text-sm">
                                                 <div className="font-medium">{selectedTemplate.useCase}</div>
                                                 <div className="text-muted-foreground">Audience: {selectedTemplate.defaultAudience}</div>
+                                                {selectedTemplate.category && <div className="text-muted-foreground">Kategori: {selectedTemplate.category}</div>}
+                                                {selectedTemplate.consentRequired && (
+                                                    <div className="mt-1 font-medium text-amber-700 dark:text-amber-300">Consent wajib: isi consent=ya sebelum preview broadcast.</div>
+                                                )}
                                             </div>
                                         )}
 
@@ -271,6 +277,19 @@ export default function AutomationPage() {
                                                 />
                                             </div>
                                         ))}
+
+                                        {selectedTemplate?.consentRequired && (
+                                            <div>
+                                                <label className="text-sm font-medium">consent</label>
+                                                <input
+                                                    className="mt-1 w-full rounded-md border bg-background p-2 text-sm"
+                                                    value={waValues.consent || ""}
+                                                    onChange={(event) => setWaValues((current) => ({ ...current, consent: event.target.value }))}
+                                                    placeholder="Ketik ya hanya jika kontak opt-in/consented"
+                                                />
+                                                <p className="mt-1 text-xs text-muted-foreground">Broadcast promo/event/restock diblokir jika consent belum jelas.</p>
+                                            </div>
+                                        )}
 
                                         <Button onClick={handleGenerateWhatsApp}>Generate Preview</Button>
                                         <p className="text-xs text-muted-foreground">{waStatus}</p>

@@ -12,6 +12,8 @@ type WhatsAppTemplate = {
   defaultAudience: string;
   requiredFields: string[];
   body: string;
+  consentRequired?: boolean;
+  category?: "promo" | "event" | "restock" | "faq" | "crm";
 };
 
 type FaqItem = {
@@ -99,12 +101,38 @@ const TEMPLATES: WhatsAppTemplate[] = [
       "Halo {{namaCustomer}}, untuk {{minatProduk}}, SWI memiliki lini L'Arc~en~Scent, Nuscentza, Pixel Potion, dan merchandise TIM tertentu.\n\nKetersediaan stok, batch, dan harga final akan dicek admin dulu sebelum invoice/booking dibuat. Apakah Kakak mencari parfum, kelas experience, atau merchandise?",
   },
   {
+    id: "broadcast-promo-campaign",
+    type: "broadcast",
+    title: "Broadcast Promo / Campaign",
+    useCase: "Preview promo opt-in yang aman untuk campaign produk, kelas, atau seasonal activation.",
+    defaultAudience: "Customer opt-in, reseller, komunitas yang sudah consent follow-up",
+    requiredFields: ["namaKontak", "namaCampaign", "periode", "cta"],
+    consentRequired: true,
+    category: "promo",
+    body:
+      "Halo {{namaKontak}}, salam wangi dari Sensasi Wangi Indonesia ✨\n\nKami sedang menyiapkan campaign {{namaCampaign}} untuk periode {{periode}}. Detail harga, stok, kuota, dan benefit final akan dikonfirmasi admin sebelum invoice/booking dibuat.\n\n{{cta}}\n\nJika Kakak tidak ingin menerima update seperti ini lagi, balas STOP dan tim kami akan catat preferensinya.",
+  },
+  {
+    id: "broadcast-event-announcement",
+    type: "broadcast",
+    title: "Broadcast Event Announcement",
+    useCase: "Pengumuman event/kelas/activation Fragrantions dengan venue/jadwal tetap TBA bila belum verified.",
+    defaultAudience: "Customer opt-in, komunitas, tenant prospect, sponsor prospect",
+    requiredFields: ["namaKontak", "namaEvent", "tanggalEvent", "lokasi", "cta"],
+    consentRequired: true,
+    category: "event",
+    body:
+      "Halo {{namaKontak}}, SWI mengundang Kakak untuk update {{namaEvent}}.\n\nTanggal: {{tanggalEvent}}\nLokasi: {{lokasi}}\n\nDetail jadwal, kapasitas, tenant/sponsor slot, dan benefit akan diverifikasi admin sebelum konfirmasi final.\n\n{{cta}}\n\nCatatan: pesan ini hanya dikirim ke kontak yang bersedia menerima follow-up SWI.",
+  },
+  {
     id: "broadcast-event-followup",
     type: "broadcast",
     title: "Broadcast Follow-up Event Fragrantions",
     useCase: "Follow-up prospek tenant/sponsor tanpa mengirim otomatis.",
     defaultAudience: "Prospek tenant, sponsor, komunitas, dan media partner",
     requiredFields: ["namaKontak", "namaEvent", "deadline"],
+    consentRequired: true,
+    category: "event",
     body:
       "Halo {{namaKontak}}, salam wangi dari SWI.\n\nKami sedang menyiapkan {{namaEvent}} dan membuka slot kolaborasi tenant/sponsor. Jika berkenan, kami bisa kirimkan paket kerja sama dan kebutuhan booth/deliverables.\n\nTarget konfirmasi internal: {{deadline}}. Apakah Kakak bersedia kami follow-up hari ini?",
   },
@@ -114,9 +142,11 @@ const TEMPLATES: WhatsAppTemplate[] = [
     title: "Broadcast Restock Produk",
     useCase: "Notifikasi restock produk/merchandise setelah inventory divalidasi operator.",
     defaultAudience: "Customer opt-in dan reseller",
-    requiredFields: ["namaProduk", "cta"],
+    requiredFields: ["namaKontak", "namaProduk", "statusStok", "cta"],
+    consentRequired: true,
+    category: "restock",
     body:
-      "Kabar wangi dari SWI ✨\n\n{{namaProduk}} sudah/akan restock. Stok dan harga final tetap mengikuti validasi admin sebelum invoice dibuat.\n\n{{cta}}",
+      "Halo {{namaKontak}}, kabar wangi dari SWI ✨\n\n{{namaProduk}} statusnya: {{statusStok}}. Stok, batch, dan harga final tetap mengikuti validasi admin sebelum invoice dibuat.\n\n{{cta}}\n\nJika Kakak tidak ingin menerima update restock lagi, balas STOP.",
   },
   {
     id: "customer-sync-intake",
@@ -143,6 +173,11 @@ function normalizePhone(value: unknown) {
   if (digits.startsWith("0")) return `62${digits.slice(1)}`;
   if (digits.startsWith("62")) return digits;
   return digits;
+}
+
+function isConsentYes(value: unknown) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  return ["ya", "yes", "y", "true", "1", "opt-in", "optin", "consent"].includes(normalized);
 }
 
 function findFaqAnswer(value: unknown) {
@@ -182,6 +217,57 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
 
+    if (String(body?.action || "") === "generate_broadcast_batch") {
+      const templateId = String(body?.templateId || "").trim();
+      const template = TEMPLATES.find((item) => item.id === templateId && item.type === "broadcast");
+      if (!template) {
+        return NextResponse.json({ error: "templateId broadcast tidak valid" }, { status: 400 });
+      }
+
+      const sharedValues = (body?.values || {}) as Record<string, unknown>;
+      const recipients = Array.isArray(body?.recipients) ? body.recipients : [];
+      if (recipients.length === 0) {
+        return NextResponse.json({ error: "recipients wajib diisi untuk batch broadcast" }, { status: 400 });
+      }
+
+      const previews = recipients.map((recipient: Record<string, unknown>, index: number) => {
+        const values = { ...sharedValues, ...recipient };
+        const phone = normalizePhone(values.nomorWa || values.phone);
+        const hasConsent = !template.consentRequired || isConsentYes(values.consent);
+        const missing = template.requiredFields.filter((field) => !String(values[field] ?? "").trim());
+        const message = missing.length === 0 ? interpolate(template.body, values) : "";
+        return {
+          index,
+          namaKontak: values.namaKontak || values.namaCustomer || "TBA",
+          phone: phone || null,
+          consent: hasConsent ? "ok" : "blocked",
+          status: missing.length > 0 ? "missing_fields" : hasConsent ? "ready_preview" : "blocked_no_consent",
+          missing,
+          message: hasConsent && missing.length === 0 ? message : null,
+          waLink: hasConsent && phone && missing.length === 0 ? `https://wa.me/${phone}?text=${encodeURIComponent(message)}` : null,
+        };
+      });
+
+      return NextResponse.json(
+        {
+          success: true,
+          source: "systemswi WhatsApp batch broadcast preview (manual send only)",
+          sourceStatus: "ok",
+          template: { id: template.id, type: template.type, title: template.title, category: template.category },
+          summary: {
+            totalRecipients: previews.length,
+            ready: previews.filter((item) => item.status === "ready_preview").length,
+            blockedNoConsent: previews.filter((item) => item.status === "blocked_no_consent").length,
+            missingFields: previews.filter((item) => item.status === "missing_fields").length,
+          },
+          previews,
+          note: "Batch preview dibuat; sistem tidak mengirim WhatsApp otomatis. Kirim manual hanya untuk kontak opt-in/consented dan verifikasi harga/stok/jadwal terlebih dahulu.",
+          generatedAt: new Date().toISOString(),
+        },
+        { status: 201 },
+      );
+    }
+
     if (String(body?.action || "") === "faq_answer") {
       const faq = findFaqAnswer(body?.query);
       if (!faq) {
@@ -220,6 +306,12 @@ export async function POST(req: NextRequest) {
     const missing = template.requiredFields.filter((field) => !String(values[field] ?? "").trim());
     if (missing.length > 0) {
       return NextResponse.json({ error: "field wajib belum lengkap", missing }, { status: 400 });
+    }
+    if (template.consentRequired && !isConsentYes(values.consent)) {
+      return NextResponse.json(
+        { error: "broadcast hanya boleh untuk kontak opt-in/consented", missing: ["consent=ya"] },
+        { status: 400 },
+      );
     }
 
     const message = interpolate(template.body, values);
