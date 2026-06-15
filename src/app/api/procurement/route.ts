@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { googleWorkspaceDegradedSource, isGoogleWorkspaceAuthError } from "@/lib/api/google-workspace-error";
+import { googleWorkspaceDegradedSource, googleWorkspaceWriteBlockedSource, isGoogleWorkspaceAuthError } from "@/lib/api/google-workspace-error";
 import { appendRows, readRange, updateRow } from "@/lib/sheets/sheets-real";
+import { appendSwiMemoryLog } from "@/lib/google/audit-log";
 
 export const runtime = "nodejs";
 
@@ -181,6 +182,15 @@ function makeReceiptId(existing: Receipt[]) {
   return `GR-${today}-${String(sameDay).padStart(3, "0")}`;
 }
 
+async function appendProcurementAudit(entry: { action: string; target: string; summary: string }) {
+  try {
+    await appendSwiMemoryLog(entry);
+    return "ok";
+  } catch (error) {
+    return isGoogleWorkspaceAuthError(error) ? "blocked" : `warning:${String(error).slice(0, 160)}`;
+  }
+}
+
 export async function GET() {
   try {
     const [supplierRows, poRows, receiptRows] = await Promise.all([
@@ -257,7 +267,12 @@ export async function POST(request: NextRequest) {
         text(body.notes),
       ];
       await appendRows("PurchaseOrders", [row]);
-      return NextResponse.json({ success: true, action, po: { id: poId, supplierName: supplier.name, total }, syncedSheets: ["Purchase_Orders"] }, { status: 201 });
+      const auditStatus = await appendProcurementAudit({
+        action: "Procurement PO Created",
+        target: `Purchase_Orders:${poId}`,
+        summary: `Created PO ${poId} for supplier ${supplier.name}; item ${itemName}; qty ${quantity} ${text(body.unit) || "unit"}; total ${total}; expected ${text(body.expectedDate) || "TBA"}`,
+      });
+      return NextResponse.json({ success: true, action, po: { id: poId, supplierName: supplier.name, total }, auditStatus, syncedSheets: ["Purchase_Orders"] }, { status: 201 });
     }
 
     if (action === "receive") {
@@ -350,18 +365,31 @@ export async function POST(request: NextRequest) {
         [po.notes, text(body.notes)].filter(Boolean).join(" | "),
       ]);
 
+      const auditStatus = await appendProcurementAudit({
+        action: "Procurement Goods Received",
+        target: `Goods_Receipts:${receiptId}`,
+        summary: `Received ${quantity} ${po.unit} for PO ${po.id}; QC ${qcStatus}; inventoryUpdated=${qcStatus === "passed" && Boolean(inv)}; movementRef ${movementRef}`,
+      });
+
       return NextResponse.json({
         success: true,
         action,
         receipt: { id: receiptId, poId: po.id, quantity, qcStatus },
         inventoryUpdated: qcStatus === "passed" && Boolean(inv),
         poStatus: newStatus,
+        auditStatus,
         syncedSheets: ["Goods_Receipts", "Purchase_Orders", ...(qcStatus === "passed" && inv ? ["Inventory_Master", "Inventory_Movements"] : [])],
       }, { status: 201 });
     }
 
     return NextResponse.json({ error: "action wajib create-po atau receive" }, { status: 400 });
   } catch (error) {
+    if (isGoogleWorkspaceAuthError(error)) {
+      return NextResponse.json({
+        ...googleWorkspaceWriteBlockedSource("Google Sheets: Supplier_Master + Purchase_Orders + Goods_Receipts", error),
+        error: "Google Workspace OAuth perlu re-auth sebelum bisa menyimpan procurement. Tidak ada write mock/fallback yang dibuat.",
+      }, { status: 503 });
+    }
     return NextResponse.json({ error: "Gagal menyimpan procurement", details: String(error) }, { status: 500 });
   }
 }

@@ -50,6 +50,8 @@ type Receipt = {
 
 type ProcurementResponse = {
   source: string;
+  sourceStatus?: "live" | "degraded" | "blocked";
+  warning?: string;
   suppliers: Supplier[];
   purchaseOrders: PurchaseOrder[];
   receipts: Receipt[];
@@ -202,6 +204,11 @@ export default function ProcurementPage() {
         </header>
 
         {message && <div className="rounded-2xl bg-white/[0.06] p-4 text-sm text-white/80 ring-1 ring-white/10">{message}</div>}
+        {data?.sourceStatus === "degraded" && (
+          <div className="rounded-2xl bg-amber-500/10 p-4 text-sm text-amber-100 ring-1 ring-amber-400/30">
+            ⚠️ Google Workspace perlu re-auth. Halaman procurement tetap read-only dengan fallback kosong; write PO/receiving diblokir sampai OAuth aktif kembali. {data.warning}
+          </div>
+        )}
 
         <section className="grid gap-4 md:grid-cols-5">
           <MetricCard label="Supplier" value={String(data?.suppliers.length || 0)} hint="vendor aktif/draft" />
