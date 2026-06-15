@@ -13,6 +13,25 @@ function formatCurrency(amount: number): string {
   return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(amount);
 }
 
+function slugify(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "") || "report";
+}
+
+function downloadTextFile(filename: string, content: string, mimeType = "text/markdown;charset=utf-8") {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
 type ReportTemplate = {
   type: string;
   name: string;
@@ -93,6 +112,24 @@ export default function ReportsPage() {
     }
   };
 
+  const downloadCurrentReport = () => {
+    if (!report?.content) return;
+    const filename = `systemswi-${slugify(report.type || report.title)}-${slugify(report.period || period)}.md`;
+    downloadTextFile(filename, report.content);
+    setReportStatus(`Download siap: ${filename}. Simpan file ini ke Drive/Docs setelah review operator.`);
+  };
+
+  const downloadAllReports = () => {
+    const reportsToExport = batchReports.length > 0 ? batchReports : report ? [report] : [];
+    if (reportsToExport.length === 0) return;
+    const bundle = reportsToExport
+      .map((item) => `<!-- ${item.title} | ${item.period} | ${item.createdAt} -->\n\n${item.content}`)
+      .join("\n\n---\n\n");
+    const filename = `systemswi-report-bundle-${slugify(period)}.md`;
+    downloadTextFile(filename, bundle);
+    setReportStatus(`Bundle download siap: ${filename} (${reportsToExport.length} report). Belum ada file yang ditulis ke Google Drive.`);
+  };
+
   return (
     <div className="space-y-6">
       <div>
@@ -142,7 +179,15 @@ export default function ReportsPage() {
                       Generate Semua Report
                     </Button>
                   </div>
-                  <p className="text-xs text-muted-foreground">QA otomatis: membuat weekly, monthly, quarterly investor, dan annual report dalam satu request tanpa menulis ke Drive/Docs.</p>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <Button onClick={downloadCurrentReport} disabled={!report?.content} variant="secondary" className="w-full">
+                      Download Markdown
+                    </Button>
+                    <Button onClick={downloadAllReports} disabled={!report?.content && batchReports.length === 0} variant="secondary" className="w-full">
+                      Download Bundle
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">QA otomatis: membuat weekly, monthly, quarterly investor, dan annual report dalam satu request. Download bersifat lokal/browser; tidak menulis ke Drive/Docs sampai operator menyimpan manual atau workflow save terpisah disetujui.</p>
                   {reportStatus && <p className="rounded-md border bg-muted px-3 py-2 text-sm text-muted-foreground">ℹ️ {reportStatus}</p>}
                 </CardContent>
               </Card>
