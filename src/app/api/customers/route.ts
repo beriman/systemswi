@@ -110,7 +110,27 @@ function parseInteractions(rows: string[][]): Interaction[] {
   })).filter((interaction) => interaction.interactionId);
 }
 
+function parseDateKey(value: string) {
+  if (!value || value === "TBA") return "";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "";
+  return parsed.toISOString().slice(0, 10);
+}
+
 function summarize(customers: Customer[], interactions: Interaction[]) {
+  const today = new Date().toISOString().slice(0, 10);
+  const followUps = interactions
+    .filter((interaction) => parseDateKey(interaction.followUpDate))
+    .map((interaction) => {
+      const dueDate = parseDateKey(interaction.followUpDate);
+      return {
+        ...interaction,
+        dueDate,
+        status: dueDate < today ? "overdue" : dueDate === today ? "due_today" : "upcoming",
+      };
+    })
+    .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+
   return {
     totalCustomers: customers.length,
     consentedCustomers: customers.filter((customer) => customer.consent === "yes").length,
@@ -121,6 +141,15 @@ function summarize(customers: Customer[], interactions: Interaction[]) {
       return acc;
     }, {}),
     recentInteractions: interactions.slice(-10).reverse(),
+    followUps: followUps.slice(0, 20),
+    followUpSummary: {
+      overdue: followUps.filter((item) => item.status === "overdue").length,
+      dueToday: followUps.filter((item) => item.status === "due_today").length,
+      upcoming7Days: followUps.filter((item) => {
+        const diffDays = Math.ceil((new Date(item.dueDate).getTime() - new Date(today).getTime()) / 86400000);
+        return diffDays >= 0 && diffDays <= 7;
+      }).length,
+    },
   };
 }
 

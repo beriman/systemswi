@@ -37,6 +37,11 @@ type Interaction = {
   pic: string;
 };
 
+type FollowUp = Interaction & {
+  dueDate: string;
+  status: "overdue" | "due_today" | "upcoming";
+};
+
 type CustomerPayload = {
   source?: string;
   sourceStatus?: string;
@@ -50,6 +55,12 @@ type CustomerPayload = {
     totalClv: number;
     bySegment: Record<string, number>;
     recentInteractions: Interaction[];
+    followUps: FollowUp[];
+    followUpSummary: {
+      overdue: number;
+      dueToday: number;
+      upcoming7Days: number;
+    };
   };
 };
 
@@ -66,6 +77,17 @@ const emptyForm = {
   followUpDate: "",
 };
 
+const emptyInteractionForm = {
+  customerId: "",
+  whatsapp: "",
+  type: "follow_up",
+  channel: "WhatsApp",
+  summary: "",
+  value: "0",
+  followUpDate: "",
+  pic: "HemuHemu/OWL",
+};
+
 const formatCurrency = (value: number) => new Intl.NumberFormat("id-ID", {
   style: "currency",
   currency: "IDR",
@@ -77,6 +99,7 @@ export default function CustomersPage() {
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState("Memuat Customer CRM dari Google Sheets...");
   const [form, setForm] = useState(emptyForm);
+  const [interactionForm, setInteractionForm] = useState(emptyInteractionForm);
   const [query, setQuery] = useState("");
 
   const customers = useMemo(() => {
@@ -132,6 +155,29 @@ export default function CustomersPage() {
     }
   }
 
+  async function submitInteraction(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setStatus("Mencatat interaction/follow-up ke Google Sheets...");
+    try {
+      const response = await fetch("/api/customers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "record-interaction",
+          ...interactionForm,
+          value: Number(interactionForm.value || 0),
+        }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload?.error || payload?.details || "Gagal menyimpan interaction");
+      setStatus(`✅ Interaction tercatat: ${payload.interactionId}. Audit: ${payload.auditStatus}`);
+      setInteractionForm(emptyInteractionForm);
+      await loadCustomers();
+    } catch (error) {
+      setStatus(`⚠️ ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
@@ -154,15 +200,18 @@ export default function CustomersPage() {
         </Card>
       ) : null}
 
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-6">
         <Metric title="Total Customer" value={data?.summary.totalCustomers || 0} />
         <Metric title="Consent Ya" value={data?.summary.consentedCustomers || 0} />
         <Metric title="Perlu Review Consent" value={data?.summary.needsConsentReview || 0} tone="orange" />
         <Metric title="Total CLV" value={formatCurrency(data?.summary.totalClv || 0)} />
+        <Metric title="Follow-up Overdue" value={data?.summary.followUpSummary?.overdue || 0} tone="orange" />
+        <Metric title="Follow-up 7 Hari" value={data?.summary.followUpSummary?.upcoming7Days || 0} />
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[380px_1fr]">
-        <Card>
+        <div className="space-y-4">
+          <Card>
           <CardHeader>
             <CardTitle>Input / Update Customer</CardTitle>
             <CardDescription>Isi data terverifikasi saja. Jika consent belum jelas, pilih TBA.</CardDescription>
@@ -194,6 +243,43 @@ export default function CustomersPage() {
             </form>
           </CardContent>
         </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Catat Interaction / Follow-up</CardTitle>
+              <CardDescription>Gunakan untuk follow-up tenant/customer, purchase, atau WhatsApp manual. Write tetap ke Customer_Interactions + audit.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form className="space-y-4" onSubmit={submitInteraction}>
+                <div className="grid gap-2">
+                  <Label>Customer</Label>
+                  <select
+                    className="rounded-md border bg-background px-3 py-2"
+                    value={interactionForm.customerId}
+                    onChange={(event) => setInteractionForm({ ...interactionForm, customerId: event.target.value })}
+                  >
+                    <option value="">Pilih customer atau isi WhatsApp</option>
+                    {(data?.customers || []).map((customer) => (
+                      <option key={customer.id} value={customer.id}>{customer.name} — {customer.whatsapp}</option>
+                    ))}
+                  </select>
+                </div>
+                <Field label="WhatsApp fallback" value={interactionForm.whatsapp} onChange={(value) => setInteractionForm({ ...interactionForm, whatsapp: value })} placeholder="Jika customer belum dipilih" />
+                <div className="grid gap-3 md:grid-cols-2">
+                  <Field label="Tipe" value={interactionForm.type} onChange={(value) => setInteractionForm({ ...interactionForm, type: value })} placeholder="follow_up / purchase" />
+                  <Field label="Channel" value={interactionForm.channel} onChange={(value) => setInteractionForm({ ...interactionForm, channel: value })} />
+                </div>
+                <Field label="Value (Rp, optional)" type="number" value={interactionForm.value} onChange={(value) => setInteractionForm({ ...interactionForm, value: value })} />
+                <Field label="Follow-up berikutnya" type="date" value={interactionForm.followUpDate} onChange={(value) => setInteractionForm({ ...interactionForm, followUpDate: value })} />
+                <div className="grid gap-2">
+                  <Label>Summary</Label>
+                  <Textarea value={interactionForm.summary} onChange={(event) => setInteractionForm({ ...interactionForm, summary: event.target.value })} placeholder="Ringkasan interaksi, kebutuhan, atau next step" required />
+                </div>
+                <Button type="submit" className="w-full">Record Interaction</Button>
+              </form>
+            </CardContent>
+          </Card>
+        </div>
 
         <div className="space-y-4">
           <Card>
@@ -232,6 +318,30 @@ export default function CustomersPage() {
                   </tbody>
                 </table>
               </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Follow-up Tracker</CardTitle>
+              <CardDescription>Prioritas dari Customer_Interactions berdasarkan tanggal follow-up. Tidak mengirim pesan otomatis.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {(data?.summary.followUps || []).length === 0 ? (
+                <p className="text-sm text-muted-foreground">Belum ada follow-up date tercatat.</p>
+              ) : data?.summary.followUps.map((item) => (
+                <div key={`${item.interactionId}-${item.dueDate}`} className="rounded-lg border p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="font-medium">{item.name}</div>
+                      <div className="text-xs text-muted-foreground">{item.channel} · PIC {item.pic}</div>
+                    </div>
+                    <FollowUpBadge status={item.status} />
+                  </div>
+                  <p className="mt-2 text-sm text-muted-foreground">{item.summary || "TBA"}</p>
+                  <p className="text-xs text-muted-foreground">Due: {item.dueDate} · type: {item.type}</p>
+                </div>
+              ))}
             </CardContent>
           </Card>
 
@@ -284,4 +394,10 @@ function ConsentBadge({ value }: { value: string }) {
   if (normalized === "yes") return <Badge className="bg-emerald-600">Ya</Badge>;
   if (normalized === "no") return <Badge variant="destructive">Tidak</Badge>;
   return <Badge variant="outline">TBA</Badge>;
+}
+
+function FollowUpBadge({ status }: { status: FollowUp["status"] }) {
+  if (status === "overdue") return <Badge variant="destructive">Overdue</Badge>;
+  if (status === "due_today") return <Badge className="bg-orange-600">Hari ini</Badge>;
+  return <Badge variant="outline">Upcoming</Badge>;
 }
