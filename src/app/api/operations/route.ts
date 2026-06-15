@@ -26,9 +26,27 @@ type CadenceItem = {
   href: string;
 };
 
-const SOURCE = "Google Sheets: Inventory_Master, Inventory_Movements, Purchase_Orders, Goods_Receipts, Brand_Production, Brand_Sales, Customer_Master, Compliance_Checks, Product_Batches, QC_Checklist";
+type DivisionKpi = {
+  id: string;
+  division: string;
+  owner: string;
+  health: "ready" | "attention" | "blocked" | "draft";
+  primaryMetric: string;
+  primaryValue: number | string;
+  secondaryMetric: string;
+  secondaryValue: number | string;
+  source: string;
+  nextAction: string;
+  href: string;
+};
+
+const SOURCE = "Google Sheets: Cash_Harian, Event_Tenants, Event_Sponsors, Event_Budget, Inventory_Master, Inventory_Movements, Purchase_Orders, Goods_Receipts, Brand_Production, Brand_Sales, Customer_Master, Compliance_Checks, Product_Batches, QC_Checklist";
 
 const ranges = [
+  "Cash_Harian!A1:I1000",
+  "Event_Tenants!A1:O1000",
+  "Event_Sponsors!A1:O1000",
+  "Event_Budget!A1:L1000",
   "Inventory_Master!A1:O1000",
   "Inventory_Movements!A1:J1000",
   "Purchase_Orders!A1:N1000",
@@ -95,6 +113,66 @@ function latestRows(rows: string[][], limit = 5) {
     .slice(-limit)
     .reverse()
     .map((row) => row.map(text));
+}
+
+function paymentOutstanding(row: string[]) {
+  const joined = row.map(text).join(" ").toLowerCase();
+  const amount = row.reduce((max, cell) => Math.max(max, num(cell)), 0);
+  const paidLike = joined.includes("paid") || joined.includes("lunas") || joined.includes("settled");
+  return paidLike ? 0 : amount;
+}
+
+function buildDivisionKpis(data: Record<string, string[][]>): DivisionKpi[] {
+  const cash = rowsOnly(data["Cash_Harian!A1:I1000"]);
+  const tenants = rowsOnly(data["Event_Tenants!A1:O1000"]);
+  const sponsors = rowsOnly(data["Event_Sponsors!A1:O1000"]);
+  const budget = rowsOnly(data["Event_Budget!A1:L1000"]);
+  const inventory = rowsOnly(data["Inventory_Master!A1:O1000"]);
+  const purchaseOrders = rowsOnly(data["Purchase_Orders!A1:N1000"]);
+  const receipts = rowsOnly(data["Goods_Receipts!A1:M1000"]);
+  const production = rowsOnly(data["Brand_Production!A1:T1000"]);
+  const sales = rowsOnly(data["Brand_Sales!A1:N1000"]);
+  const customers = rowsOnly(data["Customer_Master!A1:M1000"]);
+  const compliance = rowsOnly(data["Compliance_Checks!A1:L1000"]);
+  const batches = rowsOnly(data["Product_Batches!A1:M1000"]);
+  const qc = rowsOnly(data["QC_Checklist!A1:I1000"]);
+
+  const cashIn = cash.reduce((sum, row) => sum + num(row[4]), 0);
+  const cashOut = cash.reduce((sum, row) => sum + num(row[5]), 0);
+  const tenantOutstanding = tenants.reduce((sum, row) => sum + paymentOutstanding(row), 0);
+  const sponsorOutstanding = sponsors.reduce((sum, row) => sum + paymentOutstanding(row), 0);
+  const overBudget = budget.filter((row) => {
+    const planned = Math.max(num(row[3]), num(row[4]), num(row[5]));
+    const actual = Math.max(num(row[6]), num(row[7]), num(row[8]));
+    return planned > 0 && actual > planned;
+  }).length;
+  const stockAlerts = inventory.filter((row) => statusFromInventory(num(row[5]), num(row[6])) !== "ready").length;
+  const openPo = purchaseOrders.filter((row) => {
+    const status = `${text(row[8])} ${text(row[10])} ${text(row[11])}`.toLowerCase();
+    return !status.includes("complete") && !status.includes("closed") && !status.includes("selesai");
+  }).length;
+  const qcPending = receipts.filter((row) => {
+    const status = `${text(row[7])} ${text(row[8])}`.toLowerCase();
+    return status.includes("pending") || status.includes("failed") || status.includes("review") || !status;
+  }).length + qc.filter((row) => {
+    const result = text(row[5]).toLowerCase();
+    return result.includes("failed") || result.includes("review") || result.includes("pending") || !result;
+  }).length;
+  const complianceReview = compliance.filter((row) => {
+    const status = text(row[5]).toLowerCase();
+    return status.includes("review") || status.includes("draft") || status.includes("failed") || status.includes("tba");
+  }).length + batches.filter((row) => {
+    const status = `${text(row[7])} ${text(row[8])}`.toLowerCase();
+    return status.includes("pending") || status.includes("review") || status.includes("draft") || status.includes("incomplete") || !status;
+  }).length;
+
+  return [
+    { id: "finance", division: "Finance", owner: "Finance Lead", health: cash.length ? (cashIn - cashOut < 0 ? "attention" : "ready") : "draft", primaryMetric: "Net cash rows", primaryValue: cashIn - cashOut, secondaryMetric: "Cash rows", secondaryValue: cash.length, source: "Cash_Harian", nextAction: cash.length ? "Rekonsiliasi bank mingguan sebelum report eksternal." : "Input transaksi harian atau re-auth Google Workspace jika degraded.", href: "/finance" },
+    { id: "events", division: "Event Commercial", owner: "Event PIC / Wapiq", health: tenantOutstanding + sponsorOutstanding > 0 || overBudget > 0 ? "attention" : tenants.length + sponsors.length > 0 ? "ready" : "draft", primaryMetric: "Outstanding pipeline", primaryValue: tenantOutstanding + sponsorOutstanding, secondaryMetric: "Over-budget rows", secondaryValue: overBudget, source: "Event_Tenants + Event_Sponsors + Event_Budget", nextAction: "Follow-up invoice/payment tenant-sponsor dan review budget event sebelum komit vendor.", href: "/events" },
+    { id: "operations", division: "Inventory + Procurement", owner: "COO / Ops Lead", health: stockAlerts + openPo + qcPending > 0 ? "attention" : inventory.length ? "ready" : "draft", primaryMetric: "Stock/PO/QC issues", primaryValue: stockAlerts + openPo + qcPending, secondaryMetric: "Inventory SKUs", secondaryValue: inventory.length, source: "Inventory_Master + Purchase_Orders + Goods_Receipts", nextAction: "Prioritaskan low stock, PO terbuka, dan receiving QC sebelum produksi.", href: "/inventory" },
+    { id: "production", division: "Production + Compliance", owner: "Production / Compliance PIC", health: complianceReview > 0 ? "attention" : production.length ? "ready" : "draft", primaryMetric: "Compliance/batch review", primaryValue: complianceReview, secondaryMetric: "Production rows", secondaryValue: production.length, source: "Brand_Production + Compliance_Checks + Product_Batches + QC_Checklist", nextAction: "Release batch hanya setelah QC/compliance dan traceability lengkap.", href: "/compliance" },
+    { id: "crm", division: "Sales + CRM", owner: "Store/CRM PIC", health: sales.length > customers.length ? "attention" : customers.length ? "ready" : "draft", primaryMetric: "Sales / CRM rows", primaryValue: `${sales.length} / ${customers.length}`, secondaryMetric: "Consent-safe contacts", secondaryValue: customers.length, source: "Brand_Sales + Customer_Master", nextAction: "Sinkronkan pembeli ke CRM dengan consent jelas, lalu follow-up manual via WhatsApp preview.", href: "/customers" },
+  ];
 }
 
 function buildWorkflow(data: Record<string, string[][]>) {
@@ -246,6 +324,7 @@ function buildWorkflow(data: Record<string, string[][]>) {
       production: latestRows(data["Brand_Production!A1:T1000"]),
       sales: latestRows(data["Brand_Sales!A1:N1000"]),
     },
+    crossDivisionKpis: buildDivisionKpis(data),
     weeklyCadence,
     guardrails: [
       "Google Sheets tetap source of truth; halaman ini tidak mengarang angka jika OAuth degraded.",
@@ -268,6 +347,7 @@ export async function GET() {
         summary: { totalSteps: 7, ready: 0, attention: 0, blocked: 0, draft: 7, stockAlerts: 0, openPo: 0, qcPending: 0, productionRows: 0, salesRows: 0, customerRows: 0 },
         steps: buildWorkflow(Object.fromEntries(ranges.map((range) => [range, []]))).steps,
         recentActivity: { inventoryMovements: [], purchaseOrders: [], production: [], sales: [] },
+        crossDivisionKpis: buildDivisionKpis(Object.fromEntries(ranges.map((range) => [range, []]))),
         weeklyCadence,
         guardrails: ["OAuth Google Workspace perlu re-auth; tidak ada data palsu yang ditampilkan."],
       });

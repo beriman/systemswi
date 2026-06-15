@@ -35,6 +35,19 @@ type OperationsResponse = {
   };
   steps: Step[];
   recentActivity: Record<string, string[][]>;
+  crossDivisionKpis: Array<{
+    id: string;
+    division: string;
+    owner: string;
+    health: "ready" | "attention" | "blocked" | "draft";
+    primaryMetric: string;
+    primaryValue: number | string;
+    secondaryMetric: string;
+    secondaryValue: number | string;
+    source: string;
+    nextAction: string;
+    href: string;
+  }>;
   weeklyCadence: Array<{
     id: string;
     agenda: string;
@@ -151,6 +164,38 @@ export default function OperationsPage() {
           <Metric label="Ready" value={loading ? "..." : summary?.ready || 0} hint="Tahap aman dilanjutkan" />
           <Metric label="Perlu perhatian" value={loading ? "..." : summary?.attention || 0} hint="Stock/QC/PO/CRM perlu follow-up" />
           <Metric label="QC pending" value={loading ? "..." : summary?.qcPending || 0} hint="Receiving, produksi, checklist" />
+        </section>
+
+        <section className="rounded-3xl bg-white/[0.04] p-5 ring-1 ring-white/10">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <p className="text-xs uppercase tracking-[0.25em] text-[#6b9e8f]">Cross-division KPI tracking</p>
+              <h2 className="mt-2 text-2xl font-semibold">KPI lintas divisi untuk rapat mingguan</h2>
+              <p className="mt-1 text-sm text-white/55">Ringkasan konservatif dari Sheets agar Finance, Event, Ops, Production, dan CRM melihat bottleneck dari satu tempat.</p>
+            </div>
+            <Link href="/reports" className="rounded-full bg-white/10 px-4 py-2 text-sm text-white/80 hover:bg-white/20">Generate report →</Link>
+          </div>
+          <div className="mt-5 grid gap-3 lg:grid-cols-5">
+            {(data?.crossDivisionKpis || []).map((kpi) => (
+              <div key={kpi.id} className="rounded-2xl bg-black/20 p-4 ring-1 ring-white/5">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <h3 className="font-semibold text-white">{kpi.division}</h3>
+                    <p className="mt-1 text-xs text-[#9ee7dc]">{kpi.owner}</p>
+                  </div>
+                  <span className={`rounded-full px-2 py-1 text-[10px] font-semibold ring-1 ${statusClass[kpi.health]}`}>{statusLabel[kpi.health]}</span>
+                </div>
+                <div className="mt-4 rounded-xl bg-white/[0.04] p-3">
+                  <p className="text-xs text-white/40">{kpi.primaryMetric}</p>
+                  <p className="mt-1 text-lg font-semibold text-white">{kpi.primaryValue}</p>
+                </div>
+                <p className="mt-3 text-xs text-white/45">{kpi.secondaryMetric}: {kpi.secondaryValue}</p>
+                <p className="mt-2 text-xs text-white/35">Source: {kpi.source}</p>
+                <p className="mt-3 text-sm text-white/60">{kpi.nextAction}</p>
+                <Link href={kpi.href} className="mt-3 inline-flex text-sm font-semibold text-orange-100 hover:text-orange-200">Buka modul →</Link>
+              </div>
+            ))}
+          </div>
         </section>
 
         <section className="grid gap-4 lg:grid-cols-7">
