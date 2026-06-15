@@ -59,6 +59,33 @@ interface FinanceReconciliation {
   nextActions: string[];
 }
 
+interface FinanceCashflowProjection {
+  sourceStatus?: string;
+  warning?: string;
+  generatedAt?: string;
+  summary: {
+    openingCash: number;
+    averageMonthlyInflow: number;
+    averageMonthlyOutflow: number;
+    averageMonthlyNet: number;
+    projectedClosingCash3Months: number;
+    runwayMonths: number | null;
+    historicalMonths: number;
+  };
+  projection: Array<{
+    month: string;
+    label: string;
+    projectedInflow: number;
+    projectedOutflow: number;
+    projectedNet: number;
+    projectedClosingCash: number;
+    confidence: string;
+    note: string;
+  }>;
+  issues: string[];
+  nextActions: string[];
+}
+
 function formatCurrency(amount: number): string {
   if (!amount && amount !== 0) return "Rp 0";
   return new Intl.NumberFormat("id-ID", {
@@ -72,6 +99,7 @@ export default function FinancePage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [transactions, setTransactions] = useState<FinanceTransaction[]>([]);
   const [reconciliation, setReconciliation] = useState<FinanceReconciliation | null>(null);
+  const [cashflowProjection, setCashflowProjection] = useState<FinanceCashflowProjection | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [uploadingProof, setUploadingProof] = useState(false);
@@ -90,9 +118,10 @@ export default function FinancePage() {
   useEffect(() => {
     async function fetchData() {
       try {
-        const [dashboardRes, reconciliationRes] = await Promise.all([
+        const [dashboardRes, reconciliationRes, cashflowRes] = await Promise.all([
           fetch("/api/dashboard"),
           fetch("/api/finance/reconciliation", { cache: "no-store" }),
+          fetch("/api/finance/cashflow", { cache: "no-store" }),
           fetchTransactions(),
         ]);
         if (!dashboardRes.ok) throw new Error("Failed to fetch dashboard");
@@ -100,6 +129,9 @@ export default function FinancePage() {
         setData(json);
         if (reconciliationRes.ok) {
           setReconciliation(await reconciliationRes.json());
+        }
+        if (cashflowRes.ok) {
+          setCashflowProjection(await cashflowRes.json());
         }
       } catch (err) {
         setError(String(err));
@@ -394,6 +426,91 @@ export default function FinancePage() {
                   </>
                 ) : (
                   <div className="text-sm text-muted-foreground">Memuat rekonsiliasi bank...</div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Cashflow Projection */}
+            <Card className="border-purple-200 bg-purple-50/40">
+              <CardHeader>
+                <CardTitle>Proyeksi Cashflow 3 Bulan</CardTitle>
+                <CardDescription>
+                  Draft proyeksi berbasis Cash_Harian + saldo Rekening_Koran. Angka ini bukan pengganti review mutasi bank dan forecast operator.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {cashflowProjection ? (
+                  <>
+                    {cashflowProjection.sourceStatus === "degraded" && (
+                      <div className="rounded-md border border-yellow-300 bg-yellow-50 px-3 py-2 text-sm text-yellow-800">
+                        ⚠️ {cashflowProjection.warning || "Google Workspace OAuth degraded; proyeksi live belum bisa dihitung."}
+                      </div>
+                    )}
+                    <div className="grid gap-3 md:grid-cols-4">
+                      <div className="rounded-lg border bg-background p-3">
+                        <div className="text-xs text-muted-foreground">Saldo awal bank</div>
+                        <div className="text-lg font-bold">{formatCurrency(cashflowProjection.summary.openingCash)}</div>
+                      </div>
+                      <div className="rounded-lg border bg-background p-3">
+                        <div className="text-xs text-muted-foreground">Rata-rata masuk/bulan</div>
+                        <div className="text-lg font-bold text-green-700">{formatCurrency(cashflowProjection.summary.averageMonthlyInflow)}</div>
+                      </div>
+                      <div className="rounded-lg border bg-background p-3">
+                        <div className="text-xs text-muted-foreground">Rata-rata keluar/bulan</div>
+                        <div className="text-lg font-bold text-red-700">{formatCurrency(cashflowProjection.summary.averageMonthlyOutflow)}</div>
+                      </div>
+                      <div className="rounded-lg border bg-background p-3">
+                        <div className="text-xs text-muted-foreground">Runway estimasi</div>
+                        <div className="text-lg font-bold">
+                          {cashflowProjection.summary.runwayMonths === null ? "TBA" : `${cashflowProjection.summary.runwayMonths} bulan`}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="rounded-md border bg-background overflow-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Bulan</TableHead>
+                            <TableHead className="text-right">Masuk</TableHead>
+                            <TableHead className="text-right">Keluar</TableHead>
+                            <TableHead className="text-right">Net</TableHead>
+                            <TableHead className="text-right">Saldo akhir</TableHead>
+                            <TableHead>Confidence</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {cashflowProjection.projection.length === 0 ? (
+                            <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground">Proyeksi belum tersedia sampai Google OAuth live kembali.</TableCell></TableRow>
+                          ) : cashflowProjection.projection.map((month) => (
+                            <TableRow key={month.month}>
+                              <TableCell className="font-medium">{month.label}</TableCell>
+                              <TableCell className="text-right text-green-700">{formatCurrency(month.projectedInflow)}</TableCell>
+                              <TableCell className="text-right text-red-700">{formatCurrency(month.projectedOutflow)}</TableCell>
+                              <TableCell className={`text-right font-medium ${month.projectedNet >= 0 ? "text-green-700" : "text-red-700"}`}>{formatCurrency(month.projectedNet)}</TableCell>
+                              <TableCell className="text-right font-bold">{formatCurrency(month.projectedClosingCash)}</TableCell>
+                              <TableCell><span className="rounded bg-purple-100 px-2 py-1 text-xs text-purple-700">{month.confidence}</span></TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <div className="rounded-lg border bg-background p-3 text-sm">
+                        <div className="font-medium">Catatan risiko</div>
+                        <ul className="mt-2 list-disc space-y-1 pl-5 text-muted-foreground">
+                          {cashflowProjection.issues.map((issue, index) => <li key={index}>{issue}</li>)}
+                        </ul>
+                      </div>
+                      <div className="rounded-lg border bg-background p-3 text-sm">
+                        <div className="font-medium">Next action</div>
+                        <ul className="mt-2 list-disc space-y-1 pl-5 text-muted-foreground">
+                          {cashflowProjection.nextActions.map((action, index) => <li key={index}>{action}</li>)}
+                        </ul>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-sm text-muted-foreground">Memuat proyeksi cashflow...</div>
                 )}
               </CardContent>
             </Card>
