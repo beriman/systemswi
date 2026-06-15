@@ -41,6 +41,24 @@ interface FinanceTransaction {
   divisi: string;
 }
 
+interface FinanceReconciliation {
+  sourceStatus?: string;
+  warning?: string;
+  generatedAt?: string;
+  summary: {
+    status: string;
+    bankDelta: number;
+    cashNet: number;
+    bukuNet: number;
+    diffCashVsBank: number;
+    diffCashVsBuku: number;
+    cashRows: number;
+    bukuKasRows: number;
+  };
+  issues: string[];
+  nextActions: string[];
+}
+
 function formatCurrency(amount: number): string {
   if (!amount && amount !== 0) return "Rp 0";
   return new Intl.NumberFormat("id-ID", {
@@ -53,6 +71,7 @@ function formatCurrency(amount: number): string {
 export default function FinancePage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [transactions, setTransactions] = useState<FinanceTransaction[]>([]);
+  const [reconciliation, setReconciliation] = useState<FinanceReconciliation | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [uploadingProof, setUploadingProof] = useState(false);
@@ -71,13 +90,17 @@ export default function FinancePage() {
   useEffect(() => {
     async function fetchData() {
       try {
-        const [dashboardRes] = await Promise.all([
+        const [dashboardRes, reconciliationRes] = await Promise.all([
           fetch("/api/dashboard"),
+          fetch("/api/finance/reconciliation", { cache: "no-store" }),
           fetchTransactions(),
         ]);
         if (!dashboardRes.ok) throw new Error("Failed to fetch dashboard");
         const json = await dashboardRes.json();
         setData(json);
+        if (reconciliationRes.ok) {
+          setReconciliation(await reconciliationRes.json());
+        }
       } catch (err) {
         setError(String(err));
       } finally {
@@ -315,6 +338,63 @@ export default function FinancePage() {
                     </TableBody>
                   </Table>
                 </div>
+              </CardContent>
+            </Card>
+
+            {/* Weekly Bank Reconciliation */}
+            <Card className="border-blue-200 bg-blue-50/40">
+              <CardHeader>
+                <CardTitle>Rekonsiliasi Bank Mingguan</CardTitle>
+                <CardDescription>
+                  Membandingkan Rekening_Koran, Cash_Harian, dan Buku_Kas. Selisih wajib dicek dengan PDF mutasi sebelum QA saldo kas ditandai selesai.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {reconciliation ? (
+                  <>
+                    {reconciliation.sourceStatus === "degraded" && (
+                      <div className="rounded-md border border-yellow-300 bg-yellow-50 px-3 py-2 text-sm text-yellow-800">
+                        ⚠️ {reconciliation.warning || "Google Workspace OAuth degraded; rekonsiliasi live belum bisa dihitung."}
+                      </div>
+                    )}
+                    <div className="grid gap-3 md:grid-cols-4">
+                      <div className="rounded-lg border bg-background p-3">
+                        <div className="text-xs text-muted-foreground">Status</div>
+                        <div className={`text-lg font-bold ${reconciliation.summary.status === "reconciled" ? "text-green-700" : "text-orange-700"}`}>
+                          {reconciliation.summary.status === "reconciled" ? "Reconciled" : "Needs Review"}
+                        </div>
+                      </div>
+                      <div className="rounded-lg border bg-background p-3">
+                        <div className="text-xs text-muted-foreground">Delta Bank</div>
+                        <div className="text-lg font-bold">{formatCurrency(reconciliation.summary.bankDelta)}</div>
+                      </div>
+                      <div className="rounded-lg border bg-background p-3">
+                        <div className="text-xs text-muted-foreground">Net Cash_Harian</div>
+                        <div className="text-lg font-bold">{formatCurrency(reconciliation.summary.cashNet)}</div>
+                      </div>
+                      <div className="rounded-lg border bg-background p-3">
+                        <div className="text-xs text-muted-foreground">Selisih Cash vs Bank</div>
+                        <div className="text-lg font-bold text-orange-700">{formatCurrency(reconciliation.summary.diffCashVsBank)}</div>
+                      </div>
+                    </div>
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <div className="rounded-lg border bg-background p-3 text-sm">
+                        <div className="font-medium">Temuan</div>
+                        <ul className="mt-2 list-disc space-y-1 pl-5 text-muted-foreground">
+                          {reconciliation.issues.map((issue, index) => <li key={index}>{issue}</li>)}
+                        </ul>
+                      </div>
+                      <div className="rounded-lg border bg-background p-3 text-sm">
+                        <div className="font-medium">Next action</div>
+                        <ul className="mt-2 list-disc space-y-1 pl-5 text-muted-foreground">
+                          {reconciliation.nextActions.map((action, index) => <li key={index}>{action}</li>)}
+                        </ul>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-sm text-muted-foreground">Memuat rekonsiliasi bank...</div>
+                )}
               </CardContent>
             </Card>
 
