@@ -30,6 +30,14 @@ type WhatsAppTemplate = {
     body: string;
 };
 
+type FaqItem = {
+    id: string;
+    category: string;
+    question: string;
+    answer: string;
+    templateId: string;
+};
+
 const WORKFLOW_OPTIONS: { type: WorkflowType; icon: string; label: string }[] = [
     { type: "instagram_post", icon: "📸", label: "Instagram Post" },
     { type: "youtube_upload", icon: "📹", label: "YouTube Upload" },
@@ -42,6 +50,7 @@ export default function AutomationPage() {
     const [workflows, setWorkflows] = useState<WorkflowRequest[]>(getWorkflowRequests());
     const [activeTab, setActiveTab] = useState("all");
     const [templates, setTemplates] = useState<WhatsAppTemplate[]>([]);
+    const [faqKnowledgeBase, setFaqKnowledgeBase] = useState<FaqItem[]>([]);
     const [selectedTemplateId, setSelectedTemplateId] = useState("");
     const [waValues, setWaValues] = useState<Record<string, string>>({});
     const [waPreview, setWaPreview] = useState<{ message: string; waLink?: string | null; note: string } | null>(null);
@@ -55,6 +64,7 @@ export default function AutomationPage() {
             .then((response) => response.json())
             .then((payload) => {
                 setTemplates(payload.templates || []);
+                setFaqKnowledgeBase(payload.faqKnowledgeBase || []);
                 setSelectedTemplateId(payload.templates?.[0]?.id || "");
                 setWaStatus(payload.guardrails?.[0] || "Template WhatsApp siap dipakai.");
             })
@@ -223,6 +233,30 @@ export default function AutomationPage() {
                                             <div className="rounded-lg border bg-muted/40 p-3 text-sm">
                                                 <div className="font-medium">{selectedTemplate.useCase}</div>
                                                 <div className="text-muted-foreground">Audience: {selectedTemplate.defaultAudience}</div>
+                                            </div>
+                                        )}
+
+                                        {faqKnowledgeBase.length > 0 && (
+                                            <div className="rounded-lg border border-emerald-200 bg-emerald-50/70 p-3 text-sm text-emerald-950 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-100">
+                                                <div className="font-semibold">FAQ bot knowledge base siap</div>
+                                                <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                                                    {faqKnowledgeBase.map((faq) => (
+                                                        <button
+                                                            key={faq.id}
+                                                            type="button"
+                                                            className="rounded-md border bg-background/70 p-2 text-left text-xs hover:bg-background"
+                                                            onClick={() => {
+                                                                setSelectedTemplateId(faq.templateId);
+                                                                setWaValues((current) => ({ ...current, minatProduk: current.minatProduk || "produk SWI", jenisKelas: current.jenisKelas || "kelas parfumer" }));
+                                                                setWaPreview(null);
+                                                            }}
+                                                        >
+                                                            <span className="font-medium">{faq.question}</span>
+                                                            <span className="mt-1 block text-muted-foreground">{faq.answer}</span>
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                                <p className="mt-2 text-xs text-muted-foreground">Cakupan: jam buka, lokasi, harga kelas, dan produk. Semua jawaban tetap preview manual, bukan auto-send.</p>
                                             </div>
                                         )}
 

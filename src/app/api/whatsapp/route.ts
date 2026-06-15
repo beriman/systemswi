@@ -14,6 +14,49 @@ type WhatsAppTemplate = {
   body: string;
 };
 
+type FaqItem = {
+  id: string;
+  category: "jam_buka" | "lokasi" | "harga_kelas" | "produk";
+  question: string;
+  answer: string;
+  templateId: string;
+};
+
+const FAQ_KNOWLEDGE_BASE: FaqItem[] = [
+  {
+    id: "faq-hours",
+    category: "jam_buka",
+    question: "Jam buka SWI Store TIM kapan?",
+    answer:
+      "Jam operasional SWI Store TIM harus dikonfirmasi admin/operator pada hari kunjungan. Gunakan bahasa TBA jika jadwal belum diverifikasi agar tidak memberi info yang keliru.",
+    templateId: "faq-store-hours",
+  },
+  {
+    id: "faq-location",
+    category: "lokasi",
+    question: "Lokasi SWI Store di mana?",
+    answer:
+      "SWI Store berada di area Taman Ismail Marzuki, Jakarta. Detail titik temu/ruangan tetap dikonfirmasi admin sebelum customer datang.",
+    templateId: "faq-store-location",
+  },
+  {
+    id: "faq-class-pricing",
+    category: "harga_kelas",
+    question: "Berapa harga kelas parfumer?",
+    answer:
+      "Harga kelas parfumer belum dipublish sebagai angka final di sistem. Operator harus mengirim paket/harga terbaru yang sudah diverifikasi, bukan mengarang angka.",
+    templateId: "faq-class-pricing",
+  },
+  {
+    id: "faq-products",
+    category: "produk",
+    question: "Produk apa saja yang tersedia?",
+    answer:
+      "Produk/brand yang bisa ditawarkan: L'Arc~en~Scent, Nuscentza, Pixel Potion, serta merchandise TIM jika stok sudah divalidasi. Ketersediaan stok dan harga harus dicek admin sebelum invoice.",
+    templateId: "faq-products",
+  },
+];
+
 const TEMPLATES: WhatsAppTemplate[] = [
   {
     id: "faq-store-hours",
@@ -24,6 +67,36 @@ const TEMPLATES: WhatsAppTemplate[] = [
     requiredFields: ["namaCustomer"],
     body:
       "Halo {{namaCustomer}}, terima kasih sudah menghubungi Sensasi Wangi Indonesia.\n\nSWI Store berada di area Taman Ismail Marzuki, Jakarta. Untuk jam operasional terbaru dan jadwal kelas parfumer, tim kami akan konfirmasi ulang sebelum kunjungan agar informasinya akurat.\n\nApakah Kakak ingin info produk, kelas parfumer, atau jadwal event Fragrantions?",
+  },
+  {
+    id: "faq-store-location",
+    type: "faq",
+    title: "FAQ Lokasi Store TIM",
+    useCase: "Balasan cepat lokasi/titik temu dengan guardrail konfirmasi detail sebelum kunjungan.",
+    defaultAudience: "Customer retail / peserta kelas / tamu event",
+    requiredFields: ["namaCustomer"],
+    body:
+      "Halo {{namaCustomer}}, SWI Store berada di area Taman Ismail Marzuki, Jakarta.\n\nUntuk titik temu/ruangan yang paling akurat, admin akan konfirmasi ulang sebelum Kakak datang. Jika Kakak mau, kirim rencana tanggal/jam kunjungan supaya tim kami bisa bantu arahkan.",
+  },
+  {
+    id: "faq-class-pricing",
+    type: "faq",
+    title: "FAQ Harga Kelas Parfumer",
+    useCase: "Jawaban aman untuk pertanyaan harga kelas tanpa mengarang angka yang belum diverifikasi.",
+    defaultAudience: "Calon peserta kelas parfumer / komunitas",
+    requiredFields: ["namaCustomer", "jenisKelas"],
+    body:
+      "Halo {{namaCustomer}}, terima kasih tertarik dengan kelas {{jenisKelas}} dari SWI.\n\nPaket dan harga final akan kami kirim setelah admin memverifikasi jadwal, kapasitas, dan fasilitas kelas terbaru. Kami tidak ingin memberi angka yang belum final.\n\nBoleh info jumlah peserta dan target tanggalnya?",
+  },
+  {
+    id: "faq-products",
+    type: "faq",
+    title: "FAQ Produk & Stok",
+    useCase: "Jawaban produk dengan reminder cek stok/harga sebelum invoice.",
+    defaultAudience: "Customer retail / reseller / tenant",
+    requiredFields: ["namaCustomer", "minatProduk"],
+    body:
+      "Halo {{namaCustomer}}, untuk {{minatProduk}}, SWI memiliki lini L'Arc~en~Scent, Nuscentza, Pixel Potion, dan merchandise TIM tertentu.\n\nKetersediaan stok, batch, dan harga final akan dicek admin dulu sebelum invoice/booking dibuat. Apakah Kakak mencari parfum, kelas experience, atau merchandise?",
   },
   {
     id: "broadcast-event-followup",
@@ -72,6 +145,22 @@ function normalizePhone(value: unknown) {
   return digits;
 }
 
+function findFaqAnswer(value: unknown) {
+  const query = String(value ?? "").toLowerCase();
+  if (!query.trim()) return null;
+
+  const keywordMap: Array<[FaqItem["category"], string[]]> = [
+    ["jam_buka", ["jam", "buka", "operasional", "open", "tutup"]],
+    ["lokasi", ["lokasi", "alamat", "dimana", "di mana", "maps", "tim"]],
+    ["harga_kelas", ["harga", "biaya", "kelas", "workshop", "parfumer"]],
+    ["produk", ["produk", "stok", "parfum", "merch", "larc", "nuscentza", "pixel"]],
+  ];
+
+  const matchedCategory = keywordMap.find(([, keywords]) => keywords.some((keyword) => query.includes(keyword)))?.[0];
+  if (matchedCategory) return FAQ_KNOWLEDGE_BASE.find((item) => item.category === matchedCategory) || null;
+  return FAQ_KNOWLEDGE_BASE[0];
+}
+
 export async function GET() {
   return NextResponse.json({
     success: true,
@@ -79,10 +168,12 @@ export async function GET() {
     sourceStatus: "ok",
     generatedAt: new Date().toISOString(),
     templates: TEMPLATES,
+    faqKnowledgeBase: FAQ_KNOWLEDGE_BASE,
     guardrails: [
       "API hanya membuat preview/link; tidak mengirim WhatsApp otomatis.",
       "Gunakan TBA untuk data yang belum diverifikasi.",
       "Customer broadcast harus hanya untuk kontak opt-in/consented.",
+      "Harga kelas, stok, dan jam operasional wajib diverifikasi operator sebelum dikirim manual.",
     ],
   });
 }
@@ -90,6 +181,35 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
+
+    if (String(body?.action || "") === "faq_answer") {
+      const faq = findFaqAnswer(body?.query);
+      if (!faq) {
+        return NextResponse.json({ error: "query FAQ wajib diisi" }, { status: 400 });
+      }
+      const template = TEMPLATES.find((item) => item.id === faq.templateId);
+      const values = (body?.values || {}) as Record<string, unknown>;
+      const message = template ? interpolate(template.body, values) : faq.answer;
+      const phone = normalizePhone(values.nomorWa || body?.nomorWa);
+      const waLink = phone ? `https://wa.me/${phone}?text=${encodeURIComponent(message)}` : null;
+
+      return NextResponse.json(
+        {
+          success: true,
+          source: "systemswi WhatsApp FAQ knowledge base (preview only)",
+          sourceStatus: "ok",
+          faq,
+          template: template ? { id: template.id, type: template.type, title: template.title } : null,
+          answer: faq.answer,
+          message,
+          waLink,
+          note: "FAQ preview dibuat; belum ada pesan yang dikirim otomatis. Verifikasi jadwal, harga, stok, dan consent sebelum kirim manual.",
+          generatedAt: new Date().toISOString(),
+        },
+        { status: 201 },
+      );
+    }
+
     const templateId = String(body?.templateId || "").trim();
     const template = TEMPLATES.find((item) => item.id === templateId);
     if (!template) {
