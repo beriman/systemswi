@@ -9,7 +9,7 @@ type InventoryItem = {
   id: string;
   sku: string;
   name: string;
-  category: "raw_material" | "packaging" | "finished_good" | "other";
+  category: "raw_material" | "packaging" | "finished_good" | "merchandise" | "retail_merch" | "other";
   unit: string;
   qty: number;
   minimumQty: number;
@@ -82,6 +82,11 @@ function parseItems(rows: string[][]): InventoryItem[] {
 function summarize(items: InventoryItem[]) {
   const totalValue = items.reduce((sum, item) => sum + item.qty * item.unitCost, 0);
   const alerts = items.filter((item) => item.status !== "ok");
+  const merchandiseItems = items.filter((item) => {
+    const haystack = `${item.category} ${item.sku} ${item.name} ${item.location} ${item.notes}`.toLowerCase();
+    return haystack.includes("merch") || haystack.includes("tim") || haystack.includes("apparel") || haystack.includes("retail");
+  });
+  const merchandiseAlerts = merchandiseItems.filter((item) => item.status !== "ok");
   const byCategory = items.reduce<Record<string, number>>((acc, item) => {
     acc[item.category] = (acc[item.category] || 0) + 1;
     return acc;
@@ -94,6 +99,24 @@ function summarize(items: InventoryItem[]) {
     criticalCount: alerts.filter((item) => item.status === "critical" || item.status === "empty").length,
     byCategory,
     alerts: alerts.slice(0, 20),
+    merchandise: {
+      totalItems: merchandiseItems.length,
+      totalValue: merchandiseItems.reduce((sum, item) => sum + item.qty * item.unitCost, 0),
+      alertCount: merchandiseAlerts.length,
+      reorderPlan: merchandiseAlerts.slice(0, 12).map((item) => ({
+        id: item.id,
+        sku: item.sku,
+        name: item.name,
+        vendor: item.supplier || "TBA",
+        location: item.location || "TBA",
+        qty: item.qty,
+        unit: item.unit,
+        minimumQty: item.minimumQty,
+        reorderQty: item.reorderQty,
+        status: item.status,
+        notes: item.notes || "TBA / perlu validasi operator",
+      })),
+    },
   };
 }
 

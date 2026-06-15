@@ -232,7 +232,7 @@ export default function DashboardPage() {
               <ActionLink href="/finance" title="Review finance" detail="Saldo bank dan setoran modal" />
               <ActionLink href="/events" title="Update Fragrantions" detail="Tenant, sponsor, budget, timeline" />
               <ActionLink href="/production" title="Catat batch produksi" detail="Bahan, bottling, packaging, QC" />
-              <ActionLink href="/inventory" title="Cek restock alert" detail="Bahan, packaging, movement stock" />
+              <ActionLink href="/inventory" title="Cek restock alert" detail="Bahan, packaging, merch TIM, movement stock" />
               <ActionLink href="/procurement" title="Buat PO / Receiving QC" detail="Supplier, purchase order, barang masuk" />
               <ActionLink href="/documents" title="Generate dokumen" detail="Invoice, proposal sponsor, agreement, RAB" />
               <ActionLink href="/compliance" title="Review compliance batch" detail="Formula, QC, traceability, label" />
@@ -268,7 +268,7 @@ export default function DashboardPage() {
           <QuickLink href="/finance" title="💰 Finance Detail" description="Keuangan, saham, setoran modal" />
           <QuickLink href="/events" title="🎉 Events" description="Fragrantions portfolio & planning" />
           <QuickLink href="/production" title="🏭 Produksi" description="Batch, HPP, QC, dan stock" />
-          <QuickLink href="/inventory" title="📦 Inventory" description="Bahan, packaging, movement, alert" />
+          <QuickLink href="/inventory" title="📦 Inventory" description="Bahan, packaging, merch TIM, alert" />
           <QuickLink href="/procurement" title="🧾 Procurement" description="Supplier, PO, receiving QC" />
           <QuickLink href="/compliance" title="✅ Compliance" description="Formula, batch, QC, label" />
           <QuickLink href="/documents" title="📄 Documents" description="Invoice, proposal, RAB, report" />

@@ -46,6 +46,24 @@ type InventoryResponse = {
     lowStockCount: number;
     criticalCount: number;
     alerts: InventoryItem[];
+    merchandise?: {
+      totalItems: number;
+      totalValue: number;
+      alertCount: number;
+      reorderPlan: Array<{
+        id: string;
+        sku: string;
+        name: string;
+        vendor: string;
+        location: string;
+        qty: number;
+        unit: string;
+        minimumQty: number;
+        reorderQty: number;
+        status: InventoryItem["status"];
+        notes: string;
+      }>;
+    };
   };
 };
 
@@ -58,6 +76,11 @@ const statusClass: Record<string, string> = {
   critical: "bg-orange-500/15 text-orange-300",
   empty: "bg-red-500/15 text-red-300",
 };
+
+function isMerchandiseItem(item: InventoryItem) {
+  const haystack = `${item.category} ${item.sku} ${item.name} ${item.location} ${item.notes}`.toLowerCase();
+  return haystack.includes("merch") || haystack.includes("tim") || haystack.includes("apparel") || haystack.includes("retail");
+}
 
 function MetricCard({ label, value, hint }: { label: string; value: string; hint: string }) {
   return (
@@ -75,6 +98,7 @@ export default function InventoryPage() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [selectedId, setSelectedId] = useState("");
+  const [viewMode, setViewMode] = useState<"all" | "merchandise">("all");
 
   async function loadInventory() {
     setLoading(true);
@@ -98,6 +122,11 @@ export default function InventoryPage() {
     () => data?.items.find((item) => item.id === selectedId) || data?.items[0],
     [data?.items, selectedId]
   );
+
+  const visibleItems = useMemo(() => {
+    const items = data?.items || [];
+    return viewMode === "merchandise" ? items.filter(isMerchandiseItem) : items;
+  }, [data?.items, viewMode]);
 
   async function submitMovement(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -138,10 +167,10 @@ export default function InventoryPage() {
           <p className="text-sm uppercase tracking-[0.35em] text-[#6b9e8f]">Operations Command Center</p>
           <div className="mt-3 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div>
-              <h1 className="text-4xl font-bold">Inventory Bahan Baku & Packaging</h1>
+              <h1 className="text-4xl font-bold">Inventory Bahan Baku, Packaging & Merch TIM</h1>
               <p className="mt-3 max-w-3xl text-white/65">
                 Source of truth Google Sheets: master stok, movement masuk/keluar/adjustment, nilai inventory,
-                dan minimum stock alert untuk mendukung produksi serta procurement.
+                minimum stock alert, serta tracking SKU retail/merchandise TIM dengan vendor dan reorder khusus.
               </p>
             </div>
             <button
@@ -161,18 +190,48 @@ export default function InventoryPage() {
         )}
 
         <section className="grid gap-4 md:grid-cols-4">
-          <MetricCard label="Total SKU" value={String(data?.summary.totalItems || 0)} hint="bahan, packaging, barang jadi" />
+          <MetricCard label="Total SKU" value={String(data?.summary.totalItems || 0)} hint="bahan, packaging, barang jadi, merch" />
           <MetricCard label="Nilai Inventory" value={rupiah(data?.summary.totalValue || 0)} hint="qty × unit cost" />
-          <MetricCard label="Low Stock" value={String(data?.summary.lowStockCount || 0)} hint="perlu monitor" />
-          <MetricCard label="Critical/Empty" value={String(data?.summary.criticalCount || 0)} hint="prioritas restock" />
+          <MetricCard label="SKU Merch TIM" value={String(data?.summary.merchandise?.totalItems || 0)} hint={`${rupiah(data?.summary.merchandise?.totalValue || 0)} nilai retail`} />
+          <MetricCard label="Merch Reorder" value={String(data?.summary.merchandise?.alertCount || 0)} hint="SKU merch low/critical" />
+        </section>
+
+        <section className="rounded-3xl bg-white/[0.04] p-5 ring-1 ring-white/10">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h2 className="text-xl font-semibold">Inventory Mode</h2>
+              <p className="text-sm text-white/45">Filter cepat untuk operasional produksi atau SKU retail Merchandise TIM.</p>
+            </div>
+            <div className="flex rounded-full bg-black/30 p-1 ring-1 ring-white/10">
+              <button onClick={() => setViewMode("all")} className={`rounded-full px-4 py-2 text-sm ${viewMode === "all" ? "bg-[#0D9488] text-white" : "text-white/60"}`}>Semua SKU</button>
+              <button onClick={() => setViewMode("merchandise")} className={`rounded-full px-4 py-2 text-sm ${viewMode === "merchandise" ? "bg-[#F97316] text-white" : "text-white/60"}`}>Merch TIM</button>
+            </div>
+          </div>
+          <div className="mt-4 grid gap-3 md:grid-cols-3">
+            {(data?.summary.merchandise?.reorderPlan || []).slice(0, 3).map((item) => (
+              <div key={item.id} className="rounded-2xl bg-black/20 p-4 ring-1 ring-white/10">
+                <div className="flex justify-between gap-3">
+                  <p className="font-medium text-white">{item.name}</p>
+                  <span className={`rounded-full px-2 py-1 text-xs ${statusClass[item.status]}`}>{item.status}</span>
+                </div>
+                <p className="mt-1 text-xs text-white/45">{item.sku || item.id} • Vendor {item.vendor} • Lokasi {item.location}</p>
+                <p className="mt-2 text-sm text-white/60">Stok {item.qty} {item.unit}; min {item.minimumQty}; reorder {item.reorderQty}.</p>
+              </div>
+            ))}
+            {!data?.summary.merchandise?.reorderPlan?.length && (
+              <div className="rounded-2xl bg-black/20 p-4 text-sm text-white/45 ring-1 ring-white/10 md:col-span-3">
+                Belum ada alert merch TIM. Jika SKU retail belum muncul, isi/validasi Inventory_Master dengan kategori merchandise/retail_merch atau catatan merch/TIM.
+              </div>
+            )}
+          </div>
         </section>
 
         <section className="grid gap-6 lg:grid-cols-[1fr_420px]">
           <div className="rounded-3xl bg-white/[0.04] p-5 ring-1 ring-white/10">
             <div className="mb-4 flex items-center justify-between">
               <div>
-                <h2 className="text-xl font-semibold">Master Stok</h2>
-                <p className="text-sm text-white/45">{data?.source || "Google Sheets"}</p>
+                <h2 className="text-xl font-semibold">{viewMode === "merchandise" ? "Master Stok Merch TIM" : "Master Stok"}</h2>
+                <p className="text-sm text-white/45">{data?.source || "Google Sheets"} • {visibleItems.length} SKU tampil</p>
               </div>
               {loading && <span className="text-sm text-white/50">Loading…</span>}
             </div>
@@ -191,7 +250,7 @@ export default function InventoryPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/10">
-                  {data?.items.map((item) => (
+                  {visibleItems.map((item) => (
                     <tr key={item.id} className="text-white/75">
                       <td className="py-3 pr-4">
                         <button onClick={() => setSelectedId(item.id)} className="text-left hover:text-[#5eead4]">
