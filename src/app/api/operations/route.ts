@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { googleWorkspaceDegradedSource, isGoogleWorkspaceAuthError } from "@/lib/api/google-workspace-error";
-import { readRanges, appendRows } from "@/lib/sheets/sheets-real";
+import { readRanges, appendRows, readRange } from "@/lib/sheets/sheets-real";
 
 export const runtime = "nodejs";
 
@@ -627,23 +627,46 @@ async function executeStep(
   }
 }
 
+// ── Read workflow action log ──
+
+async function readWorkflowLog(): Promise<{ id: string; timestamp: string; stepId: string; stepLabel: string; action: string; reference: string; status: string; detail: string }[]> {
+  try {
+    const rows = await readRange("Workflow_Actions!A1:H500");
+    if (!rows || rows.length <= 1) return [];
+    return rows.slice(1).filter((row) => row.some((cell) => String(cell).trim())).map((row) => ({
+      id: String(row[0] || "").trim(),
+      timestamp: String(row[1] || "").trim(),
+      stepId: String(row[2] || "").trim(),
+      stepLabel: String(row[3] || "").trim(),
+      action: String(row[4] || "").trim(),
+      reference: String(row[5] || "").trim(),
+      status: String(row[6] || "").trim(),
+      detail: String(row[7] || "").trim(),
+    })).reverse();
+  } catch {
+    return [];
+  }
+}
+
 // ── GET: read workflow state ──
 
 export async function GET() {
   try {
-    const data = await readRanges(ranges);
-    return NextResponse.json(buildWorkflow(data));
+    const [data, workflowLog] = await Promise.all([readRanges(ranges), readWorkflowLog()]);
+    return NextResponse.json({ ...buildWorkflow(data), workflowLog });
   } catch (error) {
     if (isGoogleWorkspaceAuthError(error)) {
+      const emptyData = Object.fromEntries(ranges.map((range) => [range, []]));
       return NextResponse.json({
         ...googleWorkspaceDegradedSource(SOURCE, error),
         generatedAt: new Date().toISOString(),
         summary: { totalSteps: 7, ready: 0, attention: 0, blocked: 0, draft: 7, stockAlerts: 0, openPo: 0, qcPending: 0, productionRows: 0, salesRows: 0, customerRows: 0 },
-        steps: buildWorkflow(Object.fromEntries(ranges.map((range) => [range, []]))).steps,
+        steps: buildWorkflow(emptyData).steps,
         recentActivity: { inventoryMovements: [], purchaseOrders: [], production: [], sales: [] },
-        crossDivisionKpis: buildDivisionKpis(Object.fromEntries(ranges.map((range) => [range, []]))),
+        crossDivisionKpis: buildDivisionKpis(emptyData),
         weeklyCadence,
         guardrails: ["OAuth Google Workspace perlu re-auth; tidak ada data palsu yang ditampilkan."],
+        workflowLog: [],
       });
     }
     return NextResponse.json({ error: "Gagal membaca operational workflow", details: String(error) }, { status: 500 });
@@ -758,7 +781,120 @@ export async function POST(request: NextRequest) {
       }, { status: result.success ? 201 : 422 });
     }
 
-    return NextResponse.json({ error: "action tidak dikenal. Gunakan: prepare_handoff, execute_step" }, { status: 400 });
+    if (action === "run_full_workflow") {
+      // Demo: chain all 7 steps with sample data. OAuth must be active.
+      const demoRef = `DEMO-${Date.now().toString(36).toUpperCase()}`;
+      const stepResults: Array<{ stepId: string; stepLabel: string; success: boolean; detail: string; sheetWrites: string[] }> = [];
+      let anyFailed = false;
+
+      // 1. PO
+      const poResult = await executeStep("po", demoRef, {
+        supplier: "PT Aroma Nusantara",
+        item: "Essential Oil Lavender 100ml",
+        qty: 50,
+        unitPrice: 75000,
+        dueDate: new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10),
+        notes: "Demo workflow - restock bahan baku",
+      }, buildWorkflow(await readRanges(ranges)));
+      stepResults.push({ stepId: "po", stepLabel: "PO / Restock", ...poResult });
+      if (!poResult.success) anyFailed = true;
+
+      // 2. Receive
+      const receiveResult = await executeStep("receive", demoRef, {
+        poNumber: poResult.detail.match(/PO [A-Z0-9]+/)?.[0] || "DEMO",
+        item: "Essential Oil Lavender 100ml",
+        qtyReceived: 50,
+        qcStatus: "Pass",
+        qcNotes: "Visual & aroma OK",
+        warehouse: "Gudang A - Rak B2",
+      }, buildWorkflow(await readRanges(ranges)));
+      stepResults.push({ stepId: "receive", stepLabel: "Receive + QC Barang", ...receiveResult });
+      if (!receiveResult.success) anyFailed = true;
+
+      // 3. Inventory
+      const invResult = await executeStep("inventory", demoRef, {
+        item: "Essential Oil Lavender 100ml",
+        movementType: "In",
+        qty: 50,
+        warehouse: "Gudang A - Rak B2",
+        notes: "Demo workflow - stok masuk dari PO",
+      }, buildWorkflow(await readRanges(ranges)));
+      stepResults.push({ stepId: "inventory", stepLabel: "Inventory Ready", ...invResult });
+      if (!invResult.success) anyFailed = true;
+
+      // 4. Produce
+      const prodResult = await executeStep("produce", demoRef, {
+        product: "L'Arc~en~Scent - Lavender Dreams EDP 50ml",
+        brand: "L'Arc~en~Scent",
+        batchSize: 200,
+        formula: "LD-2026-001",
+        hpp: 12000000,
+      }, buildWorkflow(await readRanges(ranges)));
+      stepResults.push({ stepId: "produce", stepLabel: "Produksi + Batch", ...prodResult });
+      if (!prodResult.success) anyFailed = true;
+
+      // 5. Compliance
+      const compResult = await executeStep("compliance", demoRef, {
+        product: "L'Arc~en~Scent - Lavender Dreams EDP 50ml",
+        checkType: "Formula Check + Allergen",
+        result: "Pass",
+        notes: "IFRA compliant, allergen label drafted",
+        batchNumber: prodResult.detail.match(/BATCH-[A-Z0-9]+/)?.[0] || "DEMO",
+        stage: "Final",
+        qcResult: "Pass",
+      }, buildWorkflow(await readRanges(ranges)));
+      stepResults.push({ stepId: "compliance", stepLabel: "Compliance / QC Final", ...compResult });
+      if (!compResult.success) anyFailed = true;
+
+      // 6. Sell
+      const sellResult = await executeStep("sell", demoRef, {
+        product: "L'Arc~en~Scent - Lavender Dreams EDP 50ml",
+        brand: "L'Arc~en~Scent",
+        qty: 5,
+        unitPrice: 350000,
+        channel: "Store",
+        customerName: "Demo Customer",
+        customerPhone: "+6281234567890",
+        consent: "Yes",
+      }, buildWorkflow(await readRanges(ranges)));
+      stepResults.push({ stepId: "sell", stepLabel: "Jual + CRM", ...sellResult });
+      if (!sellResult.success) anyFailed = true;
+
+      // 7. Report (navigation hint)
+      const reportResult = await executeStep("report", demoRef, {}, buildWorkflow(await readRanges(ranges)));
+      stepResults.push({ stepId: "report", stepLabel: "Report Executive", ...reportResult });
+
+      // Log the full workflow run
+      const workflowLogId = `wf-full-${Date.now().toString(36)}`;
+      await logWorkflowAction({
+        id: workflowLogId,
+        timestamp: new Date().toISOString(),
+        stepId: "full_workflow",
+        stepLabel: "Full Workflow Demo",
+        action: "run_full_workflow",
+        reference: demoRef,
+        status: anyFailed ? "failed" : "executed",
+        detail: `Full workflow ${anyFailed ? "completed with errors" : "completed successfully"}. Steps: ${stepResults.map((s) => `${s.stepId}=${s.success ? "OK" : "FAIL"}`).join(", ")}`,
+      });
+
+      return NextResponse.json({
+        source: SOURCE,
+        sourceStatus: "live",
+        action: "run_full_workflow",
+        reference: demoRef,
+        success: !anyFailed,
+        steps: stepResults,
+        totalSteps: stepResults.length,
+        completedSteps: stepResults.filter((s) => s.success).length,
+        failedSteps: stepResults.filter((s) => !s.success).length,
+        workflowLogId,
+        note: anyFailed
+          ? "Full workflow selesai dengan beberapa step gagal. Cek detail per step."
+          : "Full workflow berhasil dijalankan. Semua 7 step tercatat di Google Sheets.",
+      }, { status: anyFailed ? 207 : 201 });
+    }
+
+    return NextResponse.json({ error: "action tidak dikenal. Gunakan: prepare_handoff, execute_step, run_full_workflow" }, { status: 400 });
   } catch (error) {
     if (isGoogleWorkspaceAuthError(error)) {
       return NextResponse.json({ ...googleWorkspaceDegradedSource(SOURCE, error), error: "Google Workspace degraded; operasi tidak bisa dilanjutkan sampai re-auth." }, { status: 503 });

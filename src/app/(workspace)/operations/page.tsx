@@ -58,6 +58,16 @@ type OperationsResponse = {
     href: string;
   }>;
   guardrails: string[];
+  workflowLog: Array<{
+    id: string;
+    timestamp: string;
+    stepId: string;
+    stepLabel: string;
+    action: string;
+    reference: string;
+    status: string;
+    detail: string;
+  }>;
 };
 
 type ExecuteResult = {
@@ -157,6 +167,115 @@ function Metric({ label, value, hint }: { label: string; value: string | number;
       <p className="mt-2 text-3xl font-semibold text-white">{value}</p>
       <p className="mt-1 text-xs text-white/45">{hint}</p>
     </div>
+  );
+}
+
+function RunFullWorkflow({ onDone }: { onDone: () => void }) {
+  const [running, setRunning] = useState(false);
+  const [result, setResult] = useState<{ success: boolean; steps: Array<{ stepId: string; stepLabel: string; success: boolean; detail: string }>; note: string } | null>(null);
+
+  async function runWorkflow() {
+    setRunning(true);
+    setResult(null);
+    try {
+      const res = await fetch("/api/operations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "run_full_workflow" }),
+      });
+      const json = await res.json();
+      setResult({ success: json.success, steps: json.steps || [], note: json.note || "" });
+      if (json.success) onDone();
+    } catch (err) {
+      setResult({ success: false, steps: [], note: String(err) });
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  return (
+    <section className="rounded-3xl bg-white/[0.04] p-5 ring-1 ring-white/10">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 className="text-xl font-semibold">🚀 Run Full Workflow</h2>
+          <p className="mt-1 text-sm text-white/55">Jalankan semua 7 step secara berurutan: PO → Receive → Inventory → Produce → Compliance → Sell → Report. Demo data.</p>
+        </div>
+        <button
+          onClick={runWorkflow}
+          disabled={running}
+          className="rounded-2xl bg-gradient-to-r from-[#0D9488] to-[#F97316] px-6 py-3 font-semibold text-white hover:opacity-90 disabled:opacity-50"
+        >
+          {running ? "⏳ Running..." : "🚀 Run Full Workflow"}
+        </button>
+      </div>
+      {result && (
+        <div className={`mt-4 rounded-2xl p-4 text-sm ${result.success ? "bg-emerald-500/10 border border-emerald-400/20" : "bg-red-500/10 border border-red-400/20"}`}>
+          <div className="font-semibold">{result.success ? "✅ Full Workflow Berhasil" : "⚠️ Full Workflow Selesai dengan Error"}</div>
+          <p className="mt-1 text-white/70">{result.note}</p>
+          {result.steps.length > 0 && (
+            <div className="mt-3 space-y-2">
+              {result.steps.map((step, i) => (
+                <div key={step.stepId} className="flex items-start gap-3 rounded-xl bg-black/20 p-3">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white/10 text-xs font-bold">{i + 1}</span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-white">{step.stepLabel}</span>
+                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${step.success ? "bg-emerald-500/20 text-emerald-200" : "bg-red-500/20 text-red-200"}`}>
+                        {step.success ? "OK" : "FAIL"}
+                      </span>
+                    </div>
+                    <p className="mt-0.5 text-xs text-white/50 truncate">{step.detail}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function WorkflowLog({ log }: { log: Array<{ id: string; timestamp: string; stepId: string; stepLabel: string; action: string; reference: string; status: string; detail: string }> }) {
+  if (log.length === 0) {
+    return (
+      <section className="rounded-3xl bg-white/[0.04] p-5 ring-1 ring-white/10">
+        <h2 className="text-xl font-semibold">📜 Workflow Action Log</h2>
+        <p className="mt-2 text-sm text-white/40">Belum ada workflow action yang tercatat. Jalankan execute step atau full workflow untuk melihat log.</p>
+      </section>
+    );
+  }
+
+  return (
+    <section className="rounded-3xl bg-white/[0.04] p-5 ring-1 ring-white/10">
+      <div className="flex items-center justify-between">
+        <h2 className="text-xl font-semibold">📜 Workflow Action Log</h2>
+        <span className="rounded-full bg-white/10 px-3 py-1 text-xs text-white/60">{log.length} entries</span>
+      </div>
+      <div className="mt-4 max-h-96 space-y-2 overflow-y-auto pr-1">
+        {log.map((entry) => (
+          <div key={entry.id} className="rounded-2xl bg-black/20 p-3 text-sm">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="font-medium text-white">{entry.stepLabel}</span>
+                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${entry.status === "executed" ? "bg-emerald-500/20 text-emerald-200" : entry.status === "failed" ? "bg-red-500/20 text-red-200" : "bg-slate-500/20 text-slate-200"}`}>
+                    {entry.status}
+                  </span>
+                </div>
+                <p className="mt-1 text-xs text-white/50">{entry.detail}</p>
+                {entry.reference && entry.reference !== "TBA" && (
+                  <p className="mt-1 text-xs text-white/35">Ref: {entry.reference}</p>
+                )}
+              </div>
+              <span className="shrink-0 text-xs text-white/35">
+                {new Date(entry.timestamp).toLocaleString("id-ID", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -497,6 +616,12 @@ export default function OperationsPage() {
             </section>
           </aside>
         </section>
+
+        {/* Run Full Workflow button */}
+        <RunFullWorkflow onDone={loadOperations} />
+
+        {/* Workflow Action Log */}
+        <WorkflowLog log={data?.workflowLog || []} />
 
         <footer className="text-xs text-white/35">
           Source: {data?.source || "Google Sheets"} • Generated: {data?.generatedAt || "TBA"}
