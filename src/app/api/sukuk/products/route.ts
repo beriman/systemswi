@@ -1,30 +1,53 @@
 // GET /api/sukuk/products — List all sukuk micro products
 // POST /api/sukuk/products — Create new sukuk micro product
 import { NextRequest, NextResponse } from "next/server";
-import { getDb } from "@/lib/db";
+
+function getDbSafe() {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { getDb } = require("@/lib/db");
+    return getDb();
+  } catch {
+    return null;
+  }
+}
 
 export async function GET() {
   try {
-    const db = getDb();
+    const db = getDbSafe();
+    if (!db) {
+      return NextResponse.json({
+        products: [],
+        source: "degraded",
+        sourceStatus: "degraded",
+        warning: "SQLite tidak tersedia. Jalankan server lokal untuk data lengkap.",
+      });
+    }
     const products = db.prepare(`
       SELECT sp.*,
         (SELECT COALESCE(SUM(si.jumlah_unit), 0) FROM sukuk_investments WHERE product_id = sp.id AND si.status = 'aktif') as unit_terjual,
         (SELECT COALESCE(SUM(si.nilai_investasi), 0) FROM sukuk_investments WHERE product_id = sp.id AND si.status = 'aktif') as total_terkumpul
       FROM sukuk_products sp ORDER BY sp.created_at DESC
     `).all();
-    return NextResponse.json({ products });
+    return NextResponse.json({ products, source: "local" });
   } catch (error) {
-    return NextResponse.json(
-      { error: "Gagal memuat produk sukuk mikro", details: String(error) },
-      { status: 500 }
-    );
+    return NextResponse.json({
+      products: [],
+      source: "degraded",
+      sourceStatus: "degraded",
+      warning: "Gagal memuat data",
+      details: String(error),
+    });
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const db = getDb();
+    const db = getDbSafe();
+    if (!db) {
+      return NextResponse.json({ error: "Server lokal diperlukan untuk menulis data" }, { status: 503 });
+    }
 
     const kode = body.kode?.trim();
     const nama = body.nama?.trim();
@@ -43,13 +66,8 @@ export async function POST(request: NextRequest) {
       INSERT INTO sukuk_products (kode, nama, deskripsi, kategori, harga_per_unit, jumlah_unit, nilai_sukuk, tenor_bulan, nisbah_investor, nisbah_pengelola, jenis_akad, target_cogs, target_harga_jual, status)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
-      kode,
-      nama,
-      body.deskripsi || "",
-      body.kategori || "merchandise",
-      harga_per_unit,
-      jumlah_unit,
-      nilai_sukuk,
+      kode, nama, body.deskripsi || "", body.kategori || "merchandise",
+      harga_per_unit, jumlah_unit, nilai_sukuk,
       Number(body.tenor_bulan) || 12,
       Number(body.nisbah_investor) || 50,
       Number(body.nisbah_pengelola) || 50,
