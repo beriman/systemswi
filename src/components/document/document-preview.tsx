@@ -9,6 +9,7 @@ interface DocumentPreviewProps {
     letterNumber?: string;
     onSaveToDrive?: () => void;
     onExportPDF?: () => void;
+    onExportVisualPDF?: () => void;
     onBack: () => void;
 }
 
@@ -18,6 +19,7 @@ export function DocumentPreview({
     letterNumber,
     onSaveToDrive,
     onExportPDF,
+    onExportVisualPDF,
     onBack,
 }: DocumentPreviewProps) {
     const handleCopy = () => {
@@ -33,13 +35,14 @@ export function DocumentPreview({
           <head>
             <title>${title}</title>
             <style>
-              body { font-family: Arial, sans-serif; padding: 40px; max-width: 800px; margin: 0 auto; }
-              h1 { text-align: center; }
-              h2 { border-bottom: 1px solid #ccc; padding-bottom: 8px; }
+              body { font-family: 'Times New Roman', serif; padding: 40px; max-width: 800px; margin: 0 auto; font-size: 12pt; line-height: 1.6; }
+              h1 { text-align: center; font-size: 16pt; }
+              h2 { border-bottom: 1px solid #ccc; padding-bottom: 8px; font-size: 14pt; }
               table { width: 100%; border-collapse: collapse; margin: 16px 0; }
               th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
               th { background: #f5f5f5; }
               hr { margin: 24px 0; }
+              strong { font-weight: bold; }
             </style>
           </head>
           <body>
@@ -55,14 +58,14 @@ export function DocumentPreview({
     return (
         <Card>
             <CardHeader>
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between flex-wrap gap-2">
                     <div>
                         <CardTitle>{title}</CardTitle>
                         {letterNumber && (
                             <p className="text-sm text-muted-foreground">No: {letterNumber}</p>
                         )}
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 flex-wrap">
                         <Button variant="outline" size="sm" onClick={handleCopy}>
                             📋 Copy
                         </Button>
@@ -71,7 +74,12 @@ export function DocumentPreview({
                         </Button>
                         {onExportPDF && (
                             <Button variant="outline" size="sm" onClick={onExportPDF}>
-                                📥 PDF
+                                📥 PDF Text
+                            </Button>
+                        )}
+                        {onExportVisualPDF && (
+                            <Button variant="outline" size="sm" onClick={onExportVisualPDF}>
+                                📸 PDF Visual
                             </Button>
                         )}
                         {onSaveToDrive && (
@@ -83,7 +91,7 @@ export function DocumentPreview({
                 </div>
             </CardHeader>
             <CardContent>
-                <div className="bg-white border rounded-lg p-8 min-h-[600px] font-mono text-sm whitespace-pre-wrap">
+                <div id="document-print-area" className="bg-white text-black border rounded-lg p-8 min-h-[600px] font-mono text-sm whitespace-pre-wrap">
                     {content}
                 </div>
                 <div className="mt-4">

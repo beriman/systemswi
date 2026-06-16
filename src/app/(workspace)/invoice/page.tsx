@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
+import { exportElementToPDF, exportContentToPDF } from "@/lib/document/pdf-export";
 
 type LineItem = {
   description: string;
@@ -22,6 +23,7 @@ export default function InvoicePreview() {
   const [invoiceDate, setInvoiceDate] = useState("2026-06-14");
   const [dueDate, setDueDate] = useState("2026-06-28");
   const [notes, setNotes] = useState("Pembayaran via transfer ke BRI 201101000546304 a/n SWI HOLDING. Mohon konfirmasi setelah transfer.");
+  const [isExporting, setIsExporting] = useState(false);
 
   const subtotal = items.reduce((sum, item) => sum + item.qty * item.unitPrice, 0);
   const tax = Math.round(subtotal * 0.11);
@@ -43,28 +45,94 @@ export default function InvoicePreview() {
     return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(amount);
   }
 
-  function handlePrint() {
-    window.print();
-  }
+  /** Download visual PDF via html2canvas + jsPDF */
+  const handleDownloadPDF = useCallback(async () => {
+    setIsExporting(true);
+    try {
+      const ok = await exportElementToPDF("invoice-print", `${invoiceNumber}.pdf`);
+      if (!ok) alert("Gagal mengekspor PDF. Pastikan halaman sudah ter-render.");
+    } catch (err) {
+      console.error("PDF export error:", err);
+      alert("Gagal mengekspor PDF. Silakan coba lagi.");
+    } finally {
+      setIsExporting(false);
+    }
+  }, [invoiceNumber]);
+
+  /** Download text-based PDF via jsPDF for document generator style */
+  const handleDownloadTextPDF = useCallback(async () => {
+    setIsExporting(true);
+    try {
+      const content = [
+        `INVOICE ${invoiceNumber}`,
+        ``,
+        `Tanggal: ${invoiceDate}`,
+        `Jatuh Tempo: ${dueDate}`,
+        ``,
+        `Kepada: ${customerName}`,
+        `${customerAddress}`,
+        ``,
+        `---`,
+        ``,
+        ...items.map((item, i) =>
+          `${i + 1}. ${item.description}\n   ${item.qty} x ${formatCurrency(item.unitPrice)} = ${formatCurrency(item.qty * item.unitPrice)}`
+        ),
+        ``,
+        `---`,
+        ``,
+        `Subtotal: ${formatCurrency(subtotal)}`,
+        `PPN 11%: ${formatCurrency(tax)}`,
+        `TOTAL: ${formatCurrency(total)}`,
+        ``,
+        `Informasi Pembayaran:`,
+        `Bank BRI — No. Rekening: 201101000546304`,
+        `Atas Nama: SWI HOLDING`,
+        ``,
+        notes ? `Catatan: ${notes}` : ``,
+      ].join("\n");
+
+      await exportContentToPDF({
+        title: `Invoice ${invoiceNumber}`,
+        letterNumber: invoiceNumber,
+        content,
+        filename: `${invoiceNumber}.pdf`,
+      });
+    } catch (err) {
+      console.error("PDF export error:", err);
+      alert("Gagal mengekspor PDF. Silakan coba lagi.");
+    } finally {
+      setIsExporting(false);
+    }
+  }, [invoiceNumber, invoiceDate, dueDate, customerName, customerAddress, items, subtotal, tax, total, notes]);
 
   return (
     <div className="space-y-6">
       {/* Header Actions */}
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
-          <h2 className="text-2xl font-bold">📄 Contoh Invoice</h2>
-          <p className="text-muted-foreground">Invoice template untuk penjualan produk SWI. Bisa di-print atau download PDF.</p>
+          <h2 className="text-2xl font-bold">📄 Invoice Template</h2>
+          <p className="text-muted-foreground">Invoice profesional untuk penjualan produk SWI. Download PDF atau print langsung.</p>
         </div>
-        <button
-          onClick={handlePrint}
-          className="bg-primary text-primary-foreground px-4 py-2 rounded-md hover:bg-primary/90 text-sm font-medium"
-        >
-          🖨️ Print / Save PDF
-        </button>
+        <div className="flex gap-2 flex-wrap">
+          <button
+            onClick={handleDownloadPDF}
+            disabled={isExporting}
+            className="bg-primary text-primary-foreground px-4 py-2 rounded-md hover:bg-primary/90 text-sm font-medium disabled:opacity-50"
+          >
+            {isExporting ? "⏳ Export..." : "📥 Download PDF (Visual)"}
+          </button>
+          <button
+            onClick={handleDownloadTextPDF}
+            disabled={isExporting}
+            className="bg-secondary text-secondary-foreground px-4 py-2 rounded-md hover:bg-secondary/80 text-sm font-medium disabled:opacity-50"
+          >
+            📄 Download PDF (Text)
+          </button>
+        </div>
       </div>
 
-      {/* Invoice Paper */}
-      <div className="bg-white text-black rounded-xl shadow-lg p-8 max-w-4xl mx-auto print:shadow-none print:rounded-none" id="invoice">
+      {/* Invoice Paper — printable area */}
+      <div className="bg-white text-black rounded-xl shadow-lg p-8 max-w-4xl mx-auto print:shadow-none print:rounded-none" id="invoice-print">
         {/* Company Header */}
         <div className="flex justify-between items-start border-b-2 border-gray-800 pb-4 mb-6">
           <div>

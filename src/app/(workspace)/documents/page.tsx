@@ -158,6 +158,24 @@ export default function DocumentsPage() {
         }
     };
 
+    const handleExportVisualPDF = async () => {
+        const el = document.getElementById("document-print-area");
+        if (!el) {
+            alert("Area dokumen tidak ditemukan.");
+            return;
+        }
+        setStatusMessage("Membuat PDF visual...");
+        try {
+            const { exportElementToPDF } = await import("@/lib/document/pdf-export");
+            const ok = await exportElementToPDF("document-print-area", `${currentDocument?.title || "document"}.pdf`);
+            if (!ok) alert("Gagal mengekspor PDF visual.");
+            else setStatusMessage("PDF visual berhasil diunduh.");
+        } catch (err) {
+            console.error("Visual PDF export error:", err);
+            alert("Gagal mengekspor PDF visual.");
+        }
+    };
+
     return (
         <div className="space-y-6">
             {/* Page Header */}
@@ -210,6 +228,7 @@ export default function DocumentsPage() {
                                 letterNumber={letterNumber}
                                 onSaveToDrive={handleSaveToDrive}
                                 onExportPDF={handleExportPDF}
+                                onExportVisualPDF={handleExportVisualPDF}
                                 onBack={handleBack}
                             />
                         )}
