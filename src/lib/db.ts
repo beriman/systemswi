@@ -136,6 +136,63 @@ function initSchema(db: any) {
 
     CREATE INDEX IF NOT EXISTS idx_investors_status ON investors(status);
     CREATE INDEX IF NOT EXISTS idx_sukuk_status ON sukuk(status);
+
+    -- Sukuk Mikro Per Produk tables
+    CREATE TABLE IF NOT EXISTS sukuk_products (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      kode TEXT UNIQUE NOT NULL,
+      nama TEXT NOT NULL,
+      deskripsi TEXT DEFAULT '',
+      kategori TEXT DEFAULT 'merchandise',
+      harga_per_unit REAL NOT NULL,
+      jumlah_unit INTEGER NOT NULL,
+      nilai_sukuk REAL NOT NULL,
+      tenor_bulan INTEGER NOT NULL,
+      nisbah_investor REAL NOT NULL,
+      nisbah_pengelola REAL NOT NULL,
+      jenis_akad TEXT DEFAULT 'musyarakah',
+      target_cogs REAL DEFAULT 0,
+      target_harga_jual REAL DEFAULT 0,
+      status TEXT DEFAULT 'open',
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS sukuk_investments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      product_id INTEGER NOT NULL,
+      investor_name TEXT NOT NULL,
+      investor_email TEXT DEFAULT '',
+      investor_phone TEXT DEFAULT '',
+      jumlah_unit INTEGER NOT NULL,
+      nilai_investasi REAL NOT NULL,
+      tanggal_investasi TEXT DEFAULT (datetime('now')),
+      status TEXT DEFAULT 'aktif',
+      consent INTEGER DEFAULT 0,
+      notes TEXT DEFAULT '',
+      FOREIGN KEY (product_id) REFERENCES sukuk_products(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS sukuk_profit_distributions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      product_id INTEGER NOT NULL,
+      periode TEXT NOT NULL,
+      total_revenue REAL DEFAULT 0,
+      total_cogs REAL DEFAULT 0,
+      total_profit REAL NOT NULL,
+      nisbah_investor REAL NOT NULL,
+      nisbah_pengelola REAL NOT NULL,
+      jumlah_dibagikan REAL NOT NULL,
+      jumlah_per_unit REAL NOT NULL,
+      tanggal_pembagian TEXT,
+      status TEXT DEFAULT 'draft',
+      notes TEXT DEFAULT '',
+      FOREIGN KEY (product_id) REFERENCES sukuk_products(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_sukuk_products_status ON sukuk_products(status);
+    CREATE INDEX IF NOT EXISTS idx_sukuk_investments_product ON sukuk_investments(product_id);
+    CREATE INDEX IF NOT EXISTS idx_sukuk_investments_status ON sukuk_investments(status);
+    CREATE INDEX IF NOT EXISTS idx_sukuk_profit_product ON sukuk_profit_distributions(product_id);
     CREATE INDEX IF NOT EXISTS idx_transactions_tanggal ON transactions(tanggal);
     CREATE INDEX IF NOT EXISTS idx_transactions_jenis ON transactions(jenis);
     CREATE INDEX IF NOT EXISTS idx_production_status ON production_batches(status);
@@ -261,6 +318,21 @@ function seedDatabase(db: any) {
     INSERT INTO sukuk (kode, nama, nilai_sukuk, jumlah_unit, harga_per_unit, tenor_bulan, nisbah_investor, nisbah_pengelola, jenis_akad, status)
     VALUES ('SWQ-001', 'Sukuk SWI Store TIM', 1000000000, 1000, 1000000, 36, 50, 50, 'musyarakah', 'perencanaan')
   `).run();
+
+  // Seed sukuk mikro products — Batch 1
+  const sukukProductCount = db.prepare("SELECT COUNT(*) as c FROM sukuk_products").get();
+  if (sukukProductCount.c === 0) {
+    const insertProduct = db.prepare(`
+      INSERT INTO sukuk_products (kode, nama, deskripsi, kategori, harga_per_unit, jumlah_unit, nilai_sukuk, tenor_bulan, nisbah_investor, nisbah_pengelola, jenis_akad, target_cogs, target_harga_jual, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    
+    insertProduct.run('SM-001', 'SWI T-Shirt Collection', 'T-Shirt premium cotton dengan desain eksklusif SWI — 3 warna', 'merchandise', 50000, 200, 10000000, 6, 60, 40, 'musyarakah', 25000, 85000, 'open');
+    insertProduct.run('SM-002', 'SWI Tumbler Series', 'Tumbler stainless steel 450ml dengan branding SWI — tahan 12 jam dingin', 'merchandise', 75000, 150, 11250000, 6, 60, 40, 'musyarakah', 35000, 120000, 'open');
+    insertProduct.run('SM-003', 'SWI Scented Candle', 'Lilin aromaterapi dengan formula eksklusif L\'Arc~en~Scent — 3 varian', 'merchandise', 100000, 100, 10000000, 6, 55, 45, 'musyarakah', 45000, 165000, 'open');
+    insertProduct.run('SM-004', 'SWI Tote Bag Canvas', 'Tote bag canvas premium dengan ilustrasi botanical SWI', 'merchandise', 40000, 250, 10000000, 6, 60, 40, 'musyarakah', 18000, 65000, 'open');
+    insertProduct.run('SM-005', 'SWI Perfume Discovery Kit', 'Kit discovery 5x5ml — 3 brand SWI dalam 1 kemasan premium', 'produk', 150000, 80, 12000000, 9, 50, 50, 'musyarakah', 70000, 250000, 'open');
+  }
 
   // Seed transactions — historis setoran
   const insertTx = db.prepare(
