@@ -42,6 +42,14 @@ function buildGoogleDocText(payload: Required<Pick<SavePayload, "title" | "conte
   return `${lines.join("\n").trim()}\n`;
 }
 
+export async function GET() {
+  return NextResponse.json({
+    status: "ok",
+    message: "Document save endpoint ready. Use POST with JSON body (title, content, type, letterNumber).",
+    supportedTypes: ["invoice", "proposal", "agreement", "rab", "report", "receipt", "other"],
+  });
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = (await req.json()) as SavePayload;

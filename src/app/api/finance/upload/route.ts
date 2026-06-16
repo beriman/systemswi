@@ -26,6 +26,15 @@ function safeName(name: string) {
   return cleaned || "finance-proof";
 }
 
+export async function GET() {
+  return NextResponse.json({
+    status: "ok",
+    message: "Finance upload endpoint ready. Use POST with multipart form (file, referensi, deskripsi).",
+    allowedTypes: ["image/*", "application/pdf", "text/csv"],
+    maxSize: "10MB",
+  });
+}
+
 export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData();
