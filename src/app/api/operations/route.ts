@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { googleWorkspaceDegradedSource, isGoogleWorkspaceAuthError } from "@/lib/api/google-workspace-error";
-import { readRanges } from "@/lib/sheets/sheets-real";
+import { readRanges, appendRows } from "@/lib/sheets/sheets-real";
 
 export const runtime = "nodejs";
 
@@ -40,7 +40,20 @@ type DivisionKpi = {
   href: string;
 };
 
+type WorkflowAction = {
+  id: string;
+  timestamp: string;
+  stepId: string;
+  stepLabel: string;
+  action: string;
+  reference: string;
+  status: "executed" | "failed" | "skipped";
+  detail: string;
+};
+
 const SOURCE = "Google Sheets: Cash_Harian, Event_Tenants, Event_Sponsors, Event_Budget, Inventory_Master, Inventory_Movements, Purchase_Orders, Goods_Receipts, Brand_Production, Brand_Sales, Customer_Master, Compliance_Checks, Product_Batches, QC_Checklist";
+
+const WORKFLOW_ACTION_LOG_SHEET = "Workflow_Actions";
 
 const ranges = [
   "Cash_Harian!A1:I1000",
@@ -335,6 +348,287 @@ function buildWorkflow(data: Record<string, string[][]>) {
   };
 }
 
+// ── Execute workflow step: write to Google Sheets ──
+
+type ExecuteRequestBody = {
+  action: "execute_step";
+  stepId: string;
+  reference?: string;
+  payload?: Record<string, unknown>;
+};
+
+async function logWorkflowAction(action: WorkflowAction): Promise<void> {
+  try {
+    await appendRows(WORKFLOW_ACTION_LOG_SHEET, [[
+      action.timestamp,
+      action.stepId,
+      action.stepLabel,
+      action.action,
+      action.reference,
+      action.status,
+      action.detail,
+    ]]);
+  } catch {
+    // Non-blocking: if log sheet doesn't exist or write fails, don't fail the main action
+  }
+}
+
+async function executeStep(
+  stepId: string,
+  reference: string,
+  payload: Record<string, unknown> | undefined,
+  workflow: ReturnType<typeof buildWorkflow>,
+): Promise<{ success: boolean; detail: string; sheetWrites: string[] }> {
+  const timestamp = new Date().toISOString();
+  const sheetWrites: string[] = [];
+  const ref = reference || "TBA";
+
+  switch (stepId) {
+    case "po": {
+      // Create a new PO draft row in Purchase_Orders
+      const poNumber = `PO-${Date.now().toString(36).toUpperCase()}`;
+      const supplier = text(payload?.supplier) || "TBA";
+      const item = text(payload?.item) || "TBA";
+      const qty = num(payload?.qty) || 0;
+      const unitPrice = num(payload?.unitPrice) || 0;
+      const total = qty * unitPrice;
+      const dueDate = text(payload?.dueDate) || "";
+      const notes = text(payload?.notes) || ref;
+
+      await appendRows("Purchase_Orders", [[
+        poNumber,
+        timestamp.slice(0, 10),
+        supplier,
+        item,
+        qty,
+        unitPrice,
+        total,
+        "Draft",
+        dueDate,
+        "",
+        "Open",
+        "",
+        notes,
+        "",
+        "",
+      ]]);
+      sheetWrites.push(`Purchase_Orders: appended ${poNumber}`);
+      return { success: true, detail: `PO ${poNumber} berhasil dibuat. Total: Rp ${total.toLocaleString("id-ID")}. Status: Open.`, sheetWrites };
+    }
+
+    case "receive": {
+      // Create a receiving row in Goods_Receipts
+      const receiptNumber = `RCV-${Date.now().toString(36).toUpperCase()}`;
+      const poRef = text(payload?.poNumber) || ref;
+      const item = text(payload?.item) || "TBA";
+      const qtyReceived = num(payload?.qtyReceived) || 0;
+      const qcStatus = text(payload?.qcStatus) || "Pending";
+      const qcNotes = text(payload?.qcNotes) || "";
+      const warehouse = text(payload?.warehouse) || "TBA";
+
+      await appendRows("Goods_Receipts", [[
+        receiptNumber,
+        timestamp.slice(0, 10),
+        poRef,
+        item,
+        qtyReceived,
+        warehouse,
+        "",
+        qcStatus,
+        qcNotes,
+        "",
+        "",
+        "",
+        "",
+      ]]);
+      sheetWrites.push(`Goods_Receipts: appended ${receiptNumber}`);
+      return { success: true, detail: `Receiving ${receiptNumber} tercatat. QC: ${qcStatus}. Item: ${item} (${qtyReceived}).`, sheetWrites };
+    }
+
+    case "inventory": {
+      // Create an inventory movement row
+      const movementId = `MOV-${Date.now().toString(36).toUpperCase()}`;
+      const item = text(payload?.item) || "TBA";
+      const movementType = text(payload?.movementType) || "Adjustment";
+      const qty = num(payload?.qty) || 0;
+      const warehouse = text(payload?.warehouse) || "TBA";
+      const notes = text(payload?.notes) || ref;
+
+      await appendRows("Inventory_Movements", [[
+        movementId,
+        timestamp.slice(0, 10),
+        item,
+        movementType,
+        qty,
+        warehouse,
+        "",
+        "",
+        notes,
+        "",
+      ]]);
+      sheetWrites.push(`Inventory_Movements: appended ${movementId}`);
+      return { success: true, detail: `Movement ${movementId} tercatat. ${movementType}: ${item} (${qty}).`, sheetWrites };
+    }
+
+    case "produce": {
+      // Create a production batch row
+      const batchNumber = `BATCH-${Date.now().toString(36).toUpperCase()}`;
+      const product = text(payload?.product) || "TBA";
+      const brand = text(payload?.brand) || "TBA";
+      const batchSize = num(payload?.batchSize) || 0;
+      const formula = text(payload?.formula) || "TBA";
+      const hpp = num(payload?.hpp) || 0;
+
+      await appendRows("Brand_Production", [[
+        batchNumber,
+        timestamp.slice(0, 10),
+        brand,
+        product,
+        formula,
+        batchSize,
+        hpp,
+        batchSize > 0 && hpp > 0 ? (hpp / batchSize) : 0,
+        "",
+        "",
+        "",
+        "",
+        "In Progress",
+        "",
+        "",
+        "Pending",
+        "",
+        "",
+        "",
+        "",
+      ]]);
+      sheetWrites.push(`Brand_Production: appended ${batchNumber}`);
+
+      // Also create a Product_Batches traceability row
+      await appendRows("Product_Batches", [[
+        batchNumber,
+        product,
+        brand,
+        timestamp.slice(0, 10),
+        batchSize,
+        formula,
+        "",
+        "Pending",
+        "Incomplete",
+        "",
+        "",
+        "",
+        "",
+      ]]);
+      sheetWrites.push(`Product_Batches: appended ${batchNumber}`);
+
+      return { success: true, detail: `Batch ${batchNumber} tercatat. Produk: ${product} (${batchSize} unit). QC: Pending.`, sheetWrites };
+    }
+
+    case "compliance": {
+      // Create a compliance check row
+      const checkId = `COMP-${Date.now().toString(36).toUpperCase()}`;
+      const product = text(payload?.product) || "TBA";
+      const checkType = text(payload?.checkType) || "Formula Check";
+      const result = text(payload?.result) || "Review";
+      const notes = text(payload?.notes) || ref;
+
+      await appendRows("Compliance_Checks", [[
+        checkId,
+        product,
+        checkType,
+        timestamp.slice(0, 10),
+        "",
+        result,
+        notes,
+        "",
+        "",
+        "",
+        "",
+        "",
+      ]]);
+      sheetWrites.push(`Compliance_Checks: appended ${checkId}`);
+
+      // If QC checklist is provided, also add to QC_Checklist
+      const qcResult = text(payload?.qcResult) || "";
+      if (qcResult) {
+        const qcId = `QC-${Date.now().toString(36).toUpperCase()}`;
+        await appendRows("QC_Checklist", [[
+          qcId,
+          text(payload?.batchNumber) || "TBA",
+          product,
+          text(payload?.stage) || "Final",
+          timestamp.slice(0, 10),
+          qcResult,
+          notes,
+          "",
+          "",
+        ]]);
+        sheetWrites.push(`QC_Checklist: appended ${qcId}`);
+      }
+
+      return { success: true, detail: `Compliance ${checkId} tercatat. Check: ${checkType}. Result: ${result}.`, sheetWrites };
+    }
+
+    case "sell": {
+      // Create a sales row + customer interaction
+      const saleId = `SALE-${Date.now().toString(36).toUpperCase()}`;
+      const product = text(payload?.product) || "TBA";
+      const brand = text(payload?.brand) || "TBA";
+      const qty = num(payload?.qty) || 0;
+      const unitPrice = num(payload?.unitPrice) || 0;
+      const total = qty * unitPrice;
+      const channel = text(payload?.channel) || "Store";
+
+      await appendRows("Brand_Sales", [[
+        saleId,
+        timestamp.slice(0, 10),
+        brand,
+        product,
+        qty,
+        unitPrice,
+        total,
+        channel,
+        "",
+        "",
+        "",
+        "",
+      ]]);
+      sheetWrites.push(`Brand_Sales: appended ${saleId}`);
+
+      // If customer info provided, add to Customer_Interactions
+      const customerName = text(payload?.customerName);
+      if (customerName && customerName !== "TBA") {
+        const interactionId = `INT-${Date.now().toString(36).toUpperCase()}`;
+        await appendRows("Customer_Interactions", [[
+          interactionId,
+          timestamp.slice(0, 10),
+          customerName,
+          text(payload?.customerPhone) || "",
+          text(payload?.customerEmail) || "",
+          "Purchase",
+          saleId,
+          total,
+          text(payload?.consent) || "No",
+          "",
+        ]]);
+        sheetWrites.push(`Customer_Interactions: appended ${interactionId}`);
+      }
+
+      return { success: true, detail: `Sale ${saleId} tercatat. ${product}: ${qty} × Rp ${unitPrice.toLocaleString("id-ID")} = Rp ${total.toLocaleString("id-ID")}. Channel: ${channel}.`, sheetWrites };
+    }
+
+    case "report": {
+      // Report step doesn't write — it's a navigation to /reports
+      return { success: true, detail: "Navigasi ke /reports untuk generate laporan.", sheetWrites };
+    }
+
+    default:
+      return { success: false, detail: `Step "${stepId}" tidak dikenal.`, sheetWrites };
+  }
+}
+
+// ── GET: read workflow state ──
+
 export async function GET() {
   try {
     const data = await readRanges(ranges);
@@ -356,49 +650,119 @@ export async function GET() {
   }
 }
 
+// ── POST: prepare_handoff or execute_step ──
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    if (body.action !== "prepare_handoff") {
-      return NextResponse.json({ error: "action wajib prepare_handoff" }, { status: 400 });
+    const action = text(body.action);
+
+    if (action === "prepare_handoff") {
+      const stepId = text(body.stepId);
+      const reference = text(body.reference);
+      if (!stepId) return NextResponse.json({ error: "stepId wajib diisi" }, { status: 400 });
+      let workflow: ReturnType<typeof buildWorkflow>;
+      let sourceStatus: "live" | "degraded" = "live";
+      let warning: string | undefined;
+      try {
+        const data = await readRanges(ranges);
+        workflow = buildWorkflow(data);
+      } catch (error) {
+        if (!isGoogleWorkspaceAuthError(error)) throw error;
+        const degraded = googleWorkspaceDegradedSource(SOURCE, error);
+        workflow = buildWorkflow(Object.fromEntries(ranges.map((range) => [range, []])));
+        sourceStatus = "degraded";
+        warning = degraded.warning;
+      }
+      const step = workflow.steps.find((item) => item.id === stepId);
+      if (!step) return NextResponse.json({ error: "stepId tidak dikenal" }, { status: 404 });
+      return NextResponse.json({
+        source: workflow.source,
+        sourceStatus,
+        warning,
+        action: "prepare_handoff",
+        step,
+        reference: reference || "TBA",
+        cadence: weeklyCadence.find((item) => item.href === step.href) || weeklyCadence[1],
+        checklist: [
+          `Buka ${step.href} dan cocokkan reference: ${reference || "TBA"}`,
+          "Pastikan PIC, tanggal, proof URL, dan notes terisi sebelum write.",
+          "Jika action menulis ke Sheets/Docs/Drive, audit SWI Memory Log wajib otomatis setelah primary write berhasil.",
+        ],
+        note: "Handoff disiapkan; eksekusi write dilakukan via action: execute_step.",
+      }, { status: 201 });
     }
-    const stepId = text(body.stepId);
-    const reference = text(body.reference);
-    if (!stepId) return NextResponse.json({ error: "stepId wajib diisi" }, { status: 400 });
-    let workflow: ReturnType<typeof buildWorkflow>;
-    let sourceStatus: "live" | "degraded" = "live";
-    let warning: string | undefined;
-    try {
-      const data = await readRanges(ranges);
-      workflow = buildWorkflow(data);
-    } catch (error) {
-      if (!isGoogleWorkspaceAuthError(error)) throw error;
-      const degraded = googleWorkspaceDegradedSource(SOURCE, error);
-      workflow = buildWorkflow(Object.fromEntries(ranges.map((range) => [range, []])));
-      sourceStatus = "degraded";
-      warning = degraded.warning;
+
+    if (action === "execute_step") {
+      const stepId = text(body.stepId);
+      const reference = text(body.reference);
+      const payload = body.payload as Record<string, unknown> | undefined;
+
+      if (!stepId) return NextResponse.json({ error: "stepId wajib diisi" }, { status: 400 });
+
+      // Validate stepId
+      const validStepIds = ["po", "receive", "inventory", "produce", "compliance", "sell", "report"];
+      if (!validStepIds.includes(stepId)) {
+        return NextResponse.json({ error: `stepId tidak dikenal. Valid: ${validStepIds.join(", ")}` }, { status: 400 });
+      }
+
+      // Read current workflow state
+      let workflow: ReturnType<typeof buildWorkflow>;
+      let sourceStatus: "live" | "degraded" = "live";
+      let warning: string | undefined;
+      try {
+        const data = await readRanges(ranges);
+        workflow = buildWorkflow(data);
+      } catch (error) {
+        if (!isGoogleWorkspaceAuthError(error)) throw error;
+        const degraded = googleWorkspaceDegradedSource(SOURCE, error);
+        workflow = buildWorkflow(Object.fromEntries(ranges.map((range) => [range, []])));
+        sourceStatus = "degraded";
+        warning = degraded.warning;
+      }
+
+      const step = workflow.steps.find((item) => item.id === stepId);
+      if (!step) return NextResponse.json({ error: "stepId tidak dikenal" }, { status: 404 });
+
+      // Execute the step
+      const result = await executeStep(stepId, reference, payload, workflow);
+
+      // Log the action
+      const actionLog: WorkflowAction = {
+        id: `wf-${Date.now().toString(36)}`,
+        timestamp: new Date().toISOString(),
+        stepId,
+        stepLabel: step.label,
+        action: "execute_step",
+        reference: reference || "TBA",
+        status: result.success ? "executed" : "failed",
+        detail: result.detail,
+      };
+      await logWorkflowAction(actionLog);
+
+      return NextResponse.json({
+        source: workflow.source,
+        sourceStatus,
+        warning,
+        action: "execute_step",
+        step,
+        result: {
+          success: result.success,
+          detail: result.detail,
+          sheetWrites: result.sheetWrites,
+        },
+        actionLog,
+        note: result.success
+          ? "Step dieksekusi. Data sudah ditulis ke Google Sheets."
+          : "Step gagal dieksekusi. Cek detail untuk info lebih lanjut.",
+      }, { status: result.success ? 201 : 422 });
     }
-    const step = workflow.steps.find((item) => item.id === stepId);
-    if (!step) return NextResponse.json({ error: "stepId tidak dikenal" }, { status: 404 });
-    return NextResponse.json({
-      source: workflow.source,
-      sourceStatus,
-      warning,
-      action: "prepare_handoff",
-      step,
-      reference: reference || "TBA",
-      cadence: weeklyCadence.find((item) => item.href === step.href) || weeklyCadence[1],
-      checklist: [
-        `Buka ${step.href} dan cocokkan reference: ${reference || "TBA"}`,
-        "Pastikan PIC, tanggal, proof URL, dan notes terisi sebelum write.",
-        "Jika action menulis ke Sheets/Docs/Drive, audit SWI Memory Log wajib otomatis setelah primary write berhasil.",
-      ],
-      note: "Handoff disiapkan; belum ada write otomatis dari endpoint operations v1.",
-    }, { status: 201 });
+
+    return NextResponse.json({ error: "action tidak dikenal. Gunakan: prepare_handoff, execute_step" }, { status: 400 });
   } catch (error) {
     if (isGoogleWorkspaceAuthError(error)) {
-      return NextResponse.json({ ...googleWorkspaceDegradedSource(SOURCE, error), error: "Google Workspace degraded; handoff hanya bisa disiapkan setelah data sumber terbaca." }, { status: 503 });
+      return NextResponse.json({ ...googleWorkspaceDegradedSource(SOURCE, error), error: "Google Workspace degraded; operasi tidak bisa dilanjutkan sampai re-auth." }, { status: 503 });
     }
-    return NextResponse.json({ error: "Gagal menyiapkan handoff", details: String(error) }, { status: 500 });
+    return NextResponse.json({ error: "Gagal memproses request", details: String(error) }, { status: 500 });
   }
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useState } from "react";
 
 type Step = {
   id: string;
@@ -60,6 +60,28 @@ type OperationsResponse = {
   guardrails: string[];
 };
 
+type ExecuteResult = {
+  success: boolean;
+  detail: string;
+  sheetWrites: string[];
+};
+
+type ExecuteResponse = {
+  source: string;
+  sourceStatus: "live" | "degraded";
+  warning?: string;
+  action: "execute_step";
+  step: Step;
+  result: ExecuteResult;
+  actionLog: {
+    id: string;
+    timestamp: string;
+    status: "executed" | "failed";
+    detail: string;
+  };
+  note: string;
+};
+
 const statusClass: Record<string, string> = {
   ready: "bg-emerald-500/15 text-emerald-200 ring-emerald-400/20",
   attention: "bg-amber-500/15 text-amber-200 ring-amber-400/20",
@@ -72,6 +94,60 @@ const statusLabel: Record<string, string> = {
   attention: "Perlu perhatian",
   blocked: "Blocked",
   draft: "Draft / belum ada data",
+};
+
+const stepFields: Record<string, Array<{ name: string; label: string; type?: string; placeholder?: string; required?: boolean }>> = {
+  po: [
+    { name: "supplier", label: "Supplier", placeholder: "Nama supplier", required: true },
+    { name: "item", label: "Item", placeholder: "Nama item / SKU", required: true },
+    { name: "qty", label: "Qty", type: "number", placeholder: "0", required: true },
+    { name: "unitPrice", label: "Harga satuan (Rp)", type: "number", placeholder: "0", required: true },
+    { name: "dueDate", label: "Due date", type: "date" },
+    { name: "notes", label: "Notes", placeholder: "Catatan tambahan" },
+  ],
+  receive: [
+    { name: "poNumber", label: "PO Reference", placeholder: "PO-xxx" },
+    { name: "item", label: "Item", placeholder: "Nama item", required: true },
+    { name: "qtyReceived", label: "Qty diterima", type: "number", placeholder: "0", required: true },
+    { name: "qcStatus", label: "QC status", placeholder: "Pending / Pass / Failed" },
+    { name: "qcNotes", label: "QC notes", placeholder: "Catatan QC" },
+    { name: "warehouse", label: "Warehouse", placeholder: "Lokasi gudang" },
+  ],
+  inventory: [
+    { name: "item", label: "Item", placeholder: "Nama item / SKU", required: true },
+    { name: "movementType", label: "Tipe", placeholder: "In / Out / Adjustment" },
+    { name: "qty", label: "Qty", type: "number", placeholder: "0", required: true },
+    { name: "warehouse", label: "Warehouse", placeholder: "Lokasi" },
+    { name: "notes", label: "Notes", placeholder: "Catatan movement" },
+  ],
+  produce: [
+    { name: "product", label: "Produk", placeholder: "Nama produk", required: true },
+    { name: "brand", label: "Brand", placeholder: "L'Arc~en~Scent / Pixel Potion / Nuscentza" },
+    { name: "batchSize", label: "Batch size", type: "number", placeholder: "0", required: true },
+    { name: "formula", label: "Formula", placeholder: "Kode formula" },
+    { name: "hpp", label: "HPP total (Rp)", type: "number", placeholder: "0" },
+  ],
+  compliance: [
+    { name: "product", label: "Produk", placeholder: "Nama produk", required: true },
+    { name: "checkType", label: "Check type", placeholder: "Formula Check / Allergen / Label / BPOM" },
+    { name: "result", label: "Result", placeholder: "Review / Pass / Fail" },
+    { name: "notes", label: "Notes", placeholder: "Catatan compliance" },
+    { name: "batchNumber", label: "Batch number", placeholder: "BATCH-xxx" },
+    { name: "stage", label: "Stage", placeholder: "Intake / Production / Final" },
+    { name: "qcResult", label: "QC result", placeholder: "Pass / Fail / Pending" },
+  ],
+  sell: [
+    { name: "product", label: "Produk", placeholder: "Nama produk", required: true },
+    { name: "brand", label: "Brand", placeholder: "L'Arc~en~Scent / Pixel Potion / Nuscentza" },
+    { name: "qty", label: "Qty", type: "number", placeholder: "0", required: true },
+    { name: "unitPrice", label: "Harga satuan (Rp)", type: "number", placeholder: "0", required: true },
+    { name: "channel", label: "Channel", placeholder: "Store / Online / Event" },
+    { name: "customerName", label: "Customer name", placeholder: "Nama pembeli (opsional)" },
+    { name: "customerPhone", label: "Phone", placeholder: "+62..." },
+    { name: "customerEmail", label: "Email", placeholder: "email@..." },
+    { name: "consent", label: "Consent", placeholder: "Yes / No" },
+  ],
+  report: [],
 };
 
 function Metric({ label, value, hint }: { label: string; value: string | number; hint: string }) {
@@ -89,8 +165,11 @@ export default function OperationsPage() {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [handoff, setHandoff] = useState<any>(null);
+  const [executeStepId, setExecuteStepId] = useState<string>("po");
+  const [executing, setExecuting] = useState(false);
+  const [executeResult, setExecuteResult] = useState<ExecuteResponse | null>(null);
 
-  async function loadOperations() {
+  const loadOperations = useCallback(async () => {
     setLoading(true);
     setMessage("");
     try {
@@ -103,16 +182,17 @@ export default function OperationsPage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, []);
 
   useEffect(() => {
     loadOperations();
-  }, []);
+  }, [loadOperations]);
 
   async function prepareHandoff(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setMessage("");
     setHandoff(null);
+    setExecuteResult(null);
     const form = new FormData(event.currentTarget);
     try {
       const res = await fetch("/api/operations", {
@@ -123,9 +203,49 @@ export default function OperationsPage() {
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Gagal prepare handoff");
       setHandoff(json);
-      setMessage("✅ Handoff disiapkan. Belum ada write otomatis dari Operations v1.");
+      setMessage("✅ Handoff disiapkan. Eksekusi write via Execute Step.");
     } catch (error) {
       setMessage(`❌ ${String(error)}`);
+    }
+  }
+
+  async function executeStep(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setMessage("");
+    setHandoff(null);
+    setExecuteResult(null);
+    setExecuting(true);
+    const form = new FormData(event.currentTarget);
+    const payload: Record<string, string> = {};
+    for (const [key, value] of form.entries()) {
+      if (key !== "executeStepId" && key !== "executeReference") {
+        payload[key] = String(value);
+      }
+    }
+    try {
+      const res = await fetch("/api/operations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "execute_step",
+          stepId: form.get("executeStepId"),
+          reference: form.get("executeReference"),
+          payload,
+        }),
+      });
+      const json: ExecuteResponse = await res.json();
+      if (!res.ok && res.status !== 422) throw new Error(json.warning || "Gagal execute step");
+      setExecuteResult(json);
+      if (json.result.success) {
+        setMessage(`✅ ${json.result.detail}`);
+        loadOperations();
+      } else {
+        setMessage(`❌ ${json.result.detail}`);
+      }
+    } catch (error) {
+      setMessage(`❌ ${String(error)}`);
+    } finally {
+      setExecuting(false);
     }
   }
 
@@ -140,13 +260,16 @@ export default function OperationsPage() {
             <div>
               <h1 className="text-4xl font-bold">Operations Command Center</h1>
               <p className="mt-3 max-w-3xl text-white/65">
-                Satu alur bahan → PO → receive/QC → inventory → produksi → compliance → jual → CRM → report,
-                membaca Google Sheets sebagai source of truth dan memberi handoff ke modul operasional yang sudah ada.
+                Satu alur bahan → PO → receive/QC → inventory → produksi → compliance → jual → CRM → report.
+                Execute step langsung menulis ke Google Sheets sebagai source of truth.
               </p>
             </div>
-            <button onClick={loadOperations} className="rounded-full bg-[#0D9488] px-5 py-3 text-sm font-semibold text-white hover:bg-[#0f766e]">
-              Refresh Sheets
-            </button>
+            <div className="flex items-center gap-3">
+              <Link href="/reports" className="rounded-full bg-white/10 px-4 py-2.5 text-sm text-white/80 hover:bg-white/20">Lihat Reports →</Link>
+              <button onClick={loadOperations} className="rounded-full bg-[#0D9488] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#0f766e]">
+                Refresh Sheets
+              </button>
+            </div>
           </div>
         </header>
 
@@ -154,6 +277,7 @@ export default function OperationsPage() {
           <section className="rounded-3xl border border-amber-400/30 bg-amber-500/10 p-5 text-amber-100">
             <div className="font-semibold">⚠️ Google Workspace degraded</div>
             <p className="mt-1 text-sm">{data.warning}</p>
+            <p className="mt-1 text-sm text-amber-200/70">Data yang ditampilkan mungkin kosong. Re-auth diperlukan untuk execute step.</p>
           </section>
         )}
 
@@ -221,9 +345,12 @@ export default function OperationsPage() {
                     <p className="text-xs text-white/40">{step.metric}</p>
                     <p className="mt-1 text-lg font-semibold">{step.metricValue}</p>
                   </div>
-                  <Link href={step.href} className="rounded-2xl bg-[#F97316]/15 p-3 text-sm font-semibold text-orange-100 hover:bg-[#F97316]/25">
-                    Buka modul →<br /><span className="text-xs font-normal text-orange-100/60">{step.href}</span>
-                  </Link>
+                  <button
+                    onClick={() => { setExecuteStepId(step.id); setExecuteResult(null); setHandoff(null); }}
+                    className="rounded-2xl bg-[#F97316]/15 p-3 text-left text-sm font-semibold text-orange-100 hover:bg-[#F97316]/25"
+                  >
+                    Execute step →<br /><span className="text-xs font-normal text-orange-100/60">Buka form step ini</span>
+                  </button>
                 </div>
                 <p className="mt-4 text-sm text-[#b8d8cf]">Next action: {step.nextAction}</p>
               </div>
@@ -231,9 +358,82 @@ export default function OperationsPage() {
           </div>
 
           <aside className="space-y-4 lg:col-span-3">
+
+            {/* Execute Step form */}
             <section className="rounded-3xl bg-white/[0.04] p-5 ring-1 ring-white/10">
-              <h2 className="text-xl font-semibold">Prepare handoff</h2>
-              <p className="mt-2 text-sm text-white/55">Validasi awal sebelum operator menulis ke modul tujuan. Endpoint ini tidak melakukan write otomatis.</p>
+              <h2 className="text-xl font-semibold">⚡ Execute Step</h2>
+              <p className="mt-2 text-sm text-white/55">Tulis langsung ke Google Sheets untuk step terpilih. OAuth harus aktif.</p>
+              <form onSubmit={executeStep} className="mt-4 space-y-3">
+                <input type="hidden" name="executeStepId" value={executeStepId} />
+                <label className="block text-sm text-white/60">
+                  Step
+                  <select
+                    value={executeStepId}
+                    onChange={(e) => { setExecuteStepId(e.target.value); setExecuteResult(null); }}
+                    className="mt-1 w-full rounded-2xl border border-white/10 bg-[#0f1713] px-3 py-3 text-white"
+                  >
+                    {(data?.steps || []).map((step) => <option key={step.id} value={step.id}>{step.label} ({step.id})</option>)}
+                  </select>
+                </label>
+                <label className="block text-sm text-white/60">
+                  Reference
+                  <input name="executeReference" placeholder="PO-..., batch, invoice" className="mt-1 w-full rounded-2xl border border-white/10 bg-[#0f1713] px-3 py-3 text-white placeholder:text-white/30" />
+                </label>
+
+                {/* Dynamic fields per step */}
+                {(stepFields[executeStepId] || []).length > 0 ? (
+                  <div className="space-y-3 rounded-2xl bg-black/20 p-4">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-[#9ee7dc]">Payload fields</p>
+                    {(stepFields[executeStepId] || []).map((field) => (
+                      <label key={field.name} className="block text-sm text-white/60">
+                        {field.label} {field.required && <span className="text-red-400">*</span>}
+                        <input
+                          name={field.name}
+                          type={field.type || "text"}
+                          placeholder={field.placeholder}
+                          required={field.required}
+                          className="mt-1 w-full rounded-2xl border border-white/10 bg-[#0f1713] px-3 py-3 text-white placeholder:text-white/30"
+                        />
+                      </label>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="rounded-2xl bg-black/20 p-4 text-sm text-white/50">
+                    Step ini tidak memerlukan payload tambahan. Klik execute untuk memproses.
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={executing}
+                  className="w-full rounded-2xl bg-[#F97316] px-4 py-3 font-semibold text-white hover:bg-[#ea580c] disabled:opacity-50"
+                >
+                  {executing ? "⏳ Executing..." : "⚡ Execute & Write to Sheets"}
+                </button>
+              </form>
+
+              {executeResult && (
+                <div className={`mt-4 rounded-2xl p-4 text-sm ${executeResult?.result?.success ? "bg-emerald-500/10 border border-emerald-400/20" : "bg-red-500/10 border border-red-400/20"}`}>
+                  <div className="font-semibold">{executeResult?.result?.success ? "✅ Berhasil" : "❌ Gagal"}</div>
+                  <p className="mt-1 text-white/70">{executeResult?.result?.detail}</p>
+                  {executeResult?.result?.sheetWrites?.length > 0 && (
+                    <ul className="mt-2 list-disc space-y-0.5 pl-5 text-xs text-white/50">
+                      {executeResult.result.sheetWrites.map((w) => <li key={w}>{w}</li>)}
+                    </ul>
+                  )}
+                  {executeResult?.actionLog && (
+                    <p className="mt-2 text-xs text-white/40">
+                      Log: {executeResult.actionLog.id} • {executeResult.actionLog.status} • {new Date(executeResult.actionLog.timestamp).toLocaleString("id-ID")}
+                    </p>
+                  )}
+                </div>
+              )}
+            </section>
+
+            {/* Prepare Handoff form */}
+            <section className="rounded-3xl bg-white/[0.04] p-5 ring-1 ring-white/10">
+              <h2 className="text-xl font-semibold">📋 Prepare Handoff</h2>
+              <p className="mt-2 text-sm text-white/55">Validasi awal tanpa write. Lihat checklist sebelum execute.</p>
               <form onSubmit={prepareHandoff} className="mt-4 space-y-3">
                 <label className="block text-sm text-white/60">
                   Step
@@ -245,7 +445,7 @@ export default function OperationsPage() {
                   Reference / bukti
                   <input name="reference" placeholder="PO-..., batch, invoice, Drive URL" className="mt-1 w-full rounded-2xl border border-white/10 bg-[#0f1713] px-3 py-3 text-white placeholder:text-white/30" />
                 </label>
-                <button className="w-full rounded-2xl bg-[#0D9488] px-4 py-3 font-semibold hover:bg-[#0f766e]">Prepare Handoff</button>
+                <button type="submit" className="w-full rounded-2xl bg-[#0D9488] px-4 py-3 font-semibold hover:bg-[#0f766e]">Prepare Handoff</button>
               </form>
               {handoff && (
                 <div className="mt-4 rounded-2xl bg-black/25 p-4 text-sm">
@@ -258,15 +458,14 @@ export default function OperationsPage() {
             </section>
 
             <section className="rounded-3xl bg-white/[0.04] p-5 ring-1 ring-white/10">
-              <h2 className="text-xl font-semibold">Guardrails</h2>
+              <h2 className="text-xl font-semibold">🛡️ Guardrails</h2>
               <ul className="mt-3 list-disc space-y-2 pl-5 text-sm text-white/65">
                 {(data?.guardrails || []).map((item) => <li key={item}>{item}</li>)}
               </ul>
             </section>
 
             <section className="rounded-3xl bg-white/[0.04] p-5 ring-1 ring-white/10">
-              <h2 className="text-xl font-semibold">Weekly cadence & reporting</h2>
-              <p className="mt-2 text-sm text-white/55">Ritme rapat lintas divisi agar data operasional masuk ke laporan mingguan tanpa write otomatis dari halaman Operations.</p>
+              <h2 className="text-xl font-semibold">📅 Weekly cadence & reporting</h2>
               <div className="mt-4 space-y-3">
                 {(data?.weeklyCadence || []).map((item) => (
                   <div key={item.id} className="rounded-2xl bg-black/20 p-4 text-sm">
@@ -286,7 +485,7 @@ export default function OperationsPage() {
             </section>
 
             <section className="rounded-3xl bg-white/[0.04] p-5 ring-1 ring-white/10">
-              <h2 className="text-xl font-semibold">Recent activity</h2>
+              <h2 className="text-xl font-semibold">📊 Recent activity</h2>
               <div className="mt-3 space-y-3 text-xs text-white/55">
                 {Object.entries(data?.recentActivity || {}).map(([key, rows]) => (
                   <div key={key} className="rounded-2xl bg-black/20 p-3">
