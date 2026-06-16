@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { RoleGate } from "@/components/auth/role-gate";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -32,6 +32,20 @@ function downloadTextFile(filename: string, content: string, mimeType = "text/ma
   URL.revokeObjectURL(url);
 }
 
+async function downloadReportPDF(title: string, content: string, period: string): Promise<boolean> {
+  try {
+    const { exportContentToPDF } = await import("@/lib/document/pdf-export");
+    return await exportContentToPDF({
+      title,
+      content,
+      filename: `systemswi-${slugify(title)}-${slugify(period)}.pdf`,
+    });
+  } catch (err) {
+    console.error("PDF export failed:", err);
+    return false;
+  }
+}
+
 type ReportTemplate = {
   type: string;
   name: string;
@@ -50,6 +64,7 @@ export default function ReportsPage() {
   const [reportStatus, setReportStatus] = useState("");
   const [generating, setGenerating] = useState(false);
   const [batchReports, setBatchReports] = useState<any[]>([]);
+  const [downloadingPDF, setDownloadingPDF] = useState(false);
 
   useEffect(() => {
     Promise.all([
@@ -130,6 +145,41 @@ export default function ReportsPage() {
     setReportStatus(`Bundle download siap: ${filename} (${reportsToExport.length} report). Belum ada file yang ditulis ke Google Drive.`);
   };
 
+  const handleDownloadPDF = useCallback(async () => {
+    if (!report?.content) return;
+    setDownloadingPDF(true);
+    try {
+      const ok = await downloadReportPDF(report.title || report.type || "report", report.content, report.period || period);
+      if (ok) {
+        setReportStatus(`PDF berhasil di-export: systemswi-${slugify(report.title || report.type)}-${slugify(report.period || period)}.pdf`);
+      } else {
+        setReportStatus("Gagal export PDF. Pastikan browser mendukung download.");
+      }
+    } catch {
+      setReportStatus("Gagal export PDF. Silakan coba lagi.");
+    } finally {
+      setDownloadingPDF(false);
+    }
+  }, [report, period]);
+
+  const handleDownloadAllPDF = useCallback(async () => {
+    const reportsToExport = batchReports.length > 0 ? batchReports : report ? [report] : [];
+    if (reportsToExport.length === 0) return;
+    setDownloadingPDF(true);
+    try {
+      let successCount = 0;
+      for (const r of reportsToExport) {
+        const ok = await downloadReportPDF(r.title || r.type || "report", r.content, r.period || period);
+        if (ok) successCount++;
+      }
+      setReportStatus(`PDF export selesai: ${successCount}/${reportsToExport.length} report berhasil di-export.`);
+    } catch {
+      setReportStatus("Gagal export beberapa PDF. Silakan coba lagi.");
+    } finally {
+      setDownloadingPDF(false);
+    }
+  }, [batchReports, report, period]);
+
   return (
     <div className="space-y-6">
       <div>
@@ -181,13 +231,21 @@ export default function ReportsPage() {
                   </div>
                   <div className="grid gap-2 sm:grid-cols-2">
                     <Button onClick={downloadCurrentReport} disabled={!report?.content} variant="secondary" className="w-full">
-                      Download Markdown
+                      📝 Download Markdown
                     </Button>
                     <Button onClick={downloadAllReports} disabled={!report?.content && batchReports.length === 0} variant="secondary" className="w-full">
-                      Download Bundle
+                      📦 Download Bundle
                     </Button>
                   </div>
-                  <p className="text-xs text-muted-foreground">QA otomatis: membuat weekly, monthly, quarterly investor, dan annual report dalam satu request. Download bersifat lokal/browser; tidak menulis ke Drive/Docs sampai operator menyimpan manual atau workflow save terpisah disetujui.</p>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <Button onClick={handleDownloadPDF} disabled={!report?.content || downloadingPDF} variant="default" className="w-full">
+                      {downloadingPDF ? "⏳ Export..." : "📥 Download PDF"}
+                    </Button>
+                    <Button onClick={handleDownloadAllPDF} disabled={(!report?.content && batchReports.length === 0) || downloadingPDF} variant="outline" className="w-full">
+                      📥 Export Semua PDF
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">QA otomatis: membuat weekly, monthly, quarterly investor, dan annual report dalam satu request. Download Markdown/PDF bersifat lokal/browser; tidak menulis ke Drive/Docs sampai operator menyimpan manual atau workflow save terpisah disetujui.</p>
                   {reportStatus && <p className="rounded-md border bg-muted px-3 py-2 text-sm text-muted-foreground">ℹ️ {reportStatus}</p>}
                 </CardContent>
               </Card>
