@@ -22,9 +22,12 @@ const workspaceRoutes = [
   "/documents",
   "/alerts",
   "/compliance",
+  "/bpom",
   "/automation",
   "/customers",
   "/scent-profile",
+  "/reports",
+  "/invoice",
 ];
 
 export default function sitemap(): MetadataRoute.Sitemap {
