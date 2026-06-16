@@ -24,7 +24,7 @@ export interface TeamMember {
 export interface PortfolioItem {
     id: string;
     title: string;
-    category: "wedding" | "corporate" | "music" | "exhibition" | "other";
+    category: "wedding" | "corporate" | "music" | "exhibition" | "festival" | "pop-up" | "other";
     date: string;
     location: string;
     description: string;
@@ -60,6 +60,8 @@ export const PORTFOLIO_CATEGORIES = {
     corporate: "Corporate Event",
     music: "Music Festival",
     exhibition: "Exhibition",
+    festival: "Festival",
+    "pop-up": "Roadshow / Pop-up",
     other: "Other",
 };
 

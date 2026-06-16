@@ -129,6 +129,24 @@ export const PORTFOLIO_ITEMS: PortfolioItem[] = [
         description: "Road to Fragrantions 2026 Vol. 1 sebagai rangkaian menuju Fragrantions 2026 di Promenade Taman Ismail Marzuki, Jakarta.",
         images: ["/images/events/road-to-fragrantions-tim.svg"],
     },
+    {
+        id: "p4",
+        title: "Road to Fragrantions 2026 Vol. 2",
+        category: "exhibition",
+        date: "2026-07-01",
+        location: "Promenade TIM, Jakarta",
+        description: "Road to Fragrantions 2026 Vol. 2, rangkaian pop-up roadshow menuju Fragrantions 2026 di Promenade Taman Ismail Marzuki, Jakarta.",
+        images: ["/images/events/road-to-fragrantions-tim.svg"],
+    },
+    {
+        id: "p5",
+        title: "Fragrantions 2026",
+        category: "festival",
+        date: "2026-08-01",
+        location: "Gedung Emeria TIM, Jakarta",
+        description: "Acara utama Fragrantions 2026 di Gedung Emeria, Taman Ismail Marzuki, Jakarta.",
+        images: ["/images/events/fragrantions-gedung-emeria.svg"],
+    },
 ];
 
 export const PRODUCTS: Product[] = [

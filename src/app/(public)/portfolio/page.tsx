@@ -140,7 +140,7 @@ export default function PortfolioPage() {
                     <p className="text-sm uppercase tracking-[0.3em] text-white/75 mb-4">Fragrantions by SWI</p>
                     <h1 className="text-4xl md:text-5xl font-bold mb-4">Portfolio Event</h1>
                     <p className="text-lg md:text-xl text-white/90 max-w-3xl mx-auto">
-                        Dokumentasi event Fragrantions dan Road to Fragrantions yang sudah terlaksana. Data ditarik dari sistem Events SWI dan dikurasi dari dokumentasi publik @fragrantions.
+                        Dokumentasi event <strong>Fragrantions</strong> dan <strong>Road to Fragrantions</strong> yang sudah terlaksana. Data ditarik dari sistem Events SWI dan dikurasi dari dokumentasi publik <strong>@fragrantions</strong>.
                     </p>
                     <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-3">
                         <a href="https://www.instagram.com/fragrantions/" target="_blank" rel="noopener noreferrer">
@@ -155,7 +155,7 @@ export default function PortfolioPage() {
 
             <div className="container mx-auto px-4 py-12">
                 {/* Summary */}
-                <section className="grid gap-4 md:grid-cols-3 mb-10">
+                <section className="grid gap-4 md:grid-cols-4 mb-10">
                     <Card>
                         <CardHeader className="pb-2">
                             <CardDescription>Portfolio Terlaksana</CardDescription>
@@ -177,6 +177,50 @@ export default function PortfolioPage() {
                         </CardHeader>
                         <CardContent className="text-sm text-muted-foreground">Link IG ditampilkan di setiap card portfolio.</CardContent>
                     </Card>
+                    <Card>
+                        <CardHeader className="pb-2">
+                            <CardDescription>Venue Utama</CardDescription>
+                            <CardTitle className="text-2xl">TIM Jakarta</CardTitle>
+                        </CardHeader>
+                        <CardContent className="text-sm text-muted-foreground">Promenade + Gedung Emeria, Taman Ismail Marzuki.</CardContent>
+                    </Card>
+                </section>
+
+                {/* Fragrantions Series Timeline */}
+                <section className="mb-12">
+                    <h2 className="text-xl font-bold mb-4 text-center">📅 Timeline Series Fragrantions</h2>
+                    <div className="relative">
+                        <div className="absolute left-1/2 -translate-x-px h-full w-0.5 bg-gradient-to-b from-primary via-primary/50 to-transparent hidden md:block" />
+                        <div className="space-y-6">
+                            {[
+                                { year: "2025", label: "Road to Fragrantions Vol. 1", venue: "Promenade TIM", status: "completed", month: "Juli" },
+                                { year: "2025", label: "Fragrantions 2025", venue: "Gedung Emeria TIM", status: "completed", month: "November" },
+                                { year: "2026", label: "Road to Fragrantions 2026 Vol. 1", venue: "Promenade TIM", status: "completed", month: "April" },
+                                { year: "2026", label: "Road to Fragrantions 2026 Vol. 2", venue: "Promenade TIM", status: "upcoming", month: "Juli" },
+                                { year: "2026", label: "Fragrantions 2026", venue: "Gedung Emeria TIM", status: "upcoming", month: "Agustus" },
+                            ].map((item, i) => (
+                                <div key={i} className={`flex items-center gap-4 ${i % 2 === 0 ? "md:flex-row" : "md:flex-row-reverse"}`}>
+                                    <div className={`flex-1 ${i % 2 === 0 ? "md:text-right" : "md:text-left"} hidden md:block`}>
+                                        <div className={`inline-block rounded-xl px-4 py-3 ${item.status === "completed" ? "bg-primary/10 border border-primary/20" : "bg-muted border border-muted-foreground/20"}`}>
+                                            <div className="text-xs text-muted-foreground">{item.year} · {item.month}</div>
+                                            <div className="font-semibold text-sm">{item.label}</div>
+                                            <div className="text-xs text-muted-foreground">📍 {item.venue}</div>
+                                        </div>
+                                    </div>
+                                    <div className={`w-4 h-4 rounded-full border-2 flex-shrink-0 ${item.status === "completed" ? "bg-primary border-primary" : "bg-background border-primary/40"}`} />
+                                    <div className="flex-1 hidden md:block" />
+                                    <div className="md:hidden flex items-center gap-3 flex-1">
+                                        <div className={`w-3 h-3 rounded-full flex-shrink-0 ${item.status === "completed" ? "bg-primary" : "bg-primary/30"}`} />
+                                        <div>
+                                            <div className="text-xs text-muted-foreground">{item.year} · {item.month}</div>
+                                            <div className="font-semibold text-sm">{item.label}</div>
+                                            <div className="text-xs text-muted-foreground">📍 {item.venue} · {item.status === "completed" ? "✅" : "📋"}</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
                 </section>
 
                 {/* Filter */}
@@ -226,7 +270,7 @@ export default function PortfolioPage() {
                                 <CardHeader className="pb-2">
                                     <div className="flex items-center justify-between gap-3">
                                         <span className="text-xs text-primary font-medium uppercase tracking-wide">
-                                            {event.status === "completed" ? "Completed" : event.status}
+                                            {event.status === "completed" ? "✅ Completed" : event.status === "planning" ? "📋 Planning" : event.status}
                                         </span>
                                         <span className="text-xs text-muted-foreground text-right">
                                             {formatEventDate(event.startDate, event.endDate)}
@@ -240,23 +284,48 @@ export default function PortfolioPage() {
                                     <p className="text-sm text-muted-foreground leading-relaxed">
                                         {event.description}
                                     </p>
-                                    <div className="grid grid-cols-2 gap-3 text-xs">
-                                        <div className="rounded-lg bg-muted/60 p-3">
+                                    <div className="grid grid-cols-3 gap-2 text-xs">
+                                        <div className="rounded-lg bg-muted/60 p-2.5 text-center">
                                             <div className="text-muted-foreground">Tenant</div>
-                                            <div className="font-semibold">{event.tenantCount || 0}</div>
+                                            <div className="font-semibold text-base">{event.tenantCount || 0}</div>
                                         </div>
-                                        <div className="rounded-lg bg-muted/60 p-3">
+                                        <div className="rounded-lg bg-muted/60 p-2.5 text-center">
+                                            <div className="text-muted-foreground">Sponsor</div>
+                                            <div className="font-semibold text-base">{event.sponsorCount || 0}</div>
+                                        </div>
+                                        <div className="rounded-lg bg-muted/60 p-2.5 text-center">
                                             <div className="text-muted-foreground">Attendee</div>
-                                            <div className="font-semibold">{event.attendeeActual || 0}</div>
+                                            <div className="font-semibold text-base">{event.attendeeActual || event.attendeeTarget || 0}</div>
                                         </div>
                                     </div>
+                                    {(event.budget > 0 || event.revenue > 0) && (
+                                        <div className="grid grid-cols-2 gap-2 text-xs">
+                                            {event.budget > 0 && (
+                                                <div className="rounded-lg bg-blue-50 p-2.5">
+                                                    <div className="text-blue-600">Budget</div>
+                                                    <div className="font-semibold text-blue-800">Rp {(event.budget / 1000000).toFixed(1)}jt</div>
+                                                </div>
+                                            )}
+                                            {event.revenue > 0 && (
+                                                <div className="rounded-lg bg-green-50 p-2.5">
+                                                    <div className="text-green-600">Revenue</div>
+                                                    <div className="font-semibold text-green-800">Rp {(event.revenue / 1000000).toFixed(1)}jt</div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                    {event.notes && (
+                                        <p className="text-xs text-muted-foreground italic border-l-2 border-primary/30 pl-3">
+                                            {event.notes}
+                                        </p>
+                                    )}
                                     <a
                                         href={normalizeInstagramUrl(event.instagram)}
                                         target="_blank"
                                         rel="noopener noreferrer"
                                         className="inline-flex text-sm font-medium text-primary hover:underline"
                                     >
-                                        Dokumentasi Instagram →
+                                        📸 Dokumentasi Instagram →
                                     </a>
                                 </CardContent>
                             </Card>
