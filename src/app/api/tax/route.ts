@@ -115,7 +115,7 @@ export async function GET(req: NextRequest) {
         source: "Google Sheets",
         sourceStatus: "blocked",
         error: "Google OAuth token perlu re-auth",
-      }, { status: 503 });
+      }, { status: 200 });
     }
     return NextResponse.json({ error: "Failed to fetch tax data", details: String(error) }, { status: 500 });
   }
