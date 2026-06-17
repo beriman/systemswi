@@ -13,6 +13,7 @@ const NAV_LINKS = [
     { href: "/portfolio", label: "Portfolio" },
     { href: "/products", label: "Services" },
     { href: "/upcoming-events", label: "Events" },
+    { href: "/investor", label: "Investor" },
 ];
 
 const SOCIAL_LINKS = {

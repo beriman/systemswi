@@ -425,6 +425,7 @@ export default function DashboardPage() {
           <QuickLink href="/automation" title="💬 WhatsApp" description="FAQ, broadcast, customer intake" />
           <QuickLink href="/sukuk" title="🪙 Sukuk Mikro" description="Produk, investasi, profit syariah" />
           <QuickLink href="/tax-compliance" title="🏛️ Tax & Compliance" description="Pajak, dokumen, OSS, Pajak Tracking" />
+          <QuickLink href="/investor" title="📈 Investor Relations" description="Sukuk deck, financial projections" />
           <QuickLink href="/sheets" title="📋 Google Sheets" description="Buka data spreadsheet langsung" />
         </div>
       </RoleGate>

@@ -8,6 +8,7 @@ const publicRoutes = [
   { path: "/portfolio", priority: 0.9, changeFrequency: "weekly" as const },
   { path: "/products", priority: 0.8, changeFrequency: "monthly" as const },
   { path: "/upcoming-events", priority: 0.9, changeFrequency: "weekly" as const },
+  { path: "/investor", priority: 0.85, changeFrequency: "monthly" as const },
 ];
 
 const workspaceRoutes = [
