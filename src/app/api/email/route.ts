@@ -119,7 +119,7 @@ export async function GET(req: NextRequest) {
         source: "Gmail API",
         sourceStatus: "blocked",
         error: "Google OAuth token tidak valid. Re-auth diperlukan.",
-      }, { status: 503 });
+      }, { status: 200 });
     }
     return NextResponse.json({ error: "Failed to fetch emails", details: String(error) }, { status: 500 });
   }
@@ -165,7 +165,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({
         error: "Google OAuth token tidak valid",
         sourceStatus: "blocked",
-      }, { status: 503 });
+      }, { status: 200 });
     }
     return NextResponse.json({ error: "Failed to send email", details: String(error) }, { status: 500 });
   }
