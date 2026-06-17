@@ -242,6 +242,7 @@ export default function DashboardPage() {
               <ActionLink href="/scent-profile" title="AI scent profile" detail="Interview customer → draft aroma brief" />
               <ActionLink href="/automation" title="Preview WhatsApp" detail="FAQ, broadcast, customer intake tanpa auto-send" />
               <ActionLink href="/brands" title="Analisa brand" detail="Selling, COGS, expense, profit" />
+              <ActionLink href="/tax-compliance" title="🏛️ Tax & Compliance" detail="Kalender pajak, dokumen, OSS, Pajak Tracking" />
               <ActionLink href="/sukuk" title="Sukuk Mikro" detail="Produk, investasi, distribusi profit" />
             </CardContent>
           </Card>
@@ -281,6 +282,7 @@ export default function DashboardPage() {
           <QuickLink href="/scent-profile" title="🧪 Scent Profile" description="Interview → draft aroma brief" />
           <QuickLink href="/automation" title="💬 WhatsApp" description="FAQ, broadcast, customer intake" />
           <QuickLink href="/sukuk" title="🪙 Sukuk Mikro" description="Produk, investasi, profit syariah" />
+          <QuickLink href="/tax-compliance" title="🏛️ Tax & Compliance" description="Pajak, dokumen, OSS, Pajak Tracking" />
           <QuickLink href="/sheets" title="📋 Google Sheets" description="Buka data spreadsheet langsung" />
         </div>
       </RoleGate>
