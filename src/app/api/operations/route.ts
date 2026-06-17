@@ -51,7 +51,7 @@ type WorkflowAction = {
   detail: string;
 };
 
-const SOURCE = "Google Sheets: Cash_Harian, Event_Tenants, Event_Sponsors, Event_Budget, Inventory_Master, Inventory_Movements, Purchase_Orders, Goods_Receipts, Brand_Production, Brand_Sales, Customer_Master, Compliance_Checks, Product_Batches, QC_Checklist";
+const SOURCE = "Google Sheets: Cash_Harian, Event_Tenants, Event_Sponsors, Event_Budget, Inventory_Master, Inventory_Movements, Purchase_Orders, Goods_Receipts, Brand_Production, Brand_Sales, Compliance_Checks, Product_Batches, QC_Checklist";
 
 const WORKFLOW_ACTION_LOG_SHEET = "Workflow_Actions";
 
@@ -66,7 +66,6 @@ const ranges = [
   "Goods_Receipts!A1:M1000",
   "Brand_Production!A1:T1000",
   "Brand_Sales!A1:N1000",
-  "Customer_Master!A1:M1000",
   "Compliance_Checks!A1:L1000",
   "Product_Batches!A1:M1000",
   "QC_Checklist!A1:I1000",
@@ -145,7 +144,7 @@ function buildDivisionKpis(data: Record<string, string[][]>): DivisionKpi[] {
   const receipts = rowsOnly(data["Goods_Receipts!A1:M1000"]);
   const production = rowsOnly(data["Brand_Production!A1:T1000"]);
   const sales = rowsOnly(data["Brand_Sales!A1:N1000"]);
-  const customers = rowsOnly(data["Customer_Master!A1:M1000"]);
+  const customers = rowsOnly(data["Customer_Master!A1:M1000"] || []);
   const compliance = rowsOnly(data["Compliance_Checks!A1:L1000"]);
   const batches = rowsOnly(data["Product_Batches!A1:M1000"]);
   const qc = rowsOnly(data["QC_Checklist!A1:I1000"]);
@@ -184,7 +183,7 @@ function buildDivisionKpis(data: Record<string, string[][]>): DivisionKpi[] {
     { id: "events", division: "Event Commercial", owner: "Event PIC / Wapiq", health: tenantOutstanding + sponsorOutstanding > 0 || overBudget > 0 ? "attention" : tenants.length + sponsors.length > 0 ? "ready" : "draft", primaryMetric: "Outstanding pipeline", primaryValue: tenantOutstanding + sponsorOutstanding, secondaryMetric: "Over-budget rows", secondaryValue: overBudget, source: "Event_Tenants + Event_Sponsors + Event_Budget", nextAction: "Follow-up invoice/payment tenant-sponsor dan review budget event sebelum komit vendor.", href: "/events" },
     { id: "operations", division: "Inventory + Procurement", owner: "COO / Ops Lead", health: stockAlerts + openPo + qcPending > 0 ? "attention" : inventory.length ? "ready" : "draft", primaryMetric: "Stock/PO/QC issues", primaryValue: stockAlerts + openPo + qcPending, secondaryMetric: "Inventory SKUs", secondaryValue: inventory.length, source: "Inventory_Master + Purchase_Orders + Goods_Receipts", nextAction: "Prioritaskan low stock, PO terbuka, dan receiving QC sebelum produksi.", href: "/inventory" },
     { id: "production", division: "Production + Compliance", owner: "Production / Compliance PIC", health: complianceReview > 0 ? "attention" : production.length ? "ready" : "draft", primaryMetric: "Compliance/batch review", primaryValue: complianceReview, secondaryMetric: "Production rows", secondaryValue: production.length, source: "Brand_Production + Compliance_Checks + Product_Batches + QC_Checklist", nextAction: "Release batch hanya setelah QC/compliance dan traceability lengkap.", href: "/compliance" },
-    { id: "crm", division: "Sales + CRM", owner: "Store/CRM PIC", health: sales.length > customers.length ? "attention" : customers.length ? "ready" : "draft", primaryMetric: "Sales / CRM rows", primaryValue: `${sales.length} / ${customers.length}`, secondaryMetric: "Consent-safe contacts", secondaryValue: customers.length, source: "Brand_Sales + Customer_Master", nextAction: "Sinkronkan pembeli ke CRM dengan consent jelas, lalu follow-up manual via WhatsApp preview.", href: "/customers" },
+    { id: "crm", division: "Sales + CRM", owner: "Store/CRM PIC", health: sales.length > 0 ? (customers.length === 0 ? "attention" : "ready") : "draft", primaryMetric: "Sales / CRM rows", primaryValue: `${sales.length} / ${customers.length}`, secondaryMetric: "CRM source", secondaryValue: customers.length ? "Google Sheets" : "SQLite (Sheets unavailable)", source: "Brand_Sales + CRM (SQLite primary)", nextAction: customers.length === 0 ? "Customer_Master sheet tidak tersedia di Google Sheets. CRM menggunakan SQLite sebagai primary source." : "Sinkronkan pembeli ke CRM dengan consent jelas, lalu follow-up manual via WhatsApp preview.", href: "/customers" },
   ];
 }
 
@@ -195,7 +194,7 @@ function buildWorkflow(data: Record<string, string[][]>) {
   const receipts = rowsOnly(data["Goods_Receipts!A1:M1000"]);
   const production = rowsOnly(data["Brand_Production!A1:T1000"]);
   const sales = rowsOnly(data["Brand_Sales!A1:N1000"]);
-  const customers = rowsOnly(data["Customer_Master!A1:M1000"]);
+  const customers = rowsOnly(data["Customer_Master!A1:M1000"] || []);
   const compliance = rowsOnly(data["Compliance_Checks!A1:L1000"]);
   const batches = rowsOnly(data["Product_Batches!A1:M1000"]);
   const qc = rowsOnly(data["QC_Checklist!A1:I1000"]);
