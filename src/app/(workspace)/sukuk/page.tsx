@@ -69,12 +69,22 @@ function StatusBadge({ status }: { status: string }) {
   const tone: Record<string, string> = {
     open: "bg-emerald-600", funded: "bg-blue-600", launched: "bg-purple-600",
     closed: "bg-red-500", aktif: "bg-emerald-600", draft: "bg-yellow-600", paid: "bg-emerald-600",
+    Perencanaan: "bg-blue-500", Ideasi: "bg-yellow-500",
   };
   const label: Record<string, string> = {
     open: "Open", funded: "Fully Funded", launched: "Launched",
     closed: "Closed", aktif: "Aktif", draft: "Draft", paid: "Dibayar",
+    Perencanaan: "Perencanaan", Ideasi: "Ideasi",
   };
   return <Badge className={tone[status] || "bg-gray-500"}>{label[status] || status}</Badge>;
+}
+
+function statusLabel(s: string) {
+  const label: Record<string, string> = {
+    open: "Open", funded: "Fully Funded", launched: "Launched",
+    closed: "Closed", draft: "Draft", Perencanaan: "Perencanaan", Ideasi: "Ideasi",
+  };
+  return label[s] || s;
 }
 
 export default function SukukMicroPage() {
@@ -108,10 +118,30 @@ export default function SukukMicroPage() {
         fetch("/api/sukuk/distributions", { cache: "no-store" }),
       ]);
       const [pData, iData, dData] = await Promise.all([pRes.json(), iRes.json(), dRes.json()]);
-      setProducts(pData.products || []);
+
+      // Normalize products: handle both SQLite and Sheets formats
+      const rawProducts = pData.products || [];
+      const normalizedProducts = rawProducts.map((p: any) => ({
+        ...p,
+        // Sheets format uses modal_dibutuhkan for nilai_sukuk and target_investor for jumlah_unit
+        nilai_sukuk: p.nilai_sukuk || p.modal_dibutuhkan || 0,
+        harga_per_unit: p.harga_per_unit || p.modal_dibutuhkan || 0,
+        jumlah_unit: p.jumlah_unit || p.target_investor || 0,
+        unit_terjual: p.unit_terjual || 0,
+        total_terkumpul: p.total_terkumpul || 0,
+        nisbah_investor: p.nisbah_investor || 50,
+        nisbah_pengelola: p.nisbah_pengelola || 50,
+        target_cogs: p.target_cogs || 0,
+        target_harga_jual: p.target_harga_jual || 0,
+        tenor_bulan: p.tenor_bulan || 6,
+        jenis_akad: p.jenis_akad || "musyarakah",
+      }));
+
+      setProducts(normalizedProducts);
       setInvestments(iData.investments || []);
       setDistributions(dData.distributions || []);
-      setStatus(`Loaded: ${pData.products?.length || 0} produk, ${iData.investments?.length || 0} investasi`);
+      const src = pData.source || "unknown";
+      setStatus(`Source: ${src} | ${normalizedProducts.length} produk, ${iData.investments?.length || 0} investasi, ${dData.distributions?.length || 0} distribusi`);
     } catch (err) {
       setStatus(`Error: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
@@ -131,8 +161,13 @@ export default function SukukMicroPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           product_id: selectedProduct.id,
-          ...investForm,
+          investor_name: investForm.investor_name,
+          investor_email: investForm.investor_email,
+          investor_phone: investForm.investor_phone,
           jumlah_unit: Number(investForm.jumlah_unit) || 1,
+          consent: investForm.consent,
+          notes: investForm.notes,
+          nilai_investasi: (Number(investForm.jumlah_unit) || 1) * (selectedProduct.harga_per_unit || selectedProduct.modal_dibutuhkan || 0),
         }),
       });
       const data = await res.json();
@@ -224,7 +259,12 @@ export default function SukukMicroPage() {
       </div>
 
       {/* Status bar */}
-      <p className="text-xs text-muted-foreground">{status}</p>
+      <div className="flex items-center gap-2">
+        <p className="text-xs text-muted-foreground">{status}</p>
+        {products.length > 0 && products[0]?.from_sheets && (
+          <Badge variant="outline" className="text-xs">📋 Google Sheets</Badge>
+        )}
+      </div>
 
       {/* ═══ TAB: Produk ═══ */}
       {tab === "products" && (
