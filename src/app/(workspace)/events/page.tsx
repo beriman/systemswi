@@ -1,10 +1,14 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, type FormEvent } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { CommercialPipeline } from "@/components/events/commercial-pipeline";
 
 interface Event {
@@ -77,6 +81,17 @@ export default function EventsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<"overview" | "events" | "commercial" | "budget" | "timeline">("overview");
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [createMessage, setCreateMessage] = useState<string | null>(null);
+
+  // Auto-dismiss success message
+  useEffect(() => {
+    if (createMessage?.startsWith("✅")) {
+      const timer = setTimeout(() => setCreateMessage(null), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [createMessage]);
 
   useEffect(() => {
     async function fetchEvents() {
@@ -105,7 +120,57 @@ export default function EventsPage() {
     totalCost: events.reduce((s, e) => s + e.actualCost, 0),
   };
 
+  async function handleCreateEvent(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setCreating(true);
+    setCreateMessage(null);
+    const form = new FormData(event.currentTarget);
+    const payload = {
+      name: String(form.get("name") || ""),
+      slug: String(form.get("slug") || "").toLowerCase().replace(/[^a-z0-9]+/g, "-"),
+      type: String(form.get("type") || "other"),
+      status: String(form.get("status") || "planning"),
+      description: String(form.get("description") || ""),
+      pic: String(form.get("pic") || "Wapiq Rizya Zaelan"),
+      instagram: String(form.get("instagram") || "@fragrantions"),
+      startDate: String(form.get("startDate") || ""),
+      endDate: String(form.get("endDate") || ""),
+      location: String(form.get("location") || ""),
+      venue: String(form.get("venue") || ""),
+      budget: Number(form.get("budget") || 0),
+      attendeeTarget: Number(form.get("attendeeTarget") || 0),
+      notes: String(form.get("notes") || ""),
+    };
+    if (!payload.name) {
+      setCreateMessage("Nama event wajib diisi.");
+      setCreating(false);
+      return;
+    }
+    try {
+      const res = await fetch("/api/events", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || json.details || `HTTP ${res.status}`);
+      setCreateMessage(`✅ Event "${payload.name}" berhasil dibuat!`);
+      setShowCreateModal(false);
+      event.currentTarget.reset();
+      const eventsRes = await fetch("/api/events");
+      if (eventsRes.ok) {
+        const eventsJson = await eventsRes.json();
+        setEvents(eventsJson.events || []);
+      }
+    } catch (err) {
+      setCreateMessage(`❌ Gagal membuat event: ${String(err).replace(/^Error:\s*/, "")}`);
+    } finally {
+      setCreating(false);
+    }
+  }
+
   return (
+    <>
     <div className="space-y-6">
       {/* Header */}
       <div className="flex justify-between items-start">
@@ -118,10 +183,18 @@ export default function EventsPage() {
             📷 Instagram: <a href="https://www.instagram.com/fragrantions" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">@fragrantions</a>
           </p>
         </div>
-        <button className="bg-purple-600 text-white py-2 px-4 rounded hover:bg-purple-700 text-sm">
+        <button onClick={() => setShowCreateModal(true)} className="bg-purple-600 text-white py-2 px-4 rounded hover:bg-purple-700 text-sm">
           + Event Baru
         </button>
       </div>
+
+      {/* Success/Error banner */}
+      {createMessage && (
+        <div className={`px-4 py-3 rounded-lg text-sm ${createMessage.startsWith("✅") ? "bg-green-50 text-green-700 border border-green-200" : "bg-red-50 text-red-700 border border-red-200"}`}>
+          {createMessage}
+          <button onClick={() => setCreateMessage(null)} className="ml-3 text-xs underline">Tutup</button>
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="flex gap-2 border-b">
@@ -444,5 +517,103 @@ export default function EventsPage() {
         </Card>
       ) : null}
     </div>
+    {showCreateModal && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowCreateModal(false)}>
+        <div className="bg-background rounded-xl shadow-2xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+          <div className="flex justify-between items-center p-6 border-b">
+            <h3 className="text-lg font-semibold">🎉 Buat Event Baru</h3>
+            <button onClick={() => setShowCreateModal(false)} className="text-muted-foreground hover:text-foreground text-xl leading-none">&times;</button>
+          </div>
+          {createMessage && (
+            <div className={`mx-6 mt-4 px-4 py-2 rounded text-sm ${createMessage.startsWith("✅") ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>
+              {createMessage}
+            </div>
+          )}
+          <form onSubmit={handleCreateEvent} className="p-6 space-y-4">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <Label htmlFor="name">Nama Event *</Label>
+                <Input id="name" name="name" placeholder="Fragrantions 2026" required />
+              </div>
+              <div>
+                <Label htmlFor="slug">Slug</Label>
+                <Input id="slug" name="slug" placeholder="fragrantions-2026" />
+              </div>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <Label htmlFor="type">Tipe Event</Label>
+                <select id="type" name="type" className="w-full rounded-md border bg-background px-3 py-2 text-sm">
+                  <option value="festival">Festival</option>
+                  <option value="workshop">Workshop</option>
+                  <option value="webinar">Webinar</option>
+                  <option value="pop-up">Pop-up</option>
+                  <option value="bazaar">Bazaar</option>
+                  <option value="conference">Conference</option>
+                  <option value="other">Lainnya</option>
+                </select>
+              </div>
+              <div>
+                <Label htmlFor="status">Status</Label>
+                <select id="status" name="status" className="w-full rounded-md border bg-background px-3 py-2 text-sm">
+                  <option value="planning">Planning</option>
+                  <option value="open-registration">Open Registration</option>
+                  <option value="ongoing">Ongoing</option>
+                  <option value="completed">Completed</option>
+                  <option value="cancelled">Cancelled</option>
+                </select>
+              </div>
+            </div>
+            <div>
+              <Label htmlFor="description">Deskripsi</Label>
+              <Textarea id="description" name="description" placeholder="Deskripsi singkat event..." rows={2} />
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <Label htmlFor="startDate">Tanggal Mulai</Label>
+                <Input id="startDate" name="startDate" type="date" />
+              </div>
+              <div>
+                <Label htmlFor="endDate">Tanggal Selesai</Label>
+                <Input id="endDate" name="endDate" type="date" />
+              </div>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <Label htmlFor="location">Lokasi</Label>
+                <Input id="location" name="location" placeholder="Jakarta" />
+              </div>
+              <div>
+                <Label htmlFor="venue">Venue</Label>
+                <Input id="venue" name="venue" placeholder="Nama venue" />
+              </div>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <Label htmlFor="budget">Budget (Rp)</Label>
+                <Input id="budget" name="budget" type="number" placeholder="0" min="0" />
+              </div>
+              <div>
+                <Label htmlFor="attendeeTarget">Target Peserta</Label>
+                <Input id="attendeeTarget" name="attendeeTarget" type="number" placeholder="0" min="0" />
+              </div>
+            </div>
+            <div>
+              <Label htmlFor="notes">Catatan</Label>
+              <Textarea id="notes" name="notes" placeholder="Catatan tambahan..." rows={2} />
+            </div>
+            <div className="flex justify-end gap-3 pt-2">
+              <button type="button" onClick={() => setShowCreateModal(false)} className="px-4 py-2 rounded-md border text-sm hover:bg-accent">
+                Batal
+              </button>
+              <button type="submit" disabled={creating} className="px-4 py-2 rounded-md bg-purple-600 text-white text-sm hover:bg-purple-700 disabled:opacity-50">
+                {creating ? "⏳ Membuat..." : "🎉 Buat Event"}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    )}
+    </>
   );
 }
