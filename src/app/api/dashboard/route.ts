@@ -74,11 +74,11 @@ function summarizeBrands(masterRows: string[][], productionRows: string[][], sal
 
 function summarizeEvents(rows: string[][]) {
   const events = rows.slice(1).filter((row) => cell(row, 0) || cell(row, 1));
-  const upcomingStatuses = new Set(["planning", "open-registration", "planned"]);
+  const upcomingStatuses = ["planning", "open-registration", "planned"];
   const totalBudget = events.reduce((sum, row) => sum + parseNumber(row[12]), 0);
   const totalCost = events.reduce((sum, row) => sum + parseNumber(row[13]), 0);
   const totalRevenue = events.reduce((sum, row) => sum + parseNumber(row[14]), 0);
-  const upcoming = events.filter((row) => upcomingStatuses.has(cell(row, 4).toLowerCase())).length;
+  const upcoming = events.filter((row) => upcomingStatuses.includes(cell(row, 4).toLowerCase())).length;
   const completed = events.filter((row) => cell(row, 4).toLowerCase() === "completed").length;
 
   return {
@@ -101,6 +101,80 @@ function summarizeEvents(rows: string[][]) {
   };
 }
 
+function summarizeInventory(rows: string[][]) {
+  const items = rows.slice(1).filter((row) => cell(row, 0) || cell(row, 1));
+  const totalSku = items.length;
+  const totalStock = items.reduce((sum, row) => sum + parseNumber(row[5]), 0);
+  const lowStock = items.filter((row) => {
+    const qty = parseNumber(row[5]);
+    const minQty = parseNumber(row[6]);
+    return minQty > 0 && qty <= minQty;
+  }).length;
+  const criticalStock = items.filter((row) => {
+    const qty = parseNumber(row[5]);
+    const minQty = parseNumber(row[6]);
+    return minQty > 0 && qty <= minQty * 0.5;
+  }).length;
+  const totalValue = items.reduce((sum, row) => sum + parseNumber(row[5]) * parseNumber(row[8]), 0);
+  const categories: string[] = [];
+  items.forEach((row) => {
+    const cat = cell(row, 3) || "other";
+    if (!categories.includes(cat)) categories.push(cat);
+  });
+
+  return { totalSku, totalStock, lowStock, criticalStock, totalValue, categoryCount: categories.length };
+}
+
+function summarizeProcurement(poRows: string[][], receiptRows: string[][]) {
+  const pos = poRows.slice(1).filter((row) => cell(row, 0) || cell(row, 1));
+  const receipts = receiptRows.slice(1).filter((row) => cell(row, 0) || cell(row, 1));
+  const totalPoValue = pos.reduce((sum, row) => sum + parseNumber(row[10]), 0);
+  const pendingPo = pos.filter((row) => {
+    const status = cell(row, 12).toLowerCase();
+    return status === "pending" || status === "approved" || status === "";
+  }).length;
+  const receivedCount = receipts.length;
+  const qcPassed = receipts.filter((row) => cell(row, 11).toLowerCase() === "pass" || cell(row, 11).toLowerCase() === "passed").length;
+  const qcFailed = receipts.filter((row) => cell(row, 11).toLowerCase() === "fail" || cell(row, 11).toLowerCase() === "failed").length;
+
+  return { poCount: pos.length, totalPoValue, pendingPo, receivedCount, qcPassed, qcFailed };
+}
+
+function summarizeCompliance(complianceRows: string[][], qcRows: string[][]) {
+  const checks = complianceRows.slice(1).filter((row) => cell(row, 0) || cell(row, 1));
+  const qcItems = qcRows.slice(1).filter((row) => cell(row, 0) || cell(row, 1));
+  const passed = checks.filter((row) => cell(row, 6).toLowerCase() === "pass" || cell(row, 6).toLowerCase() === "compliant").length;
+  const failed = checks.filter((row) => cell(row, 6).toLowerCase() === "fail" || cell(row, 6).toLowerCase() === "non-compliant").length;
+  const pending = checks.length - passed - failed;
+  const qcPassed = qcItems.filter((row) => cell(row, 7).toLowerCase() === "pass" || cell(row, 7).toLowerCase() === "passed").length;
+  const qcPending = qcItems.length - qcPassed;
+
+  return { totalChecks: checks.length, passed, failed, pending, qcTotal: qcItems.length, qcPassed, qcPending };
+}
+
+function summarizeCommercial(tenantRows: string[][], sponsorRows: string[][]) {
+  const tenants = tenantRows.slice(1).filter((row) => cell(row, 0) || cell(row, 2));
+  const sponsors = sponsorRows.slice(1).filter((row) => cell(row, 0) || cell(row, 2));
+  const paidTenants = tenants.filter((row) => cell(row, 10).toLowerCase() === "paid").length;
+  const paidSponsors = sponsors.filter((row) => cell(row, 11).toLowerCase() === "paid").length;
+  const outstandingTenants = tenants.filter((row) => ["prospect", "follow-up", "invoice-sent", "partial"].includes(cell(row, 10).toLowerCase())).length;
+  const outstandingSponsors = sponsors.filter((row) => ["prospect", "follow-up", "invoice-sent", "partial"].includes(cell(row, 11).toLowerCase())).length;
+  const tenantRevenue = tenants.reduce((sum, row) => sum + parseNumber(row[11]), 0);
+  const sponsorRevenue = sponsors.reduce((sum, row) => sum + parseNumber(row[7]) + parseNumber(row[10]), 0);
+
+  return {
+    tenantCount: tenants.length,
+    sponsorCount: sponsors.length,
+    paidTenants,
+    paidSponsors,
+    outstandingTenants,
+    outstandingSponsors,
+    tenantRevenue,
+    sponsorRevenue,
+    commercialRevenue: tenantRevenue + sponsorRevenue,
+  };
+}
+
 export async function GET() {
   try {
     let googleAuthError: unknown = null;
@@ -111,7 +185,7 @@ export async function GET() {
       return fallback;
     };
 
-    // ── Read all finance data from Google Sheets ──
+    // ── Read all finance + ops data from Google Sheets ──
     const [
       rekeningKoran,
       rekapRekening,
@@ -123,6 +197,13 @@ export async function GET() {
       divisiShareholders,
       brandRanges,
       eventRows,
+      inventoryRows,
+      procurementPoRows,
+      procurementReceiptRows,
+      complianceRows,
+      qcRows,
+      tenantRows,
+      sponsorRows,
     ] = await Promise.all([
       readSheet("RekeningKoran").catch(emptyOnAuthError([])),
       readSheet("RekapRekening").catch(emptyOnAuthError([])),
@@ -139,6 +220,13 @@ export async function GET() {
         "Brand_Expenses!A1:L1000",
       ]).catch(emptyOnAuthError({})),
       readEventSheet(EVENT_SHEETS.Events).catch(emptyOnAuthError([])),
+      readSheet("Inventory_Master").catch(emptyOnAuthError([])),
+      readSheet("Purchase_Orders").catch(emptyOnAuthError([])),
+      readSheet("Goods_Receipts").catch(emptyOnAuthError([])),
+      readSheet("Compliance_Checks").catch(emptyOnAuthError([])),
+      readSheet("QC_Checklist").catch(emptyOnAuthError([])),
+      readEventSheet(EVENT_SHEETS.Tenants).catch(emptyOnAuthError([])),
+      readEventSheet(EVENT_SHEETS.Sponsors).catch(emptyOnAuthError([])),
     ]);
 
     // ── Parse bank balances from RekeningKoran ──
@@ -282,10 +370,14 @@ export async function GET() {
       brandRanges["Brand_Expenses!A1:L1000"] || []
     );
     const eventSummary = summarizeEvents(eventRows);
+    const inventorySummary = summarizeInventory(inventoryRows);
+    const procurementSummary = summarizeProcurement(procurementPoRows, procurementReceiptRows);
+    const complianceSummary = summarizeCompliance(complianceRows, qcRows);
+    const commercialSummary = summarizeCommercial(tenantRows, sponsorRows);
 
     return NextResponse.json({
-      source: "Google Sheets: finance + events + production",
-      ...(googleAuthError ? googleWorkspaceDegradedSource("Google Sheets: finance + events + production", googleAuthError) : { sourceStatus: "live" as const }),
+      source: "Google Sheets: finance + events + production + inventory + procurement + compliance + commercial",
+      ...(googleAuthError ? googleWorkspaceDegradedSource("Google Sheets: finance + events + production + inventory + procurement + compliance + commercial", googleAuthError) : { sourceStatus: "live" as const }),
       bankAccounts,
       totalSaldoAkhir,
       shareholders,
@@ -304,6 +396,10 @@ export async function GET() {
       rekapData,
       brandSummary,
       eventSummary,
+      inventorySummary,
+      procurementSummary,
+      complianceSummary,
+      commercialSummary,
       executiveSnapshot: {
         cash: totalSaldoAkhir,
         paidInCapital: totalSudahSetor,
@@ -313,6 +409,12 @@ export async function GET() {
         productionQty: brandSummary.productionQty,
         activeBatches: brandSummary.activeBatches,
         estimatedStock: brandSummary.stockEstimate,
+        lowStockItems: inventorySummary.lowStock,
+        criticalStockItems: inventorySummary.criticalStock,
+        pendingPoCount: procurementSummary.pendingPo,
+        compliancePassRate: complianceSummary.totalChecks > 0 ? Math.round((complianceSummary.passed / complianceSummary.totalChecks) * 100) : 0,
+        commercialRevenue: commercialSummary.commercialRevenue,
+        outstandingCommercial: commercialSummary.outstandingTenants + commercialSummary.outstandingSponsors,
       },
     });
   } catch (error) {

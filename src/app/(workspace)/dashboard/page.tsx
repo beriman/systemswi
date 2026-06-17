@@ -248,6 +248,148 @@ export default function DashboardPage() {
           </Card>
         </div>
 
+        {/* Extended Operational Cards: Inventory, Procurement, Compliance, Commercial */}
+        <div className="grid gap-4 lg:grid-cols-4">
+          {/* Inventory Card */}
+          <Card className="border-cyan-100 bg-cyan-50/50">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">📦 Inventory</CardTitle>
+              <CardDescription>Stok bahan baku & packaging</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {loading ? <Skeleton className="h-20 w-full" /> : (
+                <>
+                  <div className="grid grid-cols-2 gap-2 text-center">
+                    <div>
+                      <div className="text-xl font-bold">{formatNumber(data?.inventorySummary?.totalSku || 0)}</div>
+                      <div className="text-xs text-muted-foreground">SKU</div>
+                    </div>
+                    <div>
+                      <div className="text-xl font-bold">{formatNumber(data?.inventorySummary?.totalStock || 0)}</div>
+                      <div className="text-xs text-muted-foreground">Total Stok</div>
+                    </div>
+                  </div>
+                  <div className="flex gap-2 text-xs">
+                    {(data?.inventorySummary?.lowStock || 0) > 0 && (
+                      <span className="rounded-full bg-amber-100 text-amber-800 px-2 py-0.5">⚠️ Low: {data?.inventorySummary?.lowStock}</span>
+                    )}
+                    {(data?.inventorySummary?.criticalStock || 0) > 0 && (
+                      <span className="rounded-full bg-red-100 text-red-800 px-2 py-0.5">🔴 Critical: {data?.inventorySummary?.criticalStock}</span>
+                    )}
+                    {(data?.inventorySummary?.lowStock || 0) === 0 && (data?.inventorySummary?.criticalStock || 0) === 0 && (
+                      <span className="rounded-full bg-green-100 text-green-800 px-2 py-0.5">✅ All OK</span>
+                    )}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    Nilai: {formatCurrency(data?.inventorySummary?.totalValue || 0)} • {data?.inventorySummary?.categoryCount || 0} kategori
+                  </div>
+                  <Link href="/inventory" className="text-xs font-medium text-cyan-700 hover:underline">Buka Inventory →</Link>
+                </>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Procurement Card */}
+          <Card className="border-indigo-100 bg-indigo-50/50">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">🧾 Procurement</CardTitle>
+              <CardDescription>PO, receiving, QC barang masuk</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {loading ? <Skeleton className="h-20 w-full" /> : (
+                <>
+                  <div className="grid grid-cols-2 gap-2 text-center">
+                    <div>
+                      <div className="text-xl font-bold">{formatNumber(data?.procurementSummary?.poCount || 0)}</div>
+                      <div className="text-xs text-muted-foreground">Total PO</div>
+                    </div>
+                    <div>
+                      <div className="text-xl font-bold text-amber-600">{formatNumber(data?.procurementSummary?.pendingPo || 0)}</div>
+                      <div className="text-xs text-muted-foreground">Pending</div>
+                    </div>
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    Nilai PO: {formatCurrency(data?.procurementSummary?.totalPoValue || 0)}
+                  </div>
+                  <div className="flex gap-2 text-xs">
+                    <span className="rounded-full bg-green-100 text-green-800 px-2 py-0.5">QC Pass: {data?.procurementSummary?.qcPassed || 0}</span>
+                    {(data?.procurementSummary?.qcFailed || 0) > 0 && (
+                      <span className="rounded-full bg-red-100 text-red-800 px-2 py-0.5">QC Fail: {data?.procurementSummary?.qcFailed}</span>
+                    )}
+                  </div>
+                  <Link href="/procurement" className="text-xs font-medium text-indigo-700 hover:underline">Buka Procurement →</Link>
+                </>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Compliance Card */}
+          <Card className="border-teal-100 bg-teal-50/50">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">✅ Compliance</CardTitle>
+              <CardDescription>Formula, batch, QC, label</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {loading ? <Skeleton className="h-20 w-full" /> : (
+                <>
+                  <div className="grid grid-cols-3 gap-1 text-center">
+                    <div>
+                      <div className="text-lg font-bold text-green-600">{formatNumber(data?.complianceSummary?.passed || 0)}</div>
+                      <div className="text-xs text-muted-foreground">Pass</div>
+                    </div>
+                    <div>
+                      <div className="text-lg font-bold text-amber-600">{formatNumber(data?.complianceSummary?.pending || 0)}</div>
+                      <div className="text-xs text-muted-foreground">Pending</div>
+                    </div>
+                    <div>
+                      <div className="text-lg font-bold text-red-600">{formatNumber(data?.complianceSummary?.failed || 0)}</div>
+                      <div className="text-xs text-muted-foreground">Fail</div>
+                    </div>
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    Pass rate: {data?.executiveSnapshot?.compliancePassRate || 0}% • QC: {data?.complianceSummary?.qcPassed || 0}/{data?.complianceSummary?.qcTotal || 0}
+                  </div>
+                  <Link href="/compliance" className="text-xs font-medium text-teal-700 hover:underline">Buka Compliance →</Link>
+                </>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Commercial Pipeline Card */}
+          <Card className="border-rose-100 bg-rose-50/50">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">🤝 Commercial</CardTitle>
+              <CardDescription>Tenant & sponsor pipeline</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {loading ? <Skeleton className="h-20 w-full" /> : (
+                <>
+                  <div className="grid grid-cols-2 gap-2 text-center">
+                    <div>
+                      <div className="text-xl font-bold">{formatNumber(data?.commercialSummary?.tenantCount || 0)}</div>
+                      <div className="text-xs text-muted-foreground">Tenant</div>
+                    </div>
+                    <div>
+                      <div className="text-xl font-bold">{formatNumber(data?.commercialSummary?.sponsorCount || 0)}</div>
+                      <div className="text-xs text-muted-foreground">Sponsor</div>
+                    </div>
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    Revenue: {formatCurrency(data?.commercialSummary?.commercialRevenue || 0)}
+                  </div>
+                  <div className="flex gap-2 text-xs">
+                    <span className="rounded-full bg-green-100 text-green-800 px-2 py-0.5">Paid: {data?.commercialSummary?.paidTenants || 0 + data?.commercialSummary?.paidSponsors || 0}</span>
+                    {(data?.commercialSummary?.outstandingTenants || 0) + (data?.commercialSummary?.outstandingSponsors || 0) > 0 && (
+                      <span className="rounded-full bg-amber-100 text-amber-800 px-2 py-0.5">Outstanding: {(data?.commercialSummary?.outstandingTenants || 0) + (data?.commercialSummary?.outstandingSponsors || 0)}</span>
+                    )}
+                  </div>
+                  <Link href="/events" className="text-xs font-medium text-rose-700 hover:underline">Buka Events →</Link>
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
         {/* Bank Accounts Detail */}
         {data?.bankAccounts?.length > 0 && (
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
