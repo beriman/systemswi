@@ -293,6 +293,44 @@ function initSchema(db: any) {
     CREATE INDEX IF NOT EXISTS idx_event_tenants_event ON event_tenants(event_id);
     CREATE INDEX IF NOT EXISTS idx_event_sponsors_event ON event_sponsors(event_id);
     CREATE INDEX IF NOT EXISTS idx_event_timeline_event ON event_timeline(event_id);
+
+    -- CRM tables
+    CREATE TABLE IF NOT EXISTS customers (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      whatsapp TEXT DEFAULT '',
+      segment TEXT DEFAULT 'new',
+      interest TEXT DEFAULT 'TBA',
+      source TEXT DEFAULT 'TBA',
+      consent TEXT DEFAULT 'TBA',
+      last_contact TEXT,
+      total_purchases INTEGER DEFAULT 0,
+      clv REAL DEFAULT 0,
+      recommended_formula TEXT DEFAULT 'TBA',
+      notes TEXT DEFAULT '',
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS customer_interactions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      interaction_id TEXT UNIQUE NOT NULL,
+      customer_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      type TEXT DEFAULT 'note',
+      channel TEXT DEFAULT 'WhatsApp',
+      summary TEXT DEFAULT '',
+      value REAL DEFAULT 0,
+      follow_up_date TEXT DEFAULT 'TBA',
+      pic TEXT DEFAULT 'TBA',
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (customer_id) REFERENCES customers(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_customers_segment ON customers(segment);
+    CREATE INDEX IF NOT EXISTS idx_customers_consent ON customers(consent);
+    CREATE INDEX IF NOT EXISTS idx_customer_interactions_customer ON customer_interactions(customer_id);
+    CREATE INDEX IF NOT EXISTS idx_customer_interactions_followup ON customer_interactions(follow_up_date);
   `);
 }
 
@@ -378,6 +416,37 @@ function seedDatabase(db: any) {
   `);
   for (const [phase, milestone, due, done] of timelineItems) {
     insertTimeline.run(phase, milestone, due, done);
+  }
+
+  // Seed CRM customers
+  const crmCount = db.prepare("SELECT COUNT(*) as c FROM customers").get();
+  if (crmCount.c === 0) {
+    const insertCustomer = db.prepare(`
+      INSERT INTO customers (id, name, whatsapp, segment, interest, source, consent, last_contact, total_purchases, clv, recommended_formula, notes)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    insertCustomer.run("CUST-ANDI001", "Andi Pratama", "081234567890", "regular", "L'Arc~en~Scent EDP", "Instagram", "yes", "2026-06-10", 3, 360000, "L'Arc~en~Scent 30ml", "Repeat buyer, suka woody");
+    insertCustomer.run("CUST-BUDI002", "Budi Santoso", "081345678901", "new", "Pixel Potion Discovery Set", "TikTok", "yes", "2026-06-12", 1, 180000, "Pixel Potion 3x5ml", "First purchase, gamer vibe");
+    insertCustomer.run("CUST-CITRA003", "Citra Dewi", "081456789012", "loyal", "Nuscentza EDP", "Referral", "yes", "2026-06-08", 7, 665000, "Nuscentza 30ml", "Loyal customer, suka floral");
+    insertCustomer.run("CUST-DIAN004", "Dian Lestari", "081567890123", "new", "SWI T-Shirt Collection", "Event", "TBA", "2026-06-14", 0, 0, "TBA", "Met at Fragrantions road event");
+    insertCustomer.run("CUST-EDO005", "Edo Wijaya", "081678901234", "regular", "SWI Tumbler Series", "Instagram", "yes", "2026-06-05", 2, 240000, "SWI Tumbler", "Eco-conscious buyer");
+    insertCustomer.run("CUST-FIA006", "Fia Ramadhani", "081789012345", "new", "SWI Scented Candle", "TikTok", "no", "2026-06-15", 0, 0, "TBA", "Interested but no consent yet");
+    insertCustomer.run("CUST-GUN007", "Gunawan Hadi", "081890123456", "vip", "L'Arc~en~Scent Collection", "Direct", "yes", "2026-06-16", 15, 1800000, "L'Arc~en~Scent 50ml", "VIP collector, buys full collection");
+    insertCustomer.run("CUST-HANA008", "Hana Putri", "081901234567", "regular", "SWI Perfume Discovery Kit", "Event", "yes", "2026-06-11", 4, 600000, "Discovery Kit 5x5ml", "Gift buyer");
+
+    // Seed interactions
+    const insertInteraction = db.prepare(`
+      INSERT INTO customer_interactions (interaction_id, customer_id, name, type, channel, summary, value, follow_up_date, pic)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    insertInteraction.run("CI-20260610-001", "CUST-ANDI001", "Andi Pratama", "purchase", "WhatsApp", "Purchased L'Arc~en~Scent 30ml x3", 360000, "2026-07-10", "HemuHemu/OWL");
+    insertInteraction.run("CI-20260612-001", "CUST-BUDI002", "Budi Santoso", "purchase", "Instagram DM", "Purchased Pixel Potion Discovery Set", 180000, "2026-06-26", "HemuHemu/OWL");
+    insertInteraction.run("CI-20260608-001", "CUST-CITRA003", "Citra Dewi", "purchase", "WhatsApp", "Purchased Nuscentza 30ml x7", 665000, "2026-07-08", "HemuHemu/OWL");
+    insertInteraction.run("CI-20260614-001", "CUST-DIAN004", "Dian Lestari", "inquiry", "Event Booth", "Interested in T-Shirt Collection, needs pricing", 0, "2026-06-21", "HemuHemu/OWL");
+    insertInteraction.run("CI-20260605-001", "CUST-EDO005", "Edo Wijaya", "purchase", "WhatsApp", "Purchased SWI Tumbler x2", 240000, "2026-07-05", "HemuHemu/OWL");
+    insertInteraction.run("CI-20260615-001", "CUST-FIA006", "Fia Ramadhani", "inquiry", "TikTok DM", "Asked about Scented Candle pricing", 0, "2026-06-18", "HemuHemu/OWL");
+    insertInteraction.run("CI-20260616-001", "CUST-GUN007", "Gunawan Hadi", "purchase", "WhatsApp", "Purchased full L'Arc~en~Scent collection", 1800000, "2026-07-16", "HemuHemu/OWL");
+    insertInteraction.run("CI-20260611-001", "CUST-HANA008", "Hana Putri", "purchase", "Event Booth", "Purchased Discovery Kit x4", 600000, "2026-06-25", "HemuHemu/OWL");
   }
 }
 

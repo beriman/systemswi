@@ -38,7 +38,7 @@ type Interaction = {
   pic: string;
 };
 
-const SOURCE = "Google Sheets: Customer_Master + Customer_Interactions";
+const SOURCE = "SQLite + Google Sheets: Customer_Master + Customer_Interactions";
 const text = (value: unknown) => String(value ?? "").trim();
 const numberValue = (value: unknown) => {
   if (typeof value === "number") return value;
@@ -171,7 +171,102 @@ function customerRow(customer: Omit<Customer, "rowNumber">) {
   ];
 }
 
-async function readCrm() {
+// ── SQLite helpers ──────────────────────────────────────────────
+function getDbSafe(): any {
+  try {
+    // Dynamic import to avoid loading better-sqlite3 on Vercel
+    const Database = require("better-sqlite3");
+    const path = require("path");
+    const fs = require("fs");
+    const dbDir = path.join(process.cwd(), ".data");
+    const dbPath = path.join(dbDir, "systemswi.db");
+    if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir, { recursive: true });
+    const db = new Database(dbPath);
+    db.pragma("journal_mode = WAL");
+    return db;
+  } catch {
+    return null;
+  }
+}
+
+function readFromSqlite(): { customers: Customer[]; interactions: Interaction[] } | null {
+  const db = getDbSafe();
+  if (!db) return null;
+  try {
+    const custRows = db.prepare("SELECT * FROM customers ORDER BY updated_at DESC").all();
+    const intRows = db.prepare("SELECT * FROM customer_interactions ORDER BY created_at DESC").all();
+    const customers: Customer[] = custRows.map((r: any) => ({
+      id: r.id,
+      name: r.name,
+      whatsapp: r.whatsapp || "",
+      segment: r.segment || "new",
+      interest: r.interest || "TBA",
+      source: r.source || "TBA",
+      consent: r.consent || "TBA",
+      lastContact: r.last_contact || "TBA",
+      totalPurchases: r.total_purchases || 0,
+      clv: r.clv || 0,
+      recommendedFormula: r.recommended_formula || "TBA",
+      notes: r.notes || "",
+      updatedAt: r.updated_at || "",
+      rowNumber: 0,
+    }));
+    const interactions: Interaction[] = intRows.map((r: any) => ({
+      timestamp: r.created_at || "",
+      interactionId: r.interaction_id,
+      customerId: r.customer_id,
+      name: r.name,
+      type: r.type || "note",
+      channel: r.channel || "WhatsApp",
+      summary: r.summary || "",
+      value: r.value || 0,
+      followUpDate: r.follow_up_date || "TBA",
+      pic: r.pic || "TBA",
+    }));
+    return { customers, interactions };
+  } catch {
+    return null;
+  } finally {
+    try { db.close(); } catch { /* ignore */ }
+  }
+}
+
+function writeCustomerToSqlite(customer: Omit<Customer, "rowNumber">) {
+  const db = getDbSafe();
+  if (!db) return false;
+  try {
+    const existing = db.prepare("SELECT id FROM customers WHERE id = ? OR whatsapp = ?").get(customer.id, customer.whatsapp);
+    if (existing) {
+      db.prepare(`UPDATE customers SET name=?, whatsapp=?, segment=?, interest=?, source=?, consent=?, last_contact=?, total_purchases=?, clv=?, recommended_formula=?, notes=?, updated_at=? WHERE id=?`)
+        .run(customer.name, customer.whatsapp, customer.segment, customer.interest, customer.source, customer.consent, customer.lastContact, customer.totalPurchases, customer.clv, customer.recommendedFormula, customer.notes, customer.updatedAt, customer.id);
+    } else {
+      db.prepare(`INSERT INTO customers (id, name, whatsapp, segment, interest, source, consent, last_contact, total_purchases, clv, recommended_formula, notes, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+        .run(customer.id, customer.name, customer.whatsapp, customer.segment, customer.interest, customer.source, customer.consent, customer.lastContact, customer.totalPurchases, customer.clv, customer.recommendedFormula, customer.notes, customer.updatedAt);
+    }
+    return true;
+  } catch {
+    return false;
+  } finally {
+    try { db.close(); } catch { /* ignore */ }
+  }
+}
+
+function writeInteractionToSqlite(interaction: Interaction) {
+  const db = getDbSafe();
+  if (!db) return false;
+  try {
+    db.prepare(`INSERT OR REPLACE INTO customer_interactions (interaction_id, customer_id, name, type, channel, summary, value, follow_up_date, pic) VALUES (?,?,?,?,?,?,?,?,?)`)
+      .run(interaction.interactionId, interaction.customerId, interaction.name, interaction.type, interaction.channel, interaction.summary, interaction.value, interaction.followUpDate, interaction.pic);
+    return true;
+  } catch {
+    return false;
+  } finally {
+    try { db.close(); } catch { /* ignore */ }
+  }
+}
+
+// ── Google Sheets fallback ──────────────────────────────────────
+async function readCrmFromSheets() {
   const [customerRows, interactionRows] = await Promise.all([
     readRange("Customer_Master!A1:M1000"),
     readRange("Customer_Interactions!A1:J1000"),
@@ -182,12 +277,31 @@ async function readCrm() {
   };
 }
 
+async function readCrm() {
+  // Try SQLite first
+  const sqliteData = readFromSqlite();
+  if (sqliteData && (sqliteData.customers.length > 0 || sqliteData.interactions.length > 0)) {
+    return { ...sqliteData, sourceStatus: "live" as const, source: "SQLite (local DB)" };
+  }
+  // Fallback to Google Sheets
+  try {
+    const sheetsData = await readCrmFromSheets();
+    return { ...sheetsData, sourceStatus: "live" as const, source: "Google Sheets" };
+  } catch (error) {
+    if (isGoogleWorkspaceAuthError(error)) {
+      return { customers: [], interactions: [], sourceStatus: "degraded" as const, source: "Google Sheets (blocked)" };
+    }
+    throw error;
+  }
+}
+
+// ── GET ─────────────────────────────────────────────────────────
 export async function GET() {
   try {
-    const { customers, interactions } = await readCrm();
+    const { customers, interactions, sourceStatus, source } = await readCrm();
     return NextResponse.json({
-      source: SOURCE,
-      sourceStatus: "live",
+      source,
+      sourceStatus,
       customers,
       interactions,
       summary: summarize(customers, interactions),
@@ -205,6 +319,7 @@ export async function GET() {
   }
 }
 
+// ── POST ────────────────────────────────────────────────────────
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -215,6 +330,7 @@ export async function POST(request: NextRequest) {
     }
 
     const now = new Date().toISOString();
+    const { customers, interactions } = await readCrm();
 
     if (action === "upsert-customer") {
       const name = text(body.name);
@@ -222,7 +338,6 @@ export async function POST(request: NextRequest) {
       if (!name || !whatsapp) {
         return NextResponse.json({ error: "Nama dan WhatsApp wajib diisi" }, { status: 400 });
       }
-      const { customers, interactions } = await readCrm();
       const existing = customers.find((customer) => customer.whatsapp === whatsapp || customer.id === text(body.id));
       const totalPurchases = Math.max(numberValue(body.totalPurchases), existing?.totalPurchases || 0);
       const clv = Math.max(numberValue(body.clv), existing?.clv || 0);
@@ -242,63 +357,106 @@ export async function POST(request: NextRequest) {
         updatedAt: now,
       };
 
-      if (existing) {
-        await updateRow("CustomerMaster", existing.rowNumber, customerRow(nextCustomer));
-      } else {
-        await appendRows("CustomerMaster", [customerRow(nextCustomer)]);
+      // Write to SQLite first
+      const sqliteOk = writeCustomerToSqlite(nextCustomer);
+
+      // Also try Google Sheets (non-blocking)
+      let sheetsOk = false;
+      try {
+        if (existing) {
+          await updateRow("CustomerMaster", existing.rowNumber, customerRow(nextCustomer));
+        } else {
+          await appendRows("CustomerMaster", [customerRow(nextCustomer)]);
+        }
+        sheetsOk = true;
+      } catch {
+        // Sheets write failed — SQLite is primary, so this is non-fatal
       }
 
+      // Record interaction
       const interactionId = makeInteractionId(interactions);
-      await appendRows("CustomerInteractions", [[
-        now,
+      const interaction: Interaction = {
+        timestamp: now,
         interactionId,
-        nextCustomer.id,
-        nextCustomer.name,
-        "customer_sync",
-        "WhatsApp/Manual",
-        text(body.summary) || `Customer ${existing ? "updated" : "created"} dari systemswi CRM`,
-        0,
-        text(body.followUpDate) || "TBA",
-        text(body.pic) || "HemuHemu/OWL",
-      ]]);
+        customerId: nextCustomer.id,
+        name: nextCustomer.name,
+        type: "customer_sync",
+        channel: "WhatsApp/Manual",
+        summary: text(body.summary) || `Customer ${existing ? "updated" : "created"} dari systemswi CRM`,
+        value: 0,
+        followUpDate: text(body.followUpDate) || "TBA",
+        pic: text(body.pic) || "HemuHemu/OWL",
+      };
+      writeInteractionToSqlite(interaction);
+
+      try {
+        await appendRows("CustomerInteractions", [[
+          now, interactionId, nextCustomer.id, nextCustomer.name,
+          "customer_sync", "WhatsApp/Manual",
+          interaction.summary, 0, interaction.followUpDate, interaction.pic,
+        ]]);
+      } catch {
+        // Non-fatal
+      }
 
       let auditStatus = "ok";
       try {
         await appendSwiMemoryLog({
           action: "Customer CRM Sync",
           target: `Customer_Master:${nextCustomer.id}`,
-          summary: `${existing ? "Updated" : "Created"} customer ${nextCustomer.name}; consent=${nextCustomer.consent}; source=${nextCustomer.source}`,
+          summary: `${existing ? "Updated" : "Created"} customer ${nextCustomer.name}; consent=${nextCustomer.consent}; source=${nextCustomer.source}; sqlite=${sqliteOk}; sheets=${sheetsOk}`,
         });
       } catch (auditError) {
         auditStatus = `failed: ${String(auditError)}`;
       }
 
-      return NextResponse.json({ success: true, customer: nextCustomer, interactionId, auditStatus }, { status: 201 });
+      return NextResponse.json({
+        success: true,
+        customer: nextCustomer,
+        interactionId,
+        auditStatus,
+        sqlite: sqliteOk,
+        sheets: sheetsOk,
+      }, { status: 201 });
     }
 
+    // ── record-interaction ──
     const customerId = text(body.customerId);
     if (!customerId && !normalizeWa(body.whatsapp)) {
       return NextResponse.json({ error: "customerId atau WhatsApp wajib diisi" }, { status: 400 });
     }
-    const { customers, interactions } = await readCrm();
     const customer = customers.find((item) => item.id === customerId || item.whatsapp === normalizeWa(body.whatsapp));
     if (!customer) {
       return NextResponse.json({ error: "Customer tidak ditemukan; sinkronkan customer dulu" }, { status: 400 });
     }
     const interactionId = makeInteractionId(interactions);
     const value = numberValue(body.value);
-    await appendRows("CustomerInteractions", [[
-      now,
+    const interaction: Interaction = {
+      timestamp: now,
       interactionId,
-      customer.id,
-      customer.name,
-      text(body.type) || "follow_up",
-      text(body.channel) || "WhatsApp",
-      text(body.summary) || "TBA",
+      customerId: customer.id,
+      name: customer.name,
+      type: text(body.type) || "follow_up",
+      channel: text(body.channel) || "WhatsApp",
+      summary: text(body.summary) || "TBA",
       value,
-      text(body.followUpDate) || "TBA",
-      text(body.pic) || "HemuHemu/OWL",
-    ]]);
+      followUpDate: text(body.followUpDate) || "TBA",
+      pic: text(body.pic) || "HemuHemu/OWL",
+    };
+
+    // Write to SQLite
+    writeInteractionToSqlite(interaction);
+
+    // Try Google Sheets
+    try {
+      await appendRows("CustomerInteractions", [[
+        now, interactionId, customer.id, customer.name,
+        interaction.type, interaction.channel, interaction.summary,
+        value, interaction.followUpDate, interaction.pic,
+      ]]);
+    } catch {
+      // Non-fatal
+    }
 
     const updated: Omit<Customer, "rowNumber"> = {
       ...customer,
@@ -308,7 +466,7 @@ export async function POST(request: NextRequest) {
       lastContact: now.slice(0, 10),
       updatedAt: now,
     };
-    await updateRow("CustomerMaster", customer.rowNumber, customerRow(updated));
+    writeCustomerToSqlite(updated);
 
     let auditStatus = "ok";
     try {

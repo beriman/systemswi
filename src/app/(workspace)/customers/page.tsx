@@ -119,7 +119,7 @@ export default function CustomersPage() {
       const payload = await response.json();
       if (!response.ok) throw new Error(payload?.error || "Gagal memuat customer CRM");
       setData(payload);
-      setStatus(payload.warning || `Customer CRM siap — source: ${payload.source || "Google Sheets"}`);
+      setStatus(payload.warning || `Customer CRM siap — source: ${payload.source || "SQLite + Google Sheets"}`);
     } catch (error) {
       setStatus(`Gagal memuat CRM: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
@@ -208,6 +208,36 @@ export default function CustomersPage() {
         <Metric title="Follow-up Overdue" value={data?.summary.followUpSummary?.overdue || 0} tone="orange" />
         <Metric title="Follow-up 7 Hari" value={data?.summary.followUpSummary?.upcoming7Days || 0} />
       </div>
+
+      {/* Segment Distribution */}
+      {data?.summary.bySegment && Object.keys(data.summary.bySegment).length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardDescription>Distribusi Segment Customer</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex gap-3 flex-wrap">
+              {Object.entries(data.summary.bySegment).map(([segment, count]) => {
+                const colors: Record<string, string> = {
+                  vip: "bg-purple-500", loyal: "bg-emerald-500", regular: "bg-blue-500", new: "bg-amber-500",
+                };
+                const pct = data?.summary.totalCustomers ? Math.round((count / data.summary.totalCustomers) * 100) : 0;
+                return (
+                  <div key={segment} className="flex-1 min-w-[100px]">
+                    <div className="flex justify-between text-sm mb-1">
+                      <span className="capitalize font-medium">{segment}</span>
+                      <span className="text-muted-foreground">{count} ({pct}%)</span>
+                    </div>
+                    <div className="h-2 rounded-full bg-muted overflow-hidden">
+                      <div className={`h-full rounded-full ${colors[segment] || "bg-gray-400"}`} style={{ width: `${pct}%` }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-[380px_1fr]">
         <div className="space-y-4">
