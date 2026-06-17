@@ -175,6 +175,21 @@ function summarizeCommercial(tenantRows: string[][], sponsorRows: string[][]) {
   };
 }
 
+function summarizeMedia(mediaRows: string[][]) {
+  const items = mediaRows.slice(1).filter((row) => cell(row, 0) || cell(row, 1));
+  const totalMedia = items.length;
+  const featured = items.filter((row) => cell(row, 7).toLowerCase() === "true").length;
+  const byType: Record<string, number> = {};
+  const bySource: Record<string, number> = {};
+  for (const row of items) {
+    const t = cell(row, 2) || "other";
+    const s = cell(row, 6) || "manual";
+    byType[t] = (byType[t] || 0) + 1;
+    bySource[s] = (bySource[s] || 0) + 1;
+  }
+  return { totalMedia, featured, byType, bySource };
+}
+
 export async function GET() {
   try {
     let googleAuthError: unknown = null;
@@ -204,6 +219,7 @@ export async function GET() {
       qcRows,
       tenantRows,
       sponsorRows,
+      mediaRows,
     ] = await Promise.all([
       readSheet("RekeningKoran").catch(emptyOnAuthError([])),
       readSheet("RekapRekening").catch(emptyOnAuthError([])),
@@ -227,6 +243,7 @@ export async function GET() {
       readSheet("QC_Checklist").catch(emptyOnAuthError([])),
       readEventSheet(EVENT_SHEETS.Tenants).catch(emptyOnAuthError([])),
       readEventSheet(EVENT_SHEETS.Sponsors).catch(emptyOnAuthError([])),
+      readEventSheet(EVENT_SHEETS.Media).catch(emptyOnAuthError([])),
     ]);
 
     // ── Parse bank balances from RekeningKoran ──
@@ -374,6 +391,7 @@ export async function GET() {
     const procurementSummary = summarizeProcurement(procurementPoRows, procurementReceiptRows);
     const complianceSummary = summarizeCompliance(complianceRows, qcRows);
     const commercialSummary = summarizeCommercial(tenantRows, sponsorRows);
+    const mediaSummary = summarizeMedia(mediaRows);
 
     return NextResponse.json({
       source: "Google Sheets: finance + events + production + inventory + procurement + compliance + commercial",
@@ -400,6 +418,7 @@ export async function GET() {
       procurementSummary,
       complianceSummary,
       commercialSummary,
+      mediaSummary,
       executiveSnapshot: {
         cash: totalSaldoAkhir,
         paidInCapital: totalSudahSetor,

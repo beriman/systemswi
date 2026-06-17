@@ -130,7 +130,7 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
   const [data, setData] = useState<EventDetailData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<"overview" | "timeline" | "budget" | "tenants" | "sponsors">("overview");
+  const [tab, setTab] = useState<"overview" | "timeline" | "budget" | "tenants" | "sponsors" | "media">("overview");
 
   // Timeline form
   const [showTimelineForm, setShowTimelineForm] = useState(false);
@@ -141,6 +141,13 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
   const [showBudgetForm, setShowBudgetForm] = useState(false);
   const [budgetSaving, setBudgetSaving] = useState(false);
   const [budgetMsg, setBudgetMsg] = useState<string | null>(null);
+
+  // Media state
+  const [mediaItems, setMediaItems] = useState<any[]>([]);
+  const [mediaLoading, setMediaLoading] = useState(false);
+  const [showMediaForm, setShowMediaForm] = useState(false);
+  const [mediaSaving, setMediaSaving] = useState(false);
+  const [mediaMsg, setMediaMsg] = useState<string | null>(null);
 
   const fetchEvent = useCallback(async () => {
     setLoading(true);
@@ -159,6 +166,25 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
       setLoading(false);
     }
   }, [id]);
+
+  // Load media for this event
+  const fetchMedia = useCallback(async () => {
+    setMediaLoading(true);
+    try {
+      const res = await fetch(`/api/events/media?eventId=${id}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = await res.json();
+      setMediaItems(json.media || []);
+    } catch {
+      setMediaItems([]);
+    } finally {
+      setMediaLoading(false);
+    }
+  }, [id]);
+
+  useEffect(() => {
+    if (tab === "media") fetchMedia();
+  }, [tab, fetchMedia]);
 
   useEffect(() => {
     fetchEvent();
@@ -334,13 +360,14 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-2 border-b">
+      <div className="flex gap-2 border-b flex-wrap">
         {[
           { key: "overview", label: "📊 Overview" },
           { key: "timeline", label: "📋 Timeline" },
           { key: "budget", label: "💰 RAB" },
           { key: "tenants", label: "🏪 Tenants" },
           { key: "sponsors", label: "🤝 Sponsors" },
+          { key: "media", label: "📸 Media" },
         ].map((t) => (
           <button
             key={t.key}
@@ -726,6 +753,147 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
             )}
           </CardContent>
         </Card>
+      )}
+
+      {tab === "media" && (
+        <div className="space-y-4">
+          <div className="flex justify-between items-center">
+            <div>
+              <h3 className="text-lg font-semibold">📸 Event Media</h3>
+              <p className="text-sm text-muted-foreground">Foto, video, dan dokumentasi event dari Instagram atau upload manual.</p>
+            </div>
+            <Button onClick={() => setShowMediaForm(!showMediaForm)} size="sm">
+              {showMediaForm ? "Batal" : "+ Tambah Media"}
+            </Button>
+          </div>
+
+          {mediaMsg && (
+            <div className={`px-4 py-3 rounded-lg text-sm ${mediaMsg.startsWith("✅") ? "bg-green-50 text-green-700 border border-green-200" : "bg-red-50 text-red-700 border border-red-200"}`}>
+              {mediaMsg}
+              <button onClick={() => setMediaMsg(null)} className="ml-3 text-xs underline">Tutup</button>
+            </div>
+          )}
+
+          {showMediaForm && (
+            <Card>
+              <CardHeader><CardTitle>Tambah Media</CardTitle></CardHeader>
+              <CardContent>
+                <form onSubmit={async (e) => {
+                  e.preventDefault();
+                  setMediaSaving(true);
+                  setMediaMsg(null);
+                  const form = new FormData(e.currentTarget);
+                  const payload = {
+                    eventId: id,
+                    type: String(form.get("type") || "image"),
+                    title: String(form.get("title") || ""),
+                    url: String(form.get("url") || ""),
+                    caption: String(form.get("caption") || ""),
+                    source: String(form.get("source") || "manual"),
+                    featured: form.get("featured") === "on",
+                  };
+                  if (!payload.url && !payload.title) {
+                    setMediaMsg("URL atau judul wajib diisi.");
+                    setMediaSaving(false);
+                    return;
+                  }
+                  try {
+                    const res = await fetch("/api/events/media", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify(payload),
+                    });
+                    const json = await res.json();
+                    if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
+                    setMediaMsg("✅ Media ditambahkan!");
+                    setShowMediaForm(false);
+                    e.currentTarget.reset();
+                    await fetchMedia();
+                  } catch (err) {
+                    setMediaMsg(`❌ Gagal: ${String(err).replace(/^Error:\s*/, "")}`);
+                  } finally {
+                    setMediaSaving(false);
+                  }
+                }} className="grid gap-3 md:grid-cols-3">
+                  <Label>
+                    <span className="text-sm text-muted-foreground">Tipe</span>
+                    <select name="type" className="w-full rounded-md border bg-background px-3 py-2 text-sm mt-1">
+                      <option value="image">Foto</option>
+                      <option value="video">Video</option>
+                      <option value="reel">Reel</option>
+                      <option value="story">Story</option>
+                      <option value="post">Post</option>
+                      <option value="other">Lainnya</option>
+                    </select>
+                  </Label>
+                  <Label>
+                    <span className="text-sm text-muted-foreground">Judul</span>
+                    <input name="title" placeholder="Judul media" className="w-full rounded-md border bg-background px-3 py-2 text-sm mt-1" />
+                  </Label>
+                  <Label>
+                    <span className="text-sm text-muted-foreground">URL</span>
+                    <input name="url" placeholder="https://..." className="w-full rounded-md border bg-background px-3 py-2 text-sm mt-1" />
+                  </Label>
+                  <Label className="md:col-span-2">
+                    <span className="text-sm text-muted-foreground">Caption</span>
+                    <input name="caption" placeholder="Caption / deskripsi media" className="w-full rounded-md border bg-background px-3 py-2 text-sm mt-1" />
+                  </Label>
+                  <Label>
+                    <span className="text-sm text-muted-foreground">Sumber</span>
+                    <select name="source" className="w-full rounded-md border bg-background px-3 py-2 text-sm mt-1">
+                      <option value="manual">Manual</option>
+                      <option value="instagram">Instagram</option>
+                      <option value="whatsapp">WhatsApp</option>
+                      <option value="drive">Google Drive</option>
+                    </select>
+                  </Label>
+                  <div className="flex items-end gap-3">
+                    <label className="flex items-center gap-2 text-sm">
+                      <input type="checkbox" name="featured" /> Featured
+                    </label>
+                  </div>
+                  <div className="flex items-end">
+                    <Button type="submit" disabled={mediaSaving} className="w-full">
+                      {mediaSaving ? "Menyimpan..." : "Simpan"}
+                    </Button>
+                  </div>
+                </form>
+              </CardContent>
+            </Card>
+          )}
+
+          {mediaLoading ? (
+            <div className="text-center py-10 text-muted-foreground">Memuat media...</div>
+          ) : mediaItems.length > 0 ? (
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {mediaItems.map((m) => (
+                <Card key={m.id} className={m.featured === "true" ? "ring-2 ring-primary" : ""}>
+                  <CardHeader className="pb-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-medium text-primary bg-primary/10 px-2 py-0.5 rounded">{m.type}</span>
+                      {m.featured === "true" && <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded">⭐ Featured</span>}
+                    </div>
+                    <CardTitle className="text-base">{m.title || "Tanpa Judul"}</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    {m.url && (
+                      <a href={m.url} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline break-all">
+                        🔗 {m.url.length > 60 ? m.url.slice(0, 60) + "..." : m.url}
+                      </a>
+                    )}
+                    {m.caption && <p className="text-sm text-muted-foreground">{m.caption}</p>}
+                    <div className="flex items-center justify-between text-xs text-muted-foreground pt-2 border-t">
+                      <span>📷 {m.source}</span>
+                      <span>{m.created}</span>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          ) : (
+            <Card><CardContent className="py-8 text-center text-muted-foreground">Belum ada media. Tambahkan foto/video dokumentasi event.</CardContent></Card>
+          )}
+        </div>
       )}
     </div>
   );

@@ -18,6 +18,7 @@ export const EVENT_SHEETS = {
   Sponsors: "Event_Sponsors",
   Timeline: "Event_Timeline",
   Dashboard: "Event_Dashboard",
+  Media: "Event_Media",
 };
 
 // ── Auth (reuse from sheets-real) ──
@@ -215,5 +216,10 @@ export async function initializeEventSheets(): Promise<void> {
 
   await ensureEventSheet(EVENT_SHEETS.Dashboard, [
     "Metric", "Value", "Notes"
+  ]);
+
+  await ensureEventSheet(EVENT_SHEETS.Media, [
+    "ID", "Event ID", "Type", "Title", "URL", "Caption", "Source",
+    "Featured", "Sort Order", "Created", "Updated"
   ]);
 }
