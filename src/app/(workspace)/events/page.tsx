@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, type FormEvent } from "react";
+import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -274,7 +275,8 @@ export default function EventsPage() {
           {events.length > 0 ? (
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
               {events.map((event) => (
-                <Card key={event.id} className="hover:shadow-md transition-shadow">
+                <Link key={event.id} href={`/events/${event.id}`} className="block">
+                <Card className="hover:shadow-md transition-shadow cursor-pointer h-full">
                   <CardHeader className="pb-2">
                     <div className="flex justify-between items-start">
                       <div>
@@ -328,6 +330,7 @@ export default function EventsPage() {
                     </div>
                   </CardContent>
                 </Card>
+                </Link>
               ))}
             </div>
           ) : (
@@ -369,9 +372,9 @@ export default function EventsPage() {
                   </TableHeader>
                   <TableBody>
                     {events.map((event) => (
-                      <TableRow key={event.id}>
+                      <TableRow key={event.id} className="cursor-pointer hover:bg-accent/50" onClick={() => window.location.href = `/events/${event.id}`}>
                         <TableCell>
-                          <div className="font-medium">{event.name}</div>
+                          <div className="font-medium text-purple-600 hover:underline">{event.name}</div>
                           <div className="text-xs text-muted-foreground">{event.pic}</div>
                         </TableCell>
                         <TableCell>{getTypeBadge(event.type)}</TableCell>
