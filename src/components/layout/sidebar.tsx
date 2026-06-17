@@ -29,6 +29,7 @@ const NAV_ITEMS: NavItem[] = [
     { label: "Scent Profile", href: "/scent-profile", icon: "🧪", feature: "dashboard:overview" },
     { label: "Documents", href: "/documents", icon: "📄", feature: "ai-features" },
     { label: "Invoice", href: "/invoice", icon: "🧾", feature: "dashboard:overview" },
+    { label: "Billing", href: "/billing", icon: "💳", feature: "dashboard:overview" },
     { label: "Brands", href: "/brands", icon: "🏷️", feature: "dashboard:overview" },
     { label: "Events", href: "/events", icon: "🎉", feature: "event-cde" },
     { label: "Email", href: "/email", icon: "📧", feature: "dashboard:overview" },
