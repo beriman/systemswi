@@ -7,16 +7,28 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 
-// Placeholder image URLs
+// Inline SVG placeholder generator — no external dependencies
 const getProductImage = (category: string, index: number) => {
-    const seeds: Record<string, number[]> = {
-        "event-organizer": [601, 602, 603, 604],
-        "media-production": [701, 702, 703, 704],
-        "creative-services": [801, 802, 803, 804],
-        venue: [901, 902, 903, 904],
+    const palettes: Record<string, { bg: string; fg: string; icon: string }> = {
+        "event-organizer": { bg: "#f59e0b", fg: "#fffbeb", icon: "🎪" },
+        "media-production":   { bg: "#6366f1", fg: "#eef2ff", icon: "🎬" },
+        "creative-services":  { bg: "#ec4899", fg: "#fdf2f8", icon: "🎨" },
+        "venue":              { bg: "#10b981", fg: "#ecfdf5", icon: "🏛️" },
     };
-    const seed = seeds[category]?.[index % 4] || 600 + index;
-    return `https://picsum.photos/seed/${seed}/400/300`;
+    const { bg, fg, icon } = palettes[category] || { bg: "#8b5cf6", fg: "#f5f3ff", icon: "✨" };
+    const label = encodeURIComponent(category.replace("-", " ").toUpperCase());
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300">
+        <rect width="400" height="300" fill="${bg}"/>
+        <rect x="0" y="0" width="400" height="300" fill="url(#g)"/>
+        <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="${bg}" stop-opacity="0.8"/>
+            <stop offset="100%" stop-color="${fg}" stop-opacity="0.3"/>
+        </linearGradient></defs>
+        <text x="200" y="130" text-anchor="middle" font-size="64">${icon}</text>
+        <text x="200" y="190" text-anchor="middle" font-family="system-ui,sans-serif" font-size="16" font-weight="600" fill="${fg}" opacity="0.9">${category.replace(/-/g, " ").toUpperCase()}</text>
+        <text x="200" y="215" text-anchor="middle" font-family="system-ui,sans-serif" font-size="12" fill="${fg}" opacity="0.6">SWI Services</text>
+    </svg>`;
+    return `data:image/svg+xml,${svg.replace(/"/g, "'").replace(/#/g, "%23")}`;
 };
 
 export default function ProductsPage() {
