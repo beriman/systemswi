@@ -30,6 +30,7 @@ const NAV_ITEMS: NavItem[] = [
     { label: "Invoice", href: "/invoice", icon: "🧾", feature: "dashboard:overview" },
     { label: "Brands", href: "/brands", icon: "🏷️", feature: "dashboard:overview" },
     { label: "Events", href: "/events", icon: "🎉", feature: "event-cde" },
+    { label: "Email", href: "/email", icon: "📧", feature: "dashboard:overview" },
     { label: "Workflow", href: "/workflow", icon: "🔄", feature: "dashboard:overview" },
     { label: "Sheets", href: "/sheets", icon: "📋", feature: "drive" },
     { label: "Drive", href: "/drive", icon: "📁", feature: "drive" },
