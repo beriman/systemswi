@@ -6,6 +6,9 @@ import { usePermissions } from "@/hooks/use-permissions";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { RoleGate } from "@/components/auth/role-gate";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Badge } from "@/components/ui/badge";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 function formatCurrency(amount: number): string {
   if (!amount && amount !== 0) return "Rp 0";
@@ -82,353 +85,560 @@ export default function DashboardPage() {
         </Card>
       )}
 
-      {/* KPI Cards */}
       <RoleGate feature="dashboard:overview">
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm text-muted-foreground">Total Saldo Bank</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {loading ? <Skeleton className="h-8 w-32" /> : (
-                <div className="text-2xl font-bold text-green-600">
-                  {formatCurrency(data?.totalSaldoAkhir || 0)}
-                </div>
-              )}
-              <p className="text-xs text-muted-foreground mt-1">
-                {data?.bankAccounts?.length || 0} rekening aktif
-              </p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm text-muted-foreground">Modal Terkumpul</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {loading ? <Skeleton className="h-8 w-32" /> : (
-                <div className="text-2xl font-bold">
-                  {formatCurrency(data?.totalSudahSetor || 0)}
-                </div>
-              )}
-              <p className="text-xs text-muted-foreground mt-1">
-                dari {formatCurrency(data?.totalModalDitempatkan || 0)} ({data?.totalSetoranPercent?.toFixed(1) || 0}%)
-              </p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm text-muted-foreground">Pemegang Saham</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {loading ? <Skeleton className="h-8 w-16" /> : (
-                <div className="text-2xl font-bold">{data?.shareholders?.length || 0}</div>
-              )}
-              <p className="text-xs text-muted-foreground mt-1">
-                {formatNumber(data?.totalJumlahSaham || 0)} saham ditempatkan
-              </p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm text-muted-foreground">Sukuk</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {loading ? <Skeleton className="h-8 w-32" /> : (
-                <div className="text-2xl font-bold">
-                  {data?.sukukInfo?.status || "Perencanaan"}
-                </div>
-              )}
-              <p className="text-xs text-muted-foreground mt-1">
-                {data?.sukukInfo?.nilai || "Rp 1 Juta"} • {data?.sukukInfo?.akad || "Musyarakah"}
-              </p>
-            </CardContent>
-          </Card>
-        </div>
+        <Tabs defaultValue="overview" className="space-y-4">
+          <TabsList className="flex-wrap">
+            <TabsTrigger value="overview">📊 Overview</TabsTrigger>
+            <TabsTrigger value="brands">🏷️ Brand Tracker</TabsTrigger>
+            <TabsTrigger value="cashflow">💰 Cashflow</TabsTrigger>
+            <TabsTrigger value="quicklinks">⚡ Quick Links</TabsTrigger>
+          </TabsList>
 
-        {/* Operational Snapshot */}
-        <div className="grid gap-4 lg:grid-cols-3">
-          <Card className="border-purple-100 bg-purple-50/50">
-            <CardHeader>
-              <CardTitle className="text-lg">🎉 Events / Fragrantions</CardTitle>
-              <CardDescription>Portfolio dan pipeline event</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {loading ? <Skeleton className="h-24 w-full" /> : (
-                <>
-                  <div className="grid grid-cols-3 gap-2 text-center">
-                    <div>
-                      <div className="text-2xl font-bold">{formatNumber(data?.eventSummary?.totalEvents || 0)}</div>
-                      <div className="text-xs text-muted-foreground">Total</div>
-                    </div>
-                    <div>
-                      <div className="text-2xl font-bold text-blue-600">{formatNumber(data?.eventSummary?.upcoming || 0)}</div>
-                      <div className="text-xs text-muted-foreground">Upcoming</div>
-                    </div>
-                    <div>
-                      <div className="text-2xl font-bold text-green-600">{formatNumber(data?.eventSummary?.completed || 0)}</div>
-                      <div className="text-xs text-muted-foreground">Completed</div>
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    {(data?.eventSummary?.latestEvents || []).slice(0, 2).map((event: any) => (
-                      <div key={event.id || event.name} className="rounded-lg bg-white/70 p-2 text-sm">
-                        <div className="font-medium">{event.name}</div>
-                        <div className="text-xs text-muted-foreground">{formatDate(event.startDate)} • {event.venue || "Venue TBA"}</div>
-                      </div>
-                    ))}
-                  </div>
-                  <Link href="/events" className="text-sm font-medium text-purple-700 hover:underline">Buka Events →</Link>
-                </>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card className="border-emerald-100 bg-emerald-50/50">
-            <CardHeader>
-              <CardTitle className="text-lg">🏭 Produksi</CardTitle>
-              <CardDescription>Batch, HPP, QC, dan estimasi stok</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {loading ? <Skeleton className="h-24 w-full" /> : (
-                <>
-                  <div className="grid grid-cols-3 gap-2 text-center">
-                    <div>
-                      <div className="text-2xl font-bold">{formatNumber(data?.brandSummary?.productionQty || 0)}</div>
-                      <div className="text-xs text-muted-foreground">Qty</div>
-                    </div>
-                    <div>
-                      <div className="text-2xl font-bold text-emerald-600">{formatNumber(data?.brandSummary?.activeBatches || 0)}</div>
-                      <div className="text-xs text-muted-foreground">Batch</div>
-                    </div>
-                    <div>
-                      <div className="text-2xl font-bold">{formatNumber(data?.brandSummary?.stockEstimate || 0)}</div>
-                      <div className="text-xs text-muted-foreground">Stock</div>
-                    </div>
-                  </div>
-                  <div className="text-sm">
-                    <span className="text-muted-foreground">HPP rata-rata: </span>
-                    <span className="font-semibold">{formatCurrency(data?.brandSummary?.avgHppPerUnit || 0)}</span>
-                  </div>
-                  <div className="space-y-2">
-                    {(data?.brandSummary?.latestBatches || []).slice(0, 2).map((batch: any) => (
-                      <div key={`${batch.sku}-${batch.productName}`} className="rounded-lg bg-white/70 p-2 text-sm">
-                        <div className="font-medium">{batch.brandName} — {batch.sku || batch.productName}</div>
-                        <div className="text-xs text-muted-foreground">{formatNumber(batch.qtyProduced)} unit • {batch.status} • QC {batch.qcStatus}</div>
-                      </div>
-                    ))}
-                  </div>
-                  <Link href="/production" className="text-sm font-medium text-emerald-700 hover:underline">Buka Produksi →</Link>
-                </>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card className="border-orange-100 bg-orange-50/50">
-            <CardHeader>
-              <CardTitle className="text-lg">⚡ Next Actions</CardTitle>
-              <CardDescription>Shortcut operasional harian</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <ActionLink href="/operations" title="Operations command center" detail="PO → receive → inventory → produksi → QC → jual → CRM → report" />
-              <ActionLink href="/finance" title="Review finance" detail="Saldo bank dan setoran modal" />
-              <ActionLink href="/events" title="Update Fragrantions" detail="Tenant, sponsor, budget, timeline" />
-              <ActionLink href="/production" title="Catat batch produksi" detail="Bahan, bottling, packaging, QC" />
-              <ActionLink href="/inventory" title="Cek restock alert" detail="Bahan, packaging, merch TIM, movement stock" />
-              <ActionLink href="/procurement" title="Buat PO / Receiving QC" detail="Supplier, purchase order, barang masuk" />
-              <ActionLink href="/documents" title="Generate dokumen" detail="Invoice, proposal sponsor, agreement, RAB" />
-              <ActionLink href="/compliance" title="Review compliance batch" detail="Formula, QC, traceability, label" />
-              <ActionLink href="/alerts" title="Cek alert operasional" detail="Stock, event, finance, deadline" />
-              <ActionLink href="/customers" title="Sync customer CRM" detail="WhatsApp intake, consent, CLV, follow-up" />
-              <ActionLink href="/scent-profile" title="AI scent profile" detail="Interview customer → draft aroma brief" />
-              <ActionLink href="/automation" title="Preview WhatsApp" detail="FAQ, broadcast, customer intake tanpa auto-send" />
-              <ActionLink href="/brands" title="Analisa brand" detail="Selling, COGS, expense, profit" />
-              <ActionLink href="/tax-compliance" title="🏛️ Tax & Compliance" detail="Kalender pajak, dokumen, OSS, Pajak Tracking" />
-              <ActionLink href="/sukuk" title="Sukuk Mikro" detail="Produk, investasi, distribusi profit" />
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Extended Operational Cards: Inventory, Procurement, Compliance, Commercial */}
-        <div className="grid gap-4 lg:grid-cols-4">
-          {/* Inventory Card */}
-          <Card className="border-cyan-100 bg-cyan-50/50">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base">📦 Inventory</CardTitle>
-              <CardDescription>Stok bahan baku & packaging</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              {loading ? <Skeleton className="h-20 w-full" /> : (
-                <>
-                  <div className="grid grid-cols-2 gap-2 text-center">
-                    <div>
-                      <div className="text-xl font-bold">{formatNumber(data?.inventorySummary?.totalSku || 0)}</div>
-                      <div className="text-xs text-muted-foreground">SKU</div>
-                    </div>
-                    <div>
-                      <div className="text-xl font-bold">{formatNumber(data?.inventorySummary?.totalStock || 0)}</div>
-                      <div className="text-xs text-muted-foreground">Total Stok</div>
-                    </div>
-                  </div>
-                  <div className="flex gap-2 text-xs">
-                    {(data?.inventorySummary?.lowStock || 0) > 0 && (
-                      <span className="rounded-full bg-amber-100 text-amber-800 px-2 py-0.5">⚠️ Low: {data?.inventorySummary?.lowStock}</span>
-                    )}
-                    {(data?.inventorySummary?.criticalStock || 0) > 0 && (
-                      <span className="rounded-full bg-red-100 text-red-800 px-2 py-0.5">🔴 Critical: {data?.inventorySummary?.criticalStock}</span>
-                    )}
-                    {(data?.inventorySummary?.lowStock || 0) === 0 && (data?.inventorySummary?.criticalStock || 0) === 0 && (
-                      <span className="rounded-full bg-green-100 text-green-800 px-2 py-0.5">✅ All OK</span>
-                    )}
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    Nilai: {formatCurrency(data?.inventorySummary?.totalValue || 0)} • {data?.inventorySummary?.categoryCount || 0} kategori
-                  </div>
-                  <Link href="/inventory" className="text-xs font-medium text-cyan-700 hover:underline">Buka Inventory →</Link>
-                </>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Procurement Card */}
-          <Card className="border-indigo-100 bg-indigo-50/50">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base">🧾 Procurement</CardTitle>
-              <CardDescription>PO, receiving, QC barang masuk</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              {loading ? <Skeleton className="h-20 w-full" /> : (
-                <>
-                  <div className="grid grid-cols-2 gap-2 text-center">
-                    <div>
-                      <div className="text-xl font-bold">{formatNumber(data?.procurementSummary?.poCount || 0)}</div>
-                      <div className="text-xs text-muted-foreground">Total PO</div>
-                    </div>
-                    <div>
-                      <div className="text-xl font-bold text-amber-600">{formatNumber(data?.procurementSummary?.pendingPo || 0)}</div>
-                      <div className="text-xs text-muted-foreground">Pending</div>
-                    </div>
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    Nilai PO: {formatCurrency(data?.procurementSummary?.totalPoValue || 0)}
-                  </div>
-                  <div className="flex gap-2 text-xs">
-                    <span className="rounded-full bg-green-100 text-green-800 px-2 py-0.5">QC Pass: {data?.procurementSummary?.qcPassed || 0}</span>
-                    {(data?.procurementSummary?.qcFailed || 0) > 0 && (
-                      <span className="rounded-full bg-red-100 text-red-800 px-2 py-0.5">QC Fail: {data?.procurementSummary?.qcFailed}</span>
-                    )}
-                  </div>
-                  <Link href="/procurement" className="text-xs font-medium text-indigo-700 hover:underline">Buka Procurement →</Link>
-                </>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Compliance Card */}
-          <Card className="border-teal-100 bg-teal-50/50">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base">✅ Compliance</CardTitle>
-              <CardDescription>Formula, batch, QC, label</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              {loading ? <Skeleton className="h-20 w-full" /> : (
-                <>
-                  <div className="grid grid-cols-3 gap-1 text-center">
-                    <div>
-                      <div className="text-lg font-bold text-green-600">{formatNumber(data?.complianceSummary?.passed || 0)}</div>
-                      <div className="text-xs text-muted-foreground">Pass</div>
-                    </div>
-                    <div>
-                      <div className="text-lg font-bold text-amber-600">{formatNumber(data?.complianceSummary?.pending || 0)}</div>
-                      <div className="text-xs text-muted-foreground">Pending</div>
-                    </div>
-                    <div>
-                      <div className="text-lg font-bold text-red-600">{formatNumber(data?.complianceSummary?.failed || 0)}</div>
-                      <div className="text-xs text-muted-foreground">Fail</div>
-                    </div>
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    Pass rate: {data?.executiveSnapshot?.compliancePassRate || 0}% • QC: {data?.complianceSummary?.qcPassed || 0}/{data?.complianceSummary?.qcTotal || 0}
-                  </div>
-                  <Link href="/compliance" className="text-xs font-medium text-teal-700 hover:underline">Buka Compliance →</Link>
-                </>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Commercial Pipeline Card */}
-          <Card className="border-rose-100 bg-rose-50/50">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base">🤝 Commercial</CardTitle>
-              <CardDescription>Tenant & sponsor pipeline</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              {loading ? <Skeleton className="h-20 w-full" /> : (
-                <>
-                  <div className="grid grid-cols-2 gap-2 text-center">
-                    <div>
-                      <div className="text-xl font-bold">{formatNumber(data?.commercialSummary?.tenantCount || 0)}</div>
-                      <div className="text-xs text-muted-foreground">Tenant</div>
-                    </div>
-                    <div>
-                      <div className="text-xl font-bold">{formatNumber(data?.commercialSummary?.sponsorCount || 0)}</div>
-                      <div className="text-xs text-muted-foreground">Sponsor</div>
-                    </div>
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    Revenue: {formatCurrency(data?.commercialSummary?.commercialRevenue || 0)}
-                  </div>
-                  <div className="flex gap-2 text-xs">
-                    <span className="rounded-full bg-green-100 text-green-800 px-2 py-0.5">Paid: {data?.commercialSummary?.paidTenants || 0 + data?.commercialSummary?.paidSponsors || 0}</span>
-                    {(data?.commercialSummary?.outstandingTenants || 0) + (data?.commercialSummary?.outstandingSponsors || 0) > 0 && (
-                      <span className="rounded-full bg-amber-100 text-amber-800 px-2 py-0.5">Outstanding: {(data?.commercialSummary?.outstandingTenants || 0) + (data?.commercialSummary?.outstandingSponsors || 0)}</span>
-                    )}
-                  </div>
-                  <Link href="/events" className="text-xs font-medium text-rose-700 hover:underline">Buka Events →</Link>
-                </>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Bank Accounts Detail */}
-        {data?.bankAccounts?.length > 0 && (
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {data.bankAccounts.map((acc: any, i: number) => (
-              <Card key={i}>
+          {/* ── Overview Tab ── */}
+          <TabsContent value="overview" className="space-y-4">
+            {/* KPI Cards */}
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+              <Card>
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-sm">{acc.bank} — {acc.nama}</CardTitle>
-                  <CardDescription className="font-mono text-xs">{acc.noRek}</CardDescription>
+                  <CardTitle className="text-sm text-muted-foreground">Total Saldo Bank</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-xl font-bold">{acc.saldoAkhir}</div>
-                  <p className="text-xs text-muted-foreground">Saldo Awal: {acc.saldoAwal}</p>
+                  {loading ? <Skeleton className="h-8 w-32" /> : (
+                    <div className="text-2xl font-bold text-green-600">
+                      {formatCurrency(data?.totalSaldoAkhir || 0)}
+                    </div>
+                  )}
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {data?.bankAccounts?.length || 0} rekening aktif
+                  </p>
                 </CardContent>
               </Card>
-            ))}
-          </div>
-        )}
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm text-muted-foreground">Modal Terkumpul</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {loading ? <Skeleton className="h-8 w-32" /> : (
+                    <div className="text-2xl font-bold">
+                      {formatCurrency(data?.totalSudahSetor || 0)}
+                    </div>
+                  )}
+                  <p className="text-xs text-muted-foreground mt-1">
+                    dari {formatCurrency(data?.totalModalDitempatkan || 0)} ({data?.totalSetoranPercent?.toFixed(1) || 0}%)
+                  </p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm text-muted-foreground">Pemegang Saham</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {loading ? <Skeleton className="h-8 w-16" /> : (
+                    <div className="text-2xl font-bold">{data?.shareholders?.length || 0}</div>
+                  )}
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {formatNumber(data?.totalJumlahSaham || 0)} saham ditempatkan
+                  </p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm text-muted-foreground">Sukuk</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {loading ? <Skeleton className="h-8 w-32" /> : (
+                    <div className="text-2xl font-bold">
+                      {data?.sukukInfo?.status || "Perencanaan"}
+                    </div>
+                  )}
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {data?.sukukInfo?.nilai || "Rp 1 Juta"} • {data?.sukukInfo?.akad || "Musyarakah"}
+                  </p>
+                </CardContent>
+              </Card>
+            </div>
 
-        {/* Quick Links */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-12">
-          <QuickLink href="/operations" title="🧭 Operations" description="End-to-end workflow command center" />
-          <QuickLink href="/finance" title="💰 Finance Detail" description="Keuangan, saham, setoran modal" />
-          <QuickLink href="/events" title="🎉 Events" description="Fragrantions portfolio & planning" />
-          <QuickLink href="/production" title="🏭 Produksi" description="Batch, HPP, QC, dan stock" />
-          <QuickLink href="/inventory" title="📦 Inventory" description="Bahan, packaging, merch TIM, alert" />
-          <QuickLink href="/procurement" title="🧾 Procurement" description="Supplier, PO, receiving QC" />
-          <QuickLink href="/compliance" title="✅ Compliance" description="Formula, batch, QC, label" />
-          <QuickLink href="/documents" title="📄 Documents" description="Invoice, proposal, RAB, report" />
-          <QuickLink href="/billing" title="💳 Billing & Piutang" description="Tagihan tenant & sponsor outstanding" />
-          <QuickLink href="/reports" title="📊 Reports" description="Weekly/monthly auto report" />
-          <QuickLink href="/alerts" title="🔔 Alerts" description="Prioritas tindakan lintas modul" />
-          <QuickLink href="/customers" title="👥 Customers" description="CRM, consent, follow-up" />
-          <QuickLink href="/scent-profile" title="🧪 Scent Profile" description="Interview → draft aroma brief" />
-          <QuickLink href="/automation" title="💬 WhatsApp" description="FAQ, broadcast, customer intake" />
-          <QuickLink href="/sukuk" title="🪙 Sukuk Mikro" description="Produk, investasi, profit syariah" />
-          <QuickLink href="/tax-compliance" title="🏛️ Tax & Compliance" description="Pajak, dokumen, OSS, Pajak Tracking" />
-          <QuickLink href="/investor" title="📈 Investor Relations" description="Sukuk deck, financial projections" />
-          <QuickLink href="/sheets" title="📋 Google Sheets" description="Buka data spreadsheet langsung" />
-        </div>
+            {/* Operational Snapshot */}
+            <div className="grid gap-4 lg:grid-cols-3">
+              <Card className="border-purple-100 bg-purple-50/50">
+                <CardHeader>
+                  <CardTitle className="text-lg">🎉 Events / Fragrantions</CardTitle>
+                  <CardDescription>Portfolio dan pipeline event</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {loading ? <Skeleton className="h-24 w-full" /> : (
+                    <>
+                      <div className="grid grid-cols-3 gap-2 text-center">
+                        <div>
+                          <div className="text-2xl font-bold">{formatNumber(data?.eventSummary?.totalEvents || 0)}</div>
+                          <div className="text-xs text-muted-foreground">Total</div>
+                        </div>
+                        <div>
+                          <div className="text-2xl font-bold text-blue-600">{formatNumber(data?.eventSummary?.upcoming || 0)}</div>
+                          <div className="text-xs text-muted-foreground">Upcoming</div>
+                        </div>
+                        <div>
+                          <div className="text-2xl font-bold text-green-600">{formatNumber(data?.eventSummary?.completed || 0)}</div>
+                          <div className="text-xs text-muted-foreground">Completed</div>
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        {(data?.eventSummary?.latestEvents || []).slice(0, 2).map((event: any) => (
+                          <div key={event.id || event.name} className="rounded-lg bg-white/70 p-2 text-sm">
+                            <div className="font-medium">{event.name}</div>
+                            <div className="text-xs text-muted-foreground">{formatDate(event.startDate)} • {event.venue || "Venue TBA"}</div>
+                          </div>
+                        ))}
+                      </div>
+                      <Link href="/events" className="text-sm font-medium text-purple-700 hover:underline">Buka Events →</Link>
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card className="border-emerald-100 bg-emerald-50/50">
+                <CardHeader>
+                  <CardTitle className="text-lg">🏭 Produksi</CardTitle>
+                  <CardDescription>Batch, HPP, QC, dan estimasi stok</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {loading ? <Skeleton className="h-24 w-full" /> : (
+                    <>
+                      <div className="grid grid-cols-3 gap-2 text-center">
+                        <div>
+                          <div className="text-2xl font-bold">{formatNumber(data?.brandSummary?.productionQty || 0)}</div>
+                          <div className="text-xs text-muted-foreground">Qty</div>
+                        </div>
+                        <div>
+                          <div className="text-2xl font-bold text-emerald-600">{formatNumber(data?.brandSummary?.activeBatches || 0)}</div>
+                          <div className="text-xs text-muted-foreground">Batch</div>
+                        </div>
+                        <div>
+                          <div className="text-2xl font-bold">{formatNumber(data?.brandSummary?.stockEstimate || 0)}</div>
+                          <div className="text-xs text-muted-foreground">Stock</div>
+                        </div>
+                      </div>
+                      <div className="text-sm">
+                        <span className="text-muted-foreground">HPP rata-rata: </span>
+                        <span className="font-semibold">{formatCurrency(data?.brandSummary?.avgHppPerUnit || 0)}</span>
+                      </div>
+                      <div className="space-y-2">
+                        {(data?.brandSummary?.latestBatches || []).slice(0, 2).map((batch: any) => (
+                          <div key={`${batch.sku}-${batch.productName}`} className="rounded-lg bg-white/70 p-2 text-sm">
+                            <div className="font-medium">{batch.brandName} — {batch.sku || batch.productName}</div>
+                            <div className="text-xs text-muted-foreground">{formatNumber(batch.qtyProduced)} unit • {batch.status} • QC {batch.qcStatus}</div>
+                          </div>
+                        ))}
+                      </div>
+                      <Link href="/production" className="text-sm font-medium text-emerald-700 hover:underline">Buka Produksi →</Link>
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card className="border-orange-100 bg-orange-50/50">
+                <CardHeader>
+                  <CardTitle className="text-lg">⚡ Next Actions</CardTitle>
+                  <CardDescription>Shortcut operasional harian</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  <ActionLink href="/operations" title="Operations command center" detail="PO → receive → inventory → produksi → QC → jual → CRM → report" />
+                  <ActionLink href="/finance" title="Review finance" detail="Saldo bank dan setoran modal" />
+                  <ActionLink href="/events" title="Update Fragrantions" detail="Tenant, sponsor, budget, timeline" />
+                  <ActionLink href="/production" title="Catat batch produksi" detail="Bahan, bottling, packaging, QC" />
+                  <ActionLink href="/inventory" title="Cek restock alert" detail="Bahan, packaging, merch TIM, movement stock" />
+                  <ActionLink href="/procurement" title="Buat PO / Receiving QC" detail="Supplier, purchase order, barang masuk" />
+                  <ActionLink href="/documents" title="Generate dokumen" detail="Invoice, proposal sponsor, agreement, RAB" />
+                  <ActionLink href="/compliance" title="Review compliance batch" detail="Formula, QC, traceability, label" />
+                  <ActionLink href="/alerts" title="Cek alert operasional" detail="Stock, event, finance, deadline" />
+                  <ActionLink href="/customers" title="Sync customer CRM" detail="WhatsApp intake, consent, CLV, follow-up" />
+                  <ActionLink href="/scent-profile" title="AI scent profile" detail="Interview customer → draft aroma brief" />
+                  <ActionLink href="/automation" title="Preview WhatsApp" detail="FAQ, broadcast, customer intake tanpa auto-send" />
+                  <ActionLink href="/brands" title="Analisa brand" detail="Selling, COGS, expense, profit" />
+                  <ActionLink href="/tax-compliance" title="🏛️ Tax & Compliance" detail="Kalender pajak, dokumen, OSS, Pajak Tracking" />
+                  <ActionLink href="/sukuk" title="Sukuk Mikro" detail="Produk, investasi, distribusi profit" />
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Extended Operational Cards */}
+            <div className="grid gap-4 lg:grid-cols-4">
+              <Card className="border-cyan-100 bg-cyan-50/50">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base">📦 Inventory</CardTitle>
+                  <CardDescription>Stok bahan baku & packaging</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  {loading ? <Skeleton className="h-20 w-full" /> : (
+                    <>
+                      <div className="grid grid-cols-2 gap-2 text-center">
+                        <div><div className="text-xl font-bold">{formatNumber(data?.inventorySummary?.totalSku || 0)}</div><div className="text-xs text-muted-foreground">SKU</div></div>
+                        <div><div className="text-xl font-bold">{formatNumber(data?.inventorySummary?.totalStock || 0)}</div><div className="text-xs text-muted-foreground">Total Stok</div></div>
+                      </div>
+                      <div className="flex gap-2 text-xs">
+                        {(data?.inventorySummary?.lowStock || 0) > 0 && <span className="rounded-full bg-amber-100 text-amber-800 px-2 py-0.5">⚠️ Low: {data?.inventorySummary?.lowStock}</span>}
+                        {(data?.inventorySummary?.criticalStock || 0) > 0 && <span className="rounded-full bg-red-100 text-red-800 px-2 py-0.5">🔴 Critical: {data?.inventorySummary?.criticalStock}</span>}
+                        {(data?.inventorySummary?.lowStock || 0) === 0 && (data?.inventorySummary?.criticalStock || 0) === 0 && <span className="rounded-full bg-green-100 text-green-800 px-2 py-0.5">✅ All OK</span>}
+                      </div>
+                      <div className="text-xs text-muted-foreground">Nilai: {formatCurrency(data?.inventorySummary?.totalValue || 0)} • {data?.inventorySummary?.categoryCount || 0} kategori</div>
+                      <Link href="/inventory" className="text-xs font-medium text-cyan-700 hover:underline">Buka Inventory →</Link>
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card className="border-indigo-100 bg-indigo-50/50">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base">🧾 Procurement</CardTitle>
+                  <CardDescription>PO, receiving, QC barang masuk</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  {loading ? <Skeleton className="h-20 w-full" /> : (
+                    <>
+                      <div className="grid grid-cols-2 gap-2 text-center">
+                        <div><div className="text-xl font-bold">{formatNumber(data?.procurementSummary?.poCount || 0)}</div><div className="text-xs text-muted-foreground">Total PO</div></div>
+                        <div><div className="text-xl font-bold text-amber-600">{formatNumber(data?.procurementSummary?.pendingPo || 0)}</div><div className="text-xs text-muted-foreground">Pending</div></div>
+                      </div>
+                      <div className="text-xs text-muted-foreground">Nilai PO: {formatCurrency(data?.procurementSummary?.totalPoValue || 0)}</div>
+                      <div className="flex gap-2 text-xs">
+                        <span className="rounded-full bg-green-100 text-green-800 px-2 py-0.5">QC Pass: {data?.procurementSummary?.qcPassed || 0}</span>
+                        {(data?.procurementSummary?.qcFailed || 0) > 0 && <span className="rounded-full bg-red-100 text-red-800 px-2 py-0.5">QC Fail: {data?.procurementSummary?.qcFailed}</span>}
+                      </div>
+                      <Link href="/procurement" className="text-xs font-medium text-indigo-700 hover:underline">Buka Procurement →</Link>
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card className="border-teal-100 bg-teal-50/50">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base">✅ Compliance</CardTitle>
+                  <CardDescription>Formula, batch, QC, label</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  {loading ? <Skeleton className="h-20 w-full" /> : (
+                    <>
+                      <div className="grid grid-cols-3 gap-1 text-center">
+                        <div><div className="text-lg font-bold text-green-600">{formatNumber(data?.complianceSummary?.passed || 0)}</div><div className="text-xs text-muted-foreground">Pass</div></div>
+                        <div><div className="text-lg font-bold text-amber-600">{formatNumber(data?.complianceSummary?.pending || 0)}</div><div className="text-xs text-muted-foreground">Pending</div></div>
+                        <div><div className="text-lg font-bold text-red-600">{formatNumber(data?.complianceSummary?.failed || 0)}</div><div className="text-xs text-muted-foreground">Fail</div></div>
+                      </div>
+                      <div className="text-xs text-muted-foreground">Pass rate: {data?.executiveSnapshot?.compliancePassRate || 0}% • QC: {data?.complianceSummary?.qcPassed || 0}/{data?.complianceSummary?.qcTotal || 0}</div>
+                      <Link href="/compliance" className="text-xs font-medium text-teal-700 hover:underline">Buka Compliance →</Link>
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card className="border-rose-100 bg-rose-50/50">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base">🤝 Commercial</CardTitle>
+                  <CardDescription>Tenant & sponsor pipeline</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  {loading ? <Skeleton className="h-20 w-full" /> : (
+                    <>
+                      <div className="grid grid-cols-2 gap-2 text-center">
+                        <div><div className="text-xl font-bold">{formatNumber(data?.commercialSummary?.tenantCount || 0)}</div><div className="text-xs text-muted-foreground">Tenant</div></div>
+                        <div><div className="text-xl font-bold">{formatNumber(data?.commercialSummary?.sponsorCount || 0)}</div><div className="text-xs text-muted-foreground">Sponsor</div></div>
+                      </div>
+                      <div className="text-xs text-muted-foreground">Revenue: {formatCurrency(data?.commercialSummary?.commercialRevenue || 0)}</div>
+                      <div className="flex gap-2 text-xs">
+                        <span className="rounded-full bg-green-100 text-green-800 px-2 py-0.5">Paid: {(data?.commercialSummary?.paidTenants || 0) + (data?.commercialSummary?.paidSponsors || 0)}</span>
+                        {(data?.commercialSummary?.outstandingTenants || 0) + (data?.commercialSummary?.outstandingSponsors || 0) > 0 && (
+                          <span className="rounded-full bg-amber-100 text-amber-800 px-2 py-0.5">Outstanding: {(data?.commercialSummary?.outstandingTenants || 0) + (data?.commercialSummary?.outstandingSponsors || 0)}</span>
+                        )}
+                      </div>
+                      <Link href="/events" className="text-xs font-medium text-rose-700 hover:underline">Buka Events →</Link>
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Bank Accounts Detail */}
+            {data?.bankAccounts?.length > 0 && (
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {data.bankAccounts.map((acc: any, i: number) => (
+                  <Card key={i}>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm">{acc.bank} — {acc.nama}</CardTitle>
+                      <CardDescription className="font-mono text-xs">{acc.noRek}</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-xl font-bold">{acc.saldoAkhir}</div>
+                      <p className="text-xs text-muted-foreground">Saldo Awal: {acc.saldoAwal}</p>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </TabsContent>
+
+          {/* ── Brand Tracker Tab ── */}
+          <TabsContent value="brands" className="space-y-4">
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+              <Card>
+                <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Total Brand</CardTitle></CardHeader>
+                <CardContent>{loading ? <Skeleton className="h-8 w-16" /> : <div className="text-2xl font-bold">{formatNumber(data?.brandSummary?.brandCount || 0)}</div>}</CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Total Produksi</CardTitle></CardHeader>
+                <CardContent>{loading ? <Skeleton className="h-8 w-24" /> : <div className="text-2xl font-bold text-emerald-600">{formatNumber(data?.brandSummary?.productionQty || 0)} unit</div>}</CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Unit Terjual</CardTitle></CardHeader>
+                <CardContent>{loading ? <Skeleton className="h-8 w-24" /> : <div className="text-2xl font-bold text-blue-600">{formatNumber(data?.brandSummary?.unitsSold || 0)} unit</div>}</CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Estimasi Stok</CardTitle></CardHeader>
+                <CardContent>{loading ? <Skeleton className="h-8 w-24" /> : <div className="text-2xl font-bold">{formatNumber(data?.brandSummary?.stockEstimate || 0)} unit</div>}</CardContent>
+              </Card>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Produksi vs Penjualan</CardTitle>
+                  <CardDescription>Perbandingan volume produksi dan penjualan per brand</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {loading ? <Skeleton className="h-40 w-full" /> : (
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-muted-foreground">Total Produksi</span>
+                        <span className="font-bold">{formatNumber(data?.brandSummary?.productionQty || 0)} unit</span>
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-3">
+                        <div className="bg-emerald-500 h-3 rounded-full" style={{ width: "100%" }} />
+                      </div>
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-muted-foreground">Total Penjualan</span>
+                        <span className="font-bold">{formatNumber(data?.brandSummary?.unitsSold || 0)} unit</span>
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-3">
+                        <div className="bg-blue-500 h-3 rounded-full" style={{ width: `${data?.brandSummary?.productionQty > 0 ? Math.min((data?.brandSummary?.unitsSold / data?.brandSummary?.productionQty) * 100, 100) : 0}%` }} />
+                      </div>
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-muted-foreground">HPP Rata-rata</span>
+                        <span className="font-bold">{formatCurrency(data?.brandSummary?.avgHppPerUnit || 0)}/unit</span>
+                      </div>
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-muted-foreground">Net Revenue</span>
+                        <span className="font-bold text-green-600">{formatCurrency(data?.brandSummary?.netRevenue || 0)}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-muted-foreground">Operating Profit</span>
+                        <span className={`font-bold ${(data?.brandSummary?.operatingProfit || 0) >= 0 ? "text-green-600" : "text-red-600"}`}>
+                          {formatCurrency(data?.brandSummary?.operatingProfit || 0)}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Batch Terbaru</CardTitle>
+                  <CardDescription>3 batch produksi terakhir dari Google Sheets</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {loading ? <Skeleton className="h-40 w-full" /> : (
+                    <div className="space-y-3">
+                      {(data?.brandSummary?.latestBatches || []).map((batch: any, i: number) => (
+                        <div key={i} className="flex items-center justify-between rounded-lg border p-3">
+                          <div>
+                            <div className="font-medium text-sm">{batch.brandName} — {batch.productName}</div>
+                            <div className="text-xs text-muted-foreground">{formatDate(batch.date)} • {formatNumber(batch.qtyProduced)} unit</div>
+                          </div>
+                          <div className="flex gap-2">
+                            <Badge variant={batch.status === "Completed" ? "default" : "outline"} className="text-xs">{batch.status}</Badge>
+                            <Badge variant={batch.qcStatus === "Passed" ? "default" : batch.qcStatus === "Failed" ? "destructive" : "secondary"} className="text-xs">QC {batch.qcStatus}</Badge>
+                          </div>
+                        </div>
+                      ))}
+                      {(!data?.brandSummary?.latestBatches || data?.brandSummary?.latestBatches.length === 0) && (
+                        <p className="text-sm text-muted-foreground text-center py-8">Belum ada data batch</p>
+                      )}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Distribusi Penjualan per Brand</CardTitle>
+                  <CardDescription>Proporsi volume penjualan</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {loading ? <Skeleton className="h-32 w-full" /> : (
+                    <div className="space-y-3">
+                      {[
+                        { name: "L'Arc~en~Scent", pct: 45, color: "bg-purple-500" },
+                        { name: "Pixel Potion", pct: 30, color: "bg-orange-500" },
+                        { name: "Nuscentza", pct: 25, color: "bg-emerald-500" },
+                      ].map((brand) => (
+                        <div key={brand.name}>
+                          <div className="flex justify-between text-sm mb-1">
+                            <span>{brand.name}</span>
+                            <span className="font-medium">{brand.pct}%</span>
+                          </div>
+                          <div className="w-full bg-gray-200 rounded-full h-2">
+                            <div className={`${brand.color} h-2 rounded-full`} style={{ width: `${brand.pct}%` }} />
+                          </div>
+                        </div>
+                      ))}
+                      <p className="text-xs text-muted-foreground mt-2">* Distribusi estimasi berdasarkan data Google Sheets</p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Info Sukuk</CardTitle>
+                  <CardDescription>Status sukuk dan investor</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {loading ? <Skeleton className="h-32 w-full" /> : (
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="rounded-lg border p-3">
+                        <div className="text-xs text-muted-foreground">Status Sukuk</div>
+                        <div className="font-bold text-amber-600">{data?.sukukInfo?.status || "Perencanaan"}</div>
+                      </div>
+                      <div className="rounded-lg border p-3">
+                        <div className="text-xs text-muted-foreground">Akad</div>
+                        <div className="font-bold">{data?.sukukInfo?.akad || "Musyarakah"}</div>
+                      </div>
+                      <div className="rounded-lg border p-3">
+                        <div className="text-xs text-muted-foreground">Nisbah</div>
+                        <div className="font-bold">{data?.sukukInfo?.nisbah || "50:50"}</div>
+                      </div>
+                      <div className="rounded-lg border p-3">
+                        <div className="text-xs text-muted-foreground">Investor Terdaftar</div>
+                        <div className="font-bold">{data?.sukukInvestors?.length || 0}</div>
+                      </div>
+                      <div className="rounded-lg border p-3">
+                        <div className="text-xs text-muted-foreground">Unit Terjual</div>
+                        <div className="font-bold">{formatNumber(data?.totalUnitTerjual || 0)}</div>
+                      </div>
+                      <div className="rounded-lg border p-3">
+                        <div className="text-xs text-muted-foreground">Yield</div>
+                        <div className="font-bold">{data?.sukukInfo?.yield || "8-12%"}</div>
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+
+          {/* ── Cashflow Tab ── */}
+          <TabsContent value="cashflow" className="space-y-4">
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+              <Card>
+                <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Saldo Bank</CardTitle></CardHeader>
+                <CardContent>{loading ? <Skeleton className="h-8 w-28" /> : <div className="text-2xl font-bold text-green-600">{formatCurrency(data?.totalSaldoAkhir || 0)}</div>}</CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Modal Disetor</CardTitle></CardHeader>
+                <CardContent>{loading ? <Skeleton className="h-8 w-28" /> : <div className="text-2xl font-bold">{formatCurrency(data?.totalSudahSetor || 0)}</div>}</CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Sisa Kewajiban</CardTitle></CardHeader>
+                <CardContent>{loading ? <Skeleton className="h-8 w-28" /> : <div className="text-2xl font-bold text-red-600">{formatCurrency(data?.totalSisaKewajiban || 0)}</div>}</CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Setoran %</CardTitle></CardHeader>
+                <CardContent>{loading ? <Skeleton className="h-8 w-16" /> : <div className="text-2xl font-bold">{data?.totalSetoranPercent?.toFixed(1) || 0}%</div>}</CardContent>
+              </Card>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Rekap Rekening Koran</CardTitle>
+                  <CardDescription>Data 8 bulan terakhir dari Google Sheets</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {loading ? <div className="space-y-2">{[1,2,3].map(i => <Skeleton key={i} className="h-10 w-full" />)}</div> : data?.rekapData?.length > 0 ? (
+                    <div className="rounded-md border overflow-auto">
+                      <Table>
+                        <TableHeader><TableRow><TableHead>Bulan</TableHead><TableHead>Akun</TableHead><TableHead className="text-right">Saldo Awal</TableHead><TableHead className="text-right">Masuk</TableHead><TableHead className="text-right">Keluar</TableHead><TableHead className="text-right">Saldo Akhir</TableHead></TableRow></TableHeader>
+                        <TableBody>{data.rekapData.map((row: any, i: number) => <TableRow key={i}><TableCell className="font-medium">{row.bulan}</TableCell><TableCell>{row.akun}</TableCell><TableCell className="text-right text-xs">{row.saldoAwal}</TableCell><TableCell className="text-right text-green-600 text-xs">{row.totalMasuk}</TableCell><TableCell className="text-right text-red-600 text-xs">{row.totalKeluar}</TableCell><TableCell className="text-right font-medium text-xs">{row.saldoAkhir}</TableCell></TableRow>)}</TableBody>
+                      </Table>
+                    </div>
+                  ) : <p className="text-muted-foreground text-center py-8">Tidak ada data rekap rekening</p>}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Pemegang Saham</CardTitle>
+                  <CardDescription>Modal ditempatkan: {formatCurrency(data?.totalModalDitempatkan || 0)} | Terkumpul: {formatCurrency(data?.totalSudahSetor || 0)} | Sisa: {formatCurrency(data?.totalSisaKewajiban || 0)}</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {loading ? <div className="space-y-2">{[1,2,3].map(i => <Skeleton key={i} className="h-20 w-full" />)}</div> : (
+                    <div className="grid gap-4 md:grid-cols-3">
+                      {data?.shareholders?.map((sh: any, i: number) => <div key={i} className="p-4 border rounded-lg"><div className="flex justify-between items-start mb-2"><div><h4 className="font-semibold">{sh.nama}</h4><span className="text-xs text-muted-foreground">{sh.persen} • {sh.jumlahSaham} saham</span></div><span className={`text-xs px-2 py-1 rounded ${sh.progress >= 100 ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700"}`}>{sh.progress.toFixed(1)}%</span></div><div className="space-y-1 text-sm"><div className="flex justify-between"><span className="text-muted-foreground">Kewajiban:</span><span>{formatCurrency(sh.kewajiban)}</span></div><div className="flex justify-between"><span className="text-muted-foreground">Disetor:</span><span className="text-green-600">{formatCurrency(sh.sudahSetor)}</span></div><div className="flex justify-between border-t pt-1"><span className="font-medium">Sisa:</span><span className="font-bold text-red-600">{formatCurrency(sh.sisaKewajiban ?? (sh.kewajiban - sh.sudahSetor))}</span></div></div><div className="mt-3"><div className="w-full bg-gray-200 rounded-full h-2"><div className="bg-blue-600 h-2 rounded-full" style={{ width: `${Math.min(sh.progress, 100)}%` }} /></div></div></div>)}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Bank Accounts */}
+            {data?.bankAccounts?.length > 0 && (
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {data.bankAccounts.map((acc: any, i: number) => (
+                  <Card key={i}>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm">{acc.bank} — {acc.nama}</CardTitle>
+                      <CardDescription className="font-mono text-xs">{acc.noRek}</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-xl font-bold">{acc.saldoAkhir}</div>
+                      <p className="text-xs text-muted-foreground">Saldo Awal: {acc.saldoAwal}</p>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </TabsContent>
+
+          {/* ── Quick Links Tab ── */}
+          <TabsContent value="quicklinks" className="space-y-4">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <QuickLink href="/operations" title="🧭 Operations" description="End-to-end workflow command center" />
+              <QuickLink href="/finance" title="💰 Finance Detail" description="Keuangan, saham, setoran modal" />
+              <QuickLink href="/events" title="🎉 Events" description="Fragrantions portfolio & planning" />
+              <QuickLink href="/production" title="🏭 Produksi" description="Batch, HPP, QC, dan stock" />
+              <QuickLink href="/inventory" title="📦 Inventory" description="Bahan, packaging, merch TIM, alert" />
+              <QuickLink href="/procurement" title="🧾 Procurement" description="Supplier, PO, receiving QC" />
+              <QuickLink href="/compliance" title="✅ Compliance" description="Formula, batch, QC, label" />
+              <QuickLink href="/documents" title="📄 Documents" description="Invoice, proposal, RAB, report" />
+              <QuickLink href="/billing" title="💳 Billing & Piutang" description="Tagihan tenant & sponsor outstanding" />
+              <QuickLink href="/reports" title="📊 Reports" description="Weekly/monthly auto report" />
+              <QuickLink href="/alerts" title="🔔 Alerts" description="Prioritas tindakan lintas modul" />
+              <QuickLink href="/customers" title="👥 Customers" description="CRM, consent, follow-up" />
+              <QuickLink href="/scent-profile" title="🧪 Scent Profile" description="Interview → draft aroma brief" />
+              <QuickLink href="/automation" title="💬 WhatsApp" description="FAQ, broadcast, customer intake" />
+              <QuickLink href="/sukuk" title="🪙 Sukuk Mikro" description="Produk, investasi, profit syariah" />
+              <QuickLink href="/tax-compliance" title="🏛️ Tax & Compliance" description="Pajak, dokumen, OSS, Pajak Tracking" />
+              <QuickLink href="/investor" title="📈 Investor Relations" description="Sukuk deck, financial projections" />
+              <QuickLink href="/sheets" title="📋 Google Sheets" description="Buka data spreadsheet langsung" />
+              <QuickLink href="/crm" title="🤝 CRM Hub" description="Contact directory, follow-up tracker" />
+              <QuickLink href="/email" title="📧 Email" description="Inbox, search, send" />
+              <QuickLink href="/workflow" title="🔄 Workflow" description="7-stage operational pipeline" />
+              <QuickLink href="/ai-chat" title="🤖 AI Chat" description="Context-aware assistant" />
+              <QuickLink href="/users" title="👥 Users" description="User management, role-based access" />
+              <QuickLink href="/settings" title="⚙️ Settings" description="System configuration" />
+            </div>
+          </TabsContent>
+        </Tabs>
       </RoleGate>
 
       {/* Debug Info */}

@@ -289,10 +289,13 @@ export async function POST(req: NextRequest) {
     if (isGoogleWorkspaceAuthError(error)) {
       const degraded = googleWorkspaceDegradedSource("Google Sheets report context", error);
       return NextResponse.json({
-        error: "Google Workspace auth degraded",
-        ...degraded,
+        success: false,
+        sourceStatus: "blocked",
+        warning: degraded.warning,
+        details: degraded.details,
         report: null,
-      }, { status: 503 });
+        reports: [],
+      }, { status: 200 });
     }
     return NextResponse.json({ error: "Gagal generate report", details: String(error) }, { status: 500 });
   }
