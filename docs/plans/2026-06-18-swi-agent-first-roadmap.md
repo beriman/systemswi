@@ -118,7 +118,7 @@ SWI saat ini punya **systemswi** — ERP dashboard yang sudah 31 modul. Tapi ini
 |---|------|--------|-------|
 | 1.1 | **Daily Health Check** | ✅ DONE | `src/lib/agent/health-check.ts` + `src/app/api/agent/health/route.ts` — Checks Sheets, Finance, Inventory, Vercel, Alerts. Sends report via Telegram. |
 | 1.2 | **Transaction Detection** | ✅ DONE | `src/lib/agent/transaction-detection.ts` + `src/app/api/agent/transactions/route.ts` — Reads Rekening_Koran, suggests categories via keyword matching, flags high-value txn. |
-| 1.3 | **Invoice Generation** | 🔵 TODO | Generate invoice dari PO + data vendor, review via Telegram |
+| 1.3 | **Invoice Generation** | ✅ DONE | `src/lib/agent/invoice-generation.ts` + `src/app/api/agent/invoices/route.ts` — Generates vendor invoices from received POs + customer invoices from CRM. PPN 11% auto-calculated. Sends Telegram approval for each invoice. Integrated into orchestrator daily run. |
 | 1.4 | **Tax Reminder** | 🔵 TODO | Cek Tax Calendar, kirim H-3 reminder |
 | 1.5 | **Stock Alert** | ✅ DONE | `src/app/api/agent/stock-alert/route.ts` — Reads Inventory_Master, sends Telegram alerts for low/critical stock |
 | 1.6 | **Event Pipeline Update** | 🔵 TODO | Update Event_Tenants & Event_Sponsors dari CRM |
@@ -258,7 +258,7 @@ Timestamp | Agent | Action | Target | Status | Human Approved | Notes
 3. ~~**Daily health check cron** — Agent cek semua sistem, report via Telegram~~ ✅ DONE — `health-check.ts` + `/api/agent/health`
 4. ~~**Transaction detection** — Agent baca mutasi bank, suggest kategori~~ ✅ DONE — `transaction-detection.ts` + `/api/agent/transactions`
 5. ~~**Stock alert** — Agent cek inventory, kirim alert jika minimum~~ ✅ DONE — `/api/agent/stock-alert`
-6. **Invoice Generation** — Generate invoice dari PO + data vendor, review via Telegram
+6. ~~**Invoice Generation** — Generate invoice dari PO + data vendor, review via Telegram~~ ✅ DONE — `invoice-generation.ts` + `/api/agent/invoices` with PPN 11% auto-calc
 7. **Tax Reminder** — Cek Tax Calendar, kirim H-3 reminder
 8. **Event Pipeline Update** — Update Event_Tenants & Event_Sponsors dari CRM
 

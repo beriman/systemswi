@@ -12,6 +12,7 @@ export type AuditEntry = {
   humanApproved: string; // "yes" | "no" | "n/a" | approver name
   notes: string;
   approvalId?: string;
+  details?: string; // optional additional detail
 };
 
 const SHEET_NAME = "AgentAuditLog";

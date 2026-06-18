@@ -176,8 +176,9 @@ export async function runFullDailyAgent(): Promise<{
   health: boolean;
   transactions: boolean;
   stockAlerts: boolean;
+  invoices: boolean;
 }> {
-  const results = { health: false, transactions: false, stockAlerts: false };
+  const results = { health: false, transactions: false, stockAlerts: false, invoices: false };
   const timestamp = new Date().toISOString();
 
   try {
@@ -201,14 +202,36 @@ export async function runFullDailyAgent(): Promise<{
     console.error("[Agent] Stock alert failed:", error);
   }
 
+  try {
+    const { generateInvoices, formatInvoiceSummaryForTelegram } = await import("./invoice-generation");
+    const invResult = await generateInvoices();
+    results.invoices = true;
+
+    if (isTelegramConfigured() && invResult.invoices.length > 0) {
+      await sendTelegramMessage(formatInvoiceSummaryForTelegram(invResult));
+    }
+
+    await logAgentActionSafe({
+      timestamp,
+      agent: "HemuHemu/OWL",
+      action: "Invoice Generation",
+      target: "Purchase_Orders + Supplier_Master + Customer_Master",
+      status: "success",
+      humanApproved: "pending",
+      notes: `Generated ${invResult.summary.totalDrafted} invoices, ${invResult.summary.pendingApproval} pending approval`,
+    });
+  } catch (error) {
+    console.error("[Agent] Invoice generation failed:", error);
+  }
+
   await logAgentActionSafe({
     timestamp,
     agent: "HemuHemu/OWL",
     action: "Full Daily Agent Run",
     target: "All SWI Systems",
-    status: results.health && results.transactions && results.stockAlerts ? "success" : "failed",
+    status: results.health && results.transactions && results.stockAlerts && results.invoices ? "success" : "failed",
     humanApproved: "n/a",
-    notes: `Health: ${results.health}, Transactions: ${results.transactions}, Stock: ${results.stockAlerts}`,
+    notes: `Health: ${results.health}, Transactions: ${results.transactions}, Stock: ${results.stockAlerts}, Invoices: ${results.invoices}`,
   });
 
   return results;
