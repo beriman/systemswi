@@ -13,6 +13,8 @@ import { Textarea } from "@/components/ui/textarea";
 interface DashboardData {
   bankAccounts: any[];
   totalSaldoAkhir: number;
+  totalSaldoAwal?: number;
+  mutasiSummary?: { totalDebet: number; totalKredit: number; mutasiCount: number };
   shareholders: any[];
   totalModalDasar: number;
   totalModalDitempatkan: number;
@@ -644,6 +646,27 @@ export default function FinancePage() {
                     <div className="text-xs text-muted-foreground">{data.bankAccounts.length} rekening aktif</div>
                   </div>
                 </div>
+                
+                {/* Mutasi Summary */}
+                {data.mutasiSummary && data.mutasiSummary.mutasiCount > 0 && (
+                  <div className="mt-4 p-3 rounded-lg border bg-muted/30">
+                    <div className="text-sm font-medium mb-2">📊 Mutasi Rekening (Mei 2026)</div>
+                    <div className="grid gap-3 md:grid-cols-3">
+                      <div>
+                        <div className="text-xs text-muted-foreground">Total Transaksi</div>
+                        <div className="text-lg font-bold">{data.mutasiSummary.mutasiCount} transaksi</div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-muted-foreground">Total Debet (Keluar)</div>
+                        <div className="text-lg font-bold text-red-700">{formatCurrency(data.mutasiSummary.totalDebet)}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-muted-foreground">Total Kredit (Masuk)</div>
+                        <div className="text-lg font-bold text-green-700">{formatCurrency(data.mutasiSummary.totalKredit)}</div>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
 

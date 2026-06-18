@@ -247,23 +247,48 @@ export async function GET() {
     ]);
 
     // ── Parse bank balances from RekeningKoran ──
+    // Sheet layout: row 0=title, row 1=per date, row 2=empty, row 3=header, row 4-5=accounts, row 6=total, row 7=empty, row 8-9=mutasi header, row 10+=mutasi
     let bankAccounts: any[] = [];
     let totalSaldoAkhir = 0;
-    if (rekeningKoran.length >= 3) {
-      // Rows 0-2 are bank accounts, row 3 is empty, row 4+ is mutasi
-      for (let i = 0; i < Math.min(3, rekeningKoran.length); i++) {
+    let totalSaldoAwal = 0;
+    if (rekeningKoran.length >= 4) {
+      for (let i = 0; i < rekeningKoran.length; i++) {
         const row = rekeningKoran[i];
-        if (row.length >= 5 && row[0]) {
+        if (row.length >= 5 && row[0] && row[0] !== "Nama Bank" && row[0] !== "TANGGAL" && row[0] !== "REKENING KORAN" && row[0] !== "Per 30 Mei 2026" && row[0] !== "MUTASI REKENING") {
+          // Skip total row
+          if (row[0] === "" && row[2] === "TOTAL") {
+            totalSaldoAkhir = parseFloat((row[4] || "0").replace(/[^\d.-]/g, "")) || 0;
+            totalSaldoAwal = parseFloat((row[3] || "0").replace(/[^\d.-]/g, "")) || 0;
+            continue;
+          }
+          // Skip saldo awal rows (SA001, SA002)
+          if (String(row[1]).startsWith("SA")) continue;
+          // Skip empty rows
+          if (!row[0] && !row[1]) continue;
+          
           const saldoAkhir = parseFloat((row[4] || "0").replace(/[^\d.-]/g, "")) || 0;
+          const saldoAwal = parseFloat((row[3] || "0").replace(/[^\d.-]/g, "")) || 0;
           bankAccounts.push({
             bank: row[0],
-            noRek: row[1],
+            noRek: String(row[1]),
             nama: row[2],
-            saldoAwal: row[3],
-            saldoAkhir: row[4],
-            saldoAkhirNum: saldoAkhir,
+            saldoAwal: saldoAwal,
+            saldoAkhir: saldoAkhir,
           });
-          totalSaldoAkhir += saldoAkhir;
+        }
+      }
+    }
+    
+    // Parse mutasi (debet/kredit) from RekeningKoran
+    let mutasiSummary = { totalDebet: 0, totalKredit: 0, mutasiCount: 0 };
+    if (rekeningKoran.length > 10) {
+      for (let i = 10; i < rekeningKoran.length; i++) {
+        const row = rekeningKoran[i];
+        if (row.length >= 6 && row[3] && (row[3] === "Debet" || row[3] === "Kredit")) {
+          const jumlah = parseFloat((row[5] || row[4] || "0").replace(/[^\d.-]/g, "")) || 0;
+          if (row[3] === "Debet") mutasiSummary.totalDebet += jumlah;
+          if (row[3] === "Kredit") mutasiSummary.totalKredit += jumlah;
+          mutasiSummary.mutasiCount++;
         }
       }
     }
@@ -398,6 +423,8 @@ export async function GET() {
       ...(googleAuthError ? googleWorkspaceDegradedSource("Google Sheets: finance + events + production + inventory + procurement + compliance + commercial", googleAuthError) : { sourceStatus: "live" as const }),
       bankAccounts,
       totalSaldoAkhir,
+      totalSaldoAwal,
+      mutasiSummary,
       shareholders,
       totalModalDasar: 1000000000,
       totalJumlahSaham,
@@ -421,6 +448,9 @@ export async function GET() {
       mediaSummary,
       executiveSnapshot: {
         cash: totalSaldoAkhir,
+        cashAwal: totalSaldoAwal,
+        cashDebet: mutasiSummary.totalDebet,
+        cashKredit: mutasiSummary.totalKredit,
         paidInCapital: totalSudahSetor,
         openCapitalObligation: totalSisaKewajiban,
         eventCount: eventSummary.totalEvents,
