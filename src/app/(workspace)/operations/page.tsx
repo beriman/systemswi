@@ -15,6 +15,20 @@ type Step = {
   href: string;
 };
 
+type SharedResource = {
+  id: string;
+  name: string;
+  category: "marketing" | "admin" | "finance" | "tech" | "hr";
+  description: string;
+  owner: string;
+  divisions: string[];
+  cost: number;
+  frequency: "one-time" | "monthly" | "quarterly" | "annual";
+  status: "active" | "paused" | "review";
+  url: string;
+  notes: string;
+};
+
 type OperationsResponse = {
   source: string;
   sourceStatus?: "degraded" | "blocked" | "live";
@@ -68,6 +82,7 @@ type OperationsResponse = {
     status: string;
     detail: string;
   }>;
+  sharedResources: SharedResource[];
 };
 
 type ExecuteResult = {
@@ -274,6 +289,229 @@ function WorkflowLog({ log }: { log: Array<{ id: string; timestamp: string; step
             </div>
           </div>
         ))}
+      </div>
+    </section>
+  );
+}
+
+function SharedResourcesPanel({ resources }: { resources: SharedResource[] }) {
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({
+    name: "",
+    category: "marketing" as SharedResource["category"],
+    description: "",
+    owner: "",
+    divisions: "",
+    cost: "",
+    frequency: "monthly" as SharedResource["frequency"],
+    status: "active" as SharedResource["status"],
+    url: "",
+    notes: "",
+  });
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState("");
+
+  const categoryLabels: Record<string, string> = {
+    marketing: "Marketing",
+    admin: "Administrasi",
+    finance: "Keuangan",
+    tech: "Teknologi",
+    hr: "HR",
+  };
+
+  const categoryColors: Record<string, string> = {
+    marketing: "bg-pink-500/15 text-pink-200 ring-pink-400/20",
+    admin: "bg-blue-500/15 text-blue-200 ring-blue-400/20",
+    finance: "bg-green-500/15 text-green-200 ring-green-400/20",
+    tech: "bg-purple-500/15 text-purple-200 ring-purple-400/20",
+    hr: "bg-amber-500/15 text-amber-200 ring-amber-400/20",
+  };
+
+  const statusColors: Record<string, string> = {
+    active: "bg-emerald-500/15 text-emerald-200 ring-emerald-400/20",
+    paused: "bg-slate-500/15 text-slate-200 ring-slate-400/20",
+    review: "bg-amber-500/15 text-amber-200 ring-amber-400/20",
+  };
+
+  async function handleSave(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    setMessage("");
+    try {
+      const res = await fetch("/api/operations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "add_shared_resource",
+          name: form.name,
+          category: form.category,
+          description: form.description,
+          owner: form.owner,
+          divisions: form.divisions.split(",").map((d) => d.trim()).filter(Boolean),
+          cost: Number(form.cost) || 0,
+          frequency: form.frequency,
+          status: form.status,
+          url: form.url,
+          notes: form.notes,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Gagal menyimpan shared resource");
+      setMessage("✅ Shared resource ditambahkan");
+      setShowForm(false);
+      setForm({ name: "", category: "marketing", description: "", owner: "", divisions: "", cost: "", frequency: "monthly", status: "active", url: "", notes: "" });
+    } catch (err) {
+      setMessage(`❌ ${String(err)}`);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const totalCost = resources.reduce((sum, r) => sum + (r.cost || 0), 0);
+  const activeCount = resources.filter((r) => r.status === "active").length;
+
+  return (
+    <section className="rounded-3xl bg-white/[0.04] p-5 ring-1 ring-white/10">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-semibold">🤝 Shared Resources</h2>
+          <p className="mt-1 text-xs text-white/45">Sumber daya bersama lintas divisi: marketing, admin, finance, tech, HR</p>
+        </div>
+        <button
+          onClick={() => setShowForm(!showForm)}
+          className="rounded-full bg-[#0D9488] px-4 py-2 text-xs font-semibold text-white hover:bg-[#0f766e]"
+        >
+          {showForm ? "Tutup" : "+ Tambah"}
+        </button>
+      </div>
+
+      {/* Summary */}
+      <div className="mt-4 grid grid-cols-3 gap-2">
+        <div className="rounded-2xl bg-black/20 p-3 text-center">
+          <div className="text-lg font-bold text-white">{resources.length}</div>
+          <div className="text-[10px] text-white/40">Total</div>
+        </div>
+        <div className="rounded-2xl bg-black/20 p-3 text-center">
+          <div className="text-lg font-bold text-emerald-300">{activeCount}</div>
+          <div className="text-[10px] text-white/40">Active</div>
+        </div>
+        <div className="rounded-2xl bg-black/20 p-3 text-center">
+          <div className="text-lg font-bold text-amber-300">{resources.filter((r) => r.status === "review").length}</div>
+          <div className="text-[10px] text-white/40">Review</div>
+        </div>
+      </div>
+
+      {/* Cost summary */}
+      {totalCost > 0 && (
+        <div className="mt-3 rounded-2xl bg-black/20 p-3 text-sm">
+          <span className="text-white/40">Total biaya bulanan: </span>
+          <span className="font-semibold text-white">
+            {new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(totalCost)}
+          </span>
+        </div>
+      )}
+
+      {/* Add form */}
+      {showForm && (
+        <form onSubmit={handleSave} className="mt-4 space-y-3 rounded-2xl bg-black/20 p-4">
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block text-xs text-white/60">
+              Nama Resource *
+              <input name="name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required placeholder="Google Workspace, Canva, dll" className="mt-1 w-full rounded-xl border border-white/10 bg-[#0f1713] px-3 py-2 text-sm text-white placeholder:text-white/30" />
+            </label>
+            <label className="block text-xs text-white/60">
+              Kategori
+              <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value as SharedResource["category"] })} className="mt-1 w-full rounded-xl border border-white/10 bg-[#0f1713] px-3 py-2 text-sm text-white">
+                {Object.entries(categoryLabels).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              </select>
+            </label>
+          </div>
+          <label className="block text-xs text-white/60">
+            Deskripsi
+            <input name="description" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Deskripsi singkat resource" className="mt-1 w-full rounded-xl border border-white/10 bg-[#0f1713] px-3 py-2 text-sm text-white placeholder:text-white/30" />
+          </label>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block text-xs text-white/60">
+              Owner
+              <input name="owner" value={form.owner} onChange={(e) => setForm({ ...form, owner: e.target.value })} placeholder="PIC resource" className="mt-1 w-full rounded-xl border border-white/10 bg-[#0f1713] px-3 py-2 text-sm text-white placeholder:text-white/30" />
+            </label>
+            <label className="block text-xs text-white/60">
+              Divisi (comma-separated)
+              <input name="divisions" value={form.divisions} onChange={(e) => setForm({ ...form, divisions: e.target.value })} placeholder="Finance, Event, Store" className="mt-1 w-full rounded-xl border border-white/10 bg-[#0f1713] px-3 py-2 text-sm text-white placeholder:text-white/30" />
+            </label>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block text-xs text-white/60">
+              Biaya (Rp)
+              <input name="cost" type="number" value={form.cost} onChange={(e) => setForm({ ...form, cost: e.target.value })} placeholder="0" className="mt-1 w-full rounded-xl border border-white/10 bg-[#0f1713] px-3 py-2 text-sm text-white placeholder:text-white/30" />
+            </label>
+            <label className="block text-xs text-white/60">
+              Frekuensi
+              <select value={form.frequency} onChange={(e) => setForm({ ...form, frequency: e.target.value as SharedResource["frequency"] })} className="mt-1 w-full rounded-xl border border-white/10 bg-[#0f1713] px-3 py-2 text-sm text-white">
+                <option value="one-time">One-time</option>
+                <option value="monthly">Monthly</option>
+                <option value="quarterly">Quarterly</option>
+                <option value="annual">Annual</option>
+              </select>
+            </label>
+          </div>
+          <label className="block text-xs text-white/60">
+            URL / Link
+            <input name="url" value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} placeholder="https://..." className="mt-1 w-full rounded-xl border border-white/10 bg-[#0f1713] px-3 py-2 text-sm text-white placeholder:text-white/30" />
+          </label>
+          <label className="block text-xs text-white/60">
+            Notes
+            <input name="notes" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="Catatan tambahan" className="mt-1 w-full rounded-xl border border-white/10 bg-[#0f1713] px-3 py-2 text-sm text-white placeholder:text-white/30" />
+          </label>
+          <div className="flex items-center gap-2">
+            <button type="submit" disabled={saving} className="rounded-xl bg-[#0D9488] px-4 py-2 text-sm font-semibold text-white hover:bg-[#0f766e] disabled:opacity-50">
+              {saving ? "⏳ Menyimpan..." : "💾 Simpan"}
+            </button>
+            <button type="button" onClick={() => setShowForm(false)} className="rounded-xl bg-white/10 px-4 py-2 text-sm text-white/60 hover:bg-white/20">
+              Batal
+            </button>
+          </div>
+          {message && <div className="text-xs text-white/70">{message}</div>}
+        </form>
+      )}
+
+      {/* Resource list */}
+      <div className="mt-4 space-y-2">
+        {resources.length === 0 ? (
+          <div className="rounded-2xl bg-black/20 p-4 text-center text-sm text-white/40">
+            Belum ada shared resource yang tercatat. Klik "+ Tambah" untuk menambahkan.
+          </div>
+        ) : (
+          resources.map((r) => (
+            <div key={r.id} className="rounded-2xl bg-black/20 p-4">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium text-white">{r.name}</span>
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1 ${categoryColors[r.category] || "bg-slate-500/15 text-slate-200 ring-slate-400/20"}`}>
+                      {categoryLabels[r.category] || r.category}
+                    </span>
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1 ${statusColors[r.status] || "bg-slate-500/15 text-slate-200 ring-slate-400/20"}`}>
+                      {r.status}
+                    </span>
+                  </div>
+                  {r.description && <p className="mt-1 text-xs text-white/50">{r.description}</p>}
+                  <div className="mt-2 flex flex-wrap gap-3 text-xs text-white/40">
+                    {r.owner && <span>👤 {r.owner}</span>}
+                    {r.divisions.length > 0 && <span>🏢 {r.divisions.join(", ")}</span>}
+                    {r.cost > 0 && <span>💰 {new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(r.cost)}/{r.frequency}</span>}
+                  </div>
+                  {r.url && (
+                    <a href={r.url} target="_blank" rel="noopener noreferrer" className="mt-1 inline-block text-xs text-cyan-400 hover:underline">
+                      🔗 {r.url}
+                    </a>
+                  )}
+                  {r.notes && <p className="mt-1 text-xs text-white/30">{r.notes}</p>}
+                </div>
+              </div>
+            </div>
+          ))
+        )}
       </div>
     </section>
   );
@@ -614,6 +852,9 @@ export default function OperationsPage() {
                 ))}
               </div>
             </section>
+
+            {/* Shared Resources */}
+            <SharedResourcesPanel resources={data?.sharedResources || []} />
           </aside>
         </section>
 

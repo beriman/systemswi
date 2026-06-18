@@ -51,7 +51,7 @@ type WorkflowAction = {
   detail: string;
 };
 
-const SOURCE = "Google Sheets: Cash_Harian, Event_Tenants, Event_Sponsors, Event_Budget, Inventory_Master, Inventory_Movements, Purchase_Orders, Goods_Receipts, Brand_Production, Brand_Sales, Compliance_Checks, Product_Batches, QC_Checklist";
+const SOURCE = "Google Sheets: Cash_Harian, Event_Tenants, Event_Sponsors, Event_Budget, Inventory_Master, Inventory_Movements, Purchase_Orders, Goods_Receipts, Brand_Production, Brand_Sales, Compliance_Checks, Product_Batches, QC_Checklist, Shared_Resources";
 
 const WORKFLOW_ACTION_LOG_SHEET = "Workflow_Actions";
 
@@ -69,6 +69,7 @@ const ranges = [
   "Compliance_Checks!A1:L1000",
   "Product_Batches!A1:M1000",
   "QC_Checklist!A1:I1000",
+  "Shared_Resources!A1:J1000",
 ];
 
 const weeklyCadence: CadenceItem[] = [
@@ -344,7 +345,25 @@ function buildWorkflow(data: Record<string, string[][]>) {
       "WhatsApp follow-up tetap preview/manual dan consent-gated.",
       "Proof URL/reference harus dipakai untuk PO, receiving, movement, dan transaksi finance.",
     ],
+    sharedResources: buildSharedResources(data),
   };
+}
+
+function buildSharedResources(data: Record<string, string[][]>) {
+  const rows = rowsOnly(data["Shared_Resources!A1:J1000"]);
+  return rows.map((row) => ({
+    id: text(row[0]) || `sr-${Date.now().toString(36)}`,
+    name: text(row[2]) || "TBA",
+    category: (text(row[3]) || "marketing") as "marketing" | "admin" | "finance" | "tech" | "hr",
+    description: text(row[4]) || "",
+    owner: text(row[5]) || "",
+    divisions: text(row[6]).split(",").map((d) => d.trim()).filter(Boolean),
+    cost: num(row[7]),
+    frequency: (text(row[8]) || "monthly") as "one-time" | "monthly" | "quarterly" | "annual",
+    status: (text(row[9]) || "active") as "active" | "paused" | "review",
+    url: text(row[10]) || "",
+    notes: text(row[11]) || "",
+  }));
 }
 
 // ── Execute workflow step: write to Google Sheets ──
@@ -893,7 +912,48 @@ export async function POST(request: NextRequest) {
       }, { status: anyFailed ? 207 : 201 });
     }
 
-    return NextResponse.json({ error: "action tidak dikenal. Gunakan: prepare_handoff, execute_step, run_full_workflow" }, { status: 400 });
+    if (action === "add_shared_resource") {
+      const name = text(body.name);
+      const category = text(body.category) || "marketing";
+      const description = text(body.description);
+      const owner = text(body.owner);
+      const divisions = Array.isArray(body.divisions) ? body.divisions : [];
+      const cost = num(body.cost);
+      const frequency = text(body.frequency) || "monthly";
+      const status = text(body.status) || "active";
+      const url = text(body.url);
+      const notes = text(body.notes);
+
+      if (!name) return NextResponse.json({ error: "name wajib diisi" }, { status: 400 });
+
+      const resourceId = `sr-${Date.now().toString(36)}`;
+      const timestamp = new Date().toISOString().slice(0, 10);
+
+      await appendRows("Shared_Resources", [[
+        resourceId,
+        timestamp,
+        name,
+        category,
+        description,
+        owner,
+        divisions.join(", "),
+        cost,
+        frequency,
+        status,
+        url,
+        notes,
+      ]]);
+
+      return NextResponse.json({
+        source: SOURCE,
+        sourceStatus: "live",
+        action: "add_shared_resource",
+        resource: { id: resourceId, name, category, description, owner, divisions, cost, frequency, status, url, notes },
+        detail: `Shared resource "${name}" ditambahkan ke Shared_Resources sheet.`,
+      }, { status: 201 });
+    }
+
+    return NextResponse.json({ error: "action tidak dikenal. Gunakan: prepare_handoff, execute_step, run_full_workflow, add_shared_resource" }, { status: 400 });
   } catch (error) {
     if (isGoogleWorkspaceAuthError(error)) {
       return NextResponse.json({ ...googleWorkspaceDegradedSource(SOURCE, error), error: "Google Workspace degraded; operasi tidak bisa dilanjutkan sampai re-auth." }, { status: 503 });
