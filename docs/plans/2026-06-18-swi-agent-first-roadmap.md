@@ -119,7 +119,7 @@ SWI saat ini punya **systemswi** — ERP dashboard yang sudah 31 modul. Tapi ini
 | 1.1 | **Daily Health Check** | ✅ DONE | `src/lib/agent/health-check.ts` + `src/app/api/agent/health/route.ts` — Checks Sheets, Finance, Inventory, Vercel, Alerts. Sends report via Telegram. |
 | 1.2 | **Transaction Detection** | ✅ DONE | `src/lib/agent/transaction-detection.ts` + `src/app/api/agent/transactions/route.ts` — Reads Rekening_Koran, suggests categories via keyword matching, flags high-value txn. |
 | 1.3 | **Invoice Generation** | ✅ DONE | `src/lib/agent/invoice-generation.ts` + `src/app/api/agent/invoices/route.ts` — Generates vendor invoices from received POs + customer invoices from CRM. PPN 11% auto-calculated. Sends Telegram approval for each invoice. Integrated into orchestrator daily run. |
-| 1.4 | **Tax Reminder** | 🔵 TODO | Cek Tax Calendar, kirim H-3 reminder |
+| 1.4 | **Tax Reminder** | ✅ DONE | `src/lib/agent/tax-reminder.ts` + `src/app/api/agent/tax-reminder/route.ts` — Reads Tax_Calendar + Pajak_Tracking, sends H-3 Telegram reminders. Overdue items get individual high-severity alerts. Integrated into orchestrator daily run. |
 | 1.5 | **Stock Alert** | ✅ DONE | `src/app/api/agent/stock-alert/route.ts` — Reads Inventory_Master, sends Telegram alerts for low/critical stock |
 | 1.6 | **Event Pipeline Update** | 🔵 TODO | Update Event_Tenants & Event_Sponsors dari CRM |
 
@@ -259,7 +259,7 @@ Timestamp | Agent | Action | Target | Status | Human Approved | Notes
 4. ~~**Transaction detection** — Agent baca mutasi bank, suggest kategori~~ ✅ DONE — `transaction-detection.ts` + `/api/agent/transactions`
 5. ~~**Stock alert** — Agent cek inventory, kirim alert jika minimum~~ ✅ DONE — `/api/agent/stock-alert`
 6. ~~**Invoice Generation** — Generate invoice dari PO + data vendor, review via Telegram~~ ✅ DONE — `invoice-generation.ts` + `/api/agent/invoices` with PPN 11% auto-calc
-7. **Tax Reminder** — Cek Tax Calendar, kirim H-3 reminder
+7. ~~**Tax Reminder** — Cek Tax Calendar, kirim H-3 reminder~~ ✅ DONE — `tax-reminder.ts` + `/api/agent/tax-reminder` with Tax_Calendar + Pajak_Tracking H-3 reminders via Telegram
 8. **Event Pipeline Update** — Update Event_Tenants & Event_Sponsors dari CRM
 
 ### Setup Required (Environment Variables)

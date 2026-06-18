@@ -6,6 +6,7 @@ import { sendTelegramMessage, sendHealthReport, sendTelegramAlert, sendTelegramA
 import { runHealthCheck } from "./health-check";
 import { detectTransactions, formatTransactionForTelegram } from "./transaction-detection";
 import { readRange, appendRows } from "@/lib/sheets/sheets-real";
+import { runTaxReminderCheck } from "./tax-reminder";
 
 export const APPROVAL_THRESHOLD = 10_000_000; // Rp 10 juta
 
@@ -177,8 +178,9 @@ export async function runFullDailyAgent(): Promise<{
   transactions: boolean;
   stockAlerts: boolean;
   invoices: boolean;
+  taxReminders: boolean;
 }> {
-  const results = { health: false, transactions: false, stockAlerts: false, invoices: false };
+  const results = { health: false, transactions: false, stockAlerts: false, invoices: false, taxReminders: false };
   const timestamp = new Date().toISOString();
 
   try {
@@ -224,14 +226,31 @@ export async function runFullDailyAgent(): Promise<{
     console.error("[Agent] Invoice generation failed:", error);
   }
 
+  try {
+    const taxResult = await runTaxReminderCheck();
+    results.taxReminders = true;
+
+    await logAgentActionSafe({
+      timestamp,
+      agent: "HemuHemu/OWL",
+      action: "Tax Reminder Check",
+      target: "Tax_Calendar + Pajak_Tracking",
+      status: "success",
+      humanApproved: "n/a",
+      notes: `Overdue: ${taxResult.report.totalOverdue}, Upcoming H-3: ${taxResult.report.totalUpcoming}, Sent: ${taxResult.sent}`,
+    });
+  } catch (error) {
+    console.error("[Agent] Tax reminder check failed:", error);
+  }
+
   await logAgentActionSafe({
     timestamp,
     agent: "HemuHemu/OWL",
     action: "Full Daily Agent Run",
     target: "All SWI Systems",
-    status: results.health && results.transactions && results.stockAlerts && results.invoices ? "success" : "failed",
+    status: results.health && results.transactions && results.stockAlerts && results.invoices && results.taxReminders ? "success" : "failed",
     humanApproved: "n/a",
-    notes: `Health: ${results.health}, Transactions: ${results.transactions}, Stock: ${results.stockAlerts}, Invoices: ${results.invoices}`,
+    notes: `Health: ${results.health}, Transactions: ${results.transactions}, Stock: ${results.stockAlerts}, Invoices: ${results.invoices}, TaxReminders: ${results.taxReminders}`,
   });
 
   return results;
