@@ -7,6 +7,7 @@ import { runHealthCheck } from "./health-check";
 import { detectTransactions, formatTransactionForTelegram } from "./transaction-detection";
 import { readRange, appendRows } from "@/lib/sheets/sheets-real";
 import { runTaxReminderCheck } from "./tax-reminder";
+import { runEventPipelineAnalysis, formatEventPipelineForTelegram } from "./event-pipeline";
 
 export const APPROVAL_THRESHOLD = 10_000_000; // Rp 10 juta
 
@@ -179,8 +180,9 @@ export async function runFullDailyAgent(): Promise<{
   stockAlerts: boolean;
   invoices: boolean;
   taxReminders: boolean;
+  eventPipeline: boolean;
 }> {
-  const results = { health: false, transactions: false, stockAlerts: false, invoices: false, taxReminders: false };
+  const results = { health: false, transactions: false, stockAlerts: false, invoices: false, taxReminders: false, eventPipeline: false };
   const timestamp = new Date().toISOString();
 
   try {
@@ -243,6 +245,27 @@ export async function runFullDailyAgent(): Promise<{
     console.error("[Agent] Tax reminder check failed:", error);
   }
 
+  try {
+    const pipelineResult = await runEventPipelineAnalysis();
+    results.eventPipeline = true;
+
+    if (isTelegramConfigured()) {
+      await sendTelegramMessage(formatEventPipelineForTelegram(pipelineResult));
+    }
+
+    await logAgentActionSafe({
+      timestamp,
+      agent: "HemuHemu/OWL",
+      action: "Event Pipeline Update",
+      target: "Event_Tenants + Event_Sponsors + Customer_Interactions",
+      status: "success",
+      humanApproved: "n/a",
+      notes: `Tenants: ${pipelineResult.tenants.total}, Sponsors: ${pipelineResult.sponsors.total}, Suggestions: ${pipelineResult.suggestions.length}`,
+    });
+  } catch (error) {
+    console.error("[Agent] Event pipeline update failed:", error);
+  }
+
   await logAgentActionSafe({
     timestamp,
     agent: "HemuHemu/OWL",
@@ -250,7 +273,7 @@ export async function runFullDailyAgent(): Promise<{
     target: "All SWI Systems",
     status: results.health && results.transactions && results.stockAlerts && results.invoices && results.taxReminders ? "success" : "failed",
     humanApproved: "n/a",
-    notes: `Health: ${results.health}, Transactions: ${results.transactions}, Stock: ${results.stockAlerts}, Invoices: ${results.invoices}, TaxReminders: ${results.taxReminders}`,
+    notes: `Health: ${results.health}, Transactions: ${results.transactions}, Stock: ${results.stockAlerts}, Invoices: ${results.invoices}, TaxReminders: ${results.taxReminders}, EventPipeline: ${results.eventPipeline}`,
   });
 
   return results;

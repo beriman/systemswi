@@ -14,3 +14,5 @@ export { detectTransactions, formatTransactionForTelegram } from "./transaction-
 export type { DetectedTransaction, TransactionType } from "./transaction-detection";
 export { generateInvoices, formatInvoiceForTelegram, formatInvoiceSummaryForTelegram } from "./invoice-generation";
 export type { InvoiceDraft, InvoiceGenerationResult, InvoiceType, InvoiceStatus } from "./invoice-generation";
+export { runEventPipelineAnalysis, formatEventPipelineForTelegram } from "./event-pipeline";
+export type { EventPipelineReport, EventTenant, EventSponsor } from "./event-pipeline";
