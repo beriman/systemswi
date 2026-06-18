@@ -156,16 +156,26 @@ SWI saat ini punya **systemswi** — ERP dashboard yang sudah 31 modul. Tapi ini
 - 5 new API routes: `/api/agent/procurement`, `/api/agent/reconciliation`, `/api/agent/compliance`, `/api/agent/follow-up`, `/api/agent/event-workflow`
 - Orchestrator updated: `runFullDailyAgent()` now includes all 5 Phase 2 tasks
 
-### Phase 3: Agent Intelligence (Bulan 5-6)
+### Phase 3: Agent Intelligence (Bulan 5-6) — 🟡 IN PROGRESS
 **Goal:** Agent bisa analisis & rekomendasi
 
-| # | Capability | Method | Output |
-|---|-----------|--------|--------|
-| 3.1 | **Cashflow Forecast** | ML model dari 8 bulan Rekap_Rekening | 3-month projection |
-| 3.2 | **Brand Performance** | Analyze Brand_Sales + Brand_Expenses | Profitability ranking |
-| 3.3 | **Event ROI** | Compare Event_Budget vs actual revenue | Event performance score |
-| 3.4 | **Customer Segmentation** | RFM analysis dari CRM data | Segment labels |
-| 3.5 | **Tax Optimization** | Analyze COA + Pajak_Tracking | Tax efficiency report |
+| # | Capability | Status | Method | Output |
+|---|-----------|--------|--------|--------|
+| 3.1 | **Cashflow Forecast** | ✅ DONE | Linear regression + seasonal adjustment dari 8 bulan Rekap_Rekening | 3-month projection → Cashflow_Forecast sheet |
+| 3.2 | **Brand Performance** | ✅ DONE | Analyze Brand_Sales + Brand_Expenses → profitability ranking | Brand tier (star/profitable/breakeven/loss) → Brand_Dashboard sheet |
+| 3.3 | **Event ROI** | ✅ DONE | Compare Event_Tenants + Event_Sponsors budget vs revenue | Event grade (A-F) + performance score |
+| 3.4 | **Customer Segmentation** | ✅ DONE | RFM analysis (quintile scoring) dari Customer_Master + Customer_Interactions | 10 segments (Champions → Lost) + CLV estimate |
+| 3.5 | **Tax Optimization** | ✅ DONE | Analyze COA + Pajak_Tracking → identify savings | Tax efficiency report + priority recommendations |
+
+**Phase 3 Infrastructure Built:**
+- `src/lib/agent/cashflow-forecast.ts` — Linear regression + seasonal factor analysis, writes to Cashflow_Forecast sheet
+- `src/lib/agent/brand-performance.ts` — Brand profitability ranking with tier classification, writes to Brand_Dashboard sheet
+- `src/lib/agent/event-roi.ts` — Event ROI grading (A-F) from tenant + sponsor data
+- `src/lib/agent/customer-segmentation.ts` — RFM quintile scoring with 10 customer segments + CLV projection
+- `src/lib/agent/tax-optimization.ts` — COA + Pajak_Tracking analysis with priority recommendations
+- 5 new API routes: `/api/agent/cashflow-forecast`, `/api/agent/brand-performance`, `/api/agent/event-roi`, `/api/agent/customer-segmentation`, `/api/agent/tax-optimization`
+- Orchestrator updated: `runFullDailyAgent()` now includes all 5 Phase 3 tasks
+- Audit status type extended: added `"partial"` status for partial completion
 
 ### Phase 4: Agent Ecosystem (Bulan 7-12)
 **Goal:** Agent bisa berinteraksi dengan sistem eksternal

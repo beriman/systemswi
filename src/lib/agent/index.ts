@@ -1,4 +1,4 @@
-// Agent Index — exports all agent modules (Phase 1 + Phase 2)
+// Agent Index — exports all agent modules (Phase 1 + Phase 2 + Phase 3)
 export { logAgentAction, logAgentActionSafe } from "./audit";
 export type { AuditEntry } from "./audit";
 export {
@@ -28,5 +28,17 @@ export type { FollowUpReport, FollowUpDraft } from "./customer-follow-up";
 export { runEventPipelineWorkflow, formatEventPipelineForTelegram as formatEventPipelineWorkflowForTelegram } from "./event-pipeline-workflow";
 export type { EventPipelineReport, AgreementDraft } from "./event-pipeline-workflow";
 
-// ── Phase 1 Orchestrator ───────────────────────────────────────────
+// ── Phase 3: Agent Intelligence ────────────────────────────────────
+export { generateCashflowForecast, formatForecastForTelegram } from "./cashflow-forecast";
+export type { CashflowForecastResult, MonthlyCashflow } from "./cashflow-forecast";
+export { analyzeBrandPerformance, formatBrandPerformanceForTelegram } from "./brand-performance";
+export type { BrandPerformance, BrandPerformanceResult } from "./brand-performance";
+export { analyzeEventROI, formatEventROIForTelegram } from "./event-roi";
+export type { EventROI, EventROIResult } from "./event-roi";
+export { performRFMSegmentation, formatSegmentationForTelegram } from "./customer-segmentation";
+export type { CustomerRFM, CustomerSegment, SegmentationResult } from "./customer-segmentation";
+export { analyzeTaxOptimization, formatTaxOptimizationForTelegram } from "./tax-optimization";
+export type { TaxAnalysisItem, TaxOptimizationResult } from "./tax-optimization";
+
+// ── Phase 1+2 Orchestrator ─────────────────────────────────────────
 export { dailyHealthCheck, dailyTransactionDetection, dailyStockAlert, requestApproval, runFullDailyAgent, APPROVAL_THRESHOLD } from "./orchestrator";

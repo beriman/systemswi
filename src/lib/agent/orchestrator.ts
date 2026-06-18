@@ -1,6 +1,7 @@
-// Agent Orchestrator — Phase 1 + Phase 2 Core
+// Agent Orchestrator — Phase 1 + Phase 2 + Phase 3 Core
 // Coordinates all agent tasks: health checks, audit logging, alerts, approvals,
-// procurement, reconciliation, compliance, customer follow-up, event workflow
+// procurement, reconciliation, compliance, customer follow-up, event workflow,
+// cashflow forecast, brand performance, event ROI, customer segmentation, tax optimization
 
 import { logAgentActionSafe } from "./audit";
 import { sendTelegramMessage, sendHealthReport, sendTelegramAlert, sendTelegramApproval, isTelegramConfigured } from "./telegram";
@@ -16,6 +17,13 @@ import { runReconciliation, formatReconciliationForTelegram } from "./finance-re
 import { runComplianceCheck, formatComplianceForTelegram } from "./compliance-tracking";
 import { runCustomerFollowUp, formatFollowUpForTelegram } from "./customer-follow-up";
 import { runEventPipelineWorkflow, formatEventPipelineForTelegram as formatEventPipelineWorkflowForTelegram } from "./event-pipeline-workflow";
+
+// ── Phase 3 imports ────────────────────────────────────────────────
+import { generateCashflowForecast, formatForecastForTelegram } from "./cashflow-forecast";
+import { analyzeBrandPerformance, formatBrandPerformanceForTelegram } from "./brand-performance";
+import { analyzeEventROI, formatEventROIForTelegram } from "./event-roi";
+import { performRFMSegmentation, formatSegmentationForTelegram } from "./customer-segmentation";
+import { analyzeTaxOptimization, formatTaxOptimizationForTelegram } from "./tax-optimization";
 
 export const APPROVAL_THRESHOLD = 10_000_000; // Rp 10 juta
 
@@ -273,7 +281,7 @@ export async function dailyEventWorkflow(): Promise<void> {
   }
 }
 
-// ── Full Daily Run — executes all Phase 1 + Phase 2 tasks ──
+// ── Full Daily Run — executes all Phase 1 + Phase 2 + Phase 3 tasks ──
 export async function runFullDailyAgent(): Promise<{
   health: boolean;
   transactions: boolean;
@@ -286,6 +294,11 @@ export async function runFullDailyAgent(): Promise<{
   compliance: boolean;
   customerFollowUp: boolean;
   eventWorkflow: boolean;
+  cashflowForecast: boolean;
+  brandPerformance: boolean;
+  eventROI: boolean;
+  customerSegmentation: boolean;
+  taxOptimization: boolean;
 }> {
   const results = {
     health: false,
@@ -299,6 +312,11 @@ export async function runFullDailyAgent(): Promise<{
     compliance: false,
     customerFollowUp: false,
     eventWorkflow: false,
+    cashflowForecast: false,
+    brandPerformance: false,
+    eventROI: false,
+    customerSegmentation: false,
+    taxOptimization: false,
   };
   const timestamp = new Date().toISOString();
 
@@ -420,18 +438,105 @@ export async function runFullDailyAgent(): Promise<{
     console.error("[Agent] Event workflow failed:", error);
   }
 
+  // ── Phase 3 tasks (Intelligence & Analysis) ──
+  try {
+    const forecastResult = await generateCashflowForecast();
+    results.cashflowForecast = true;
+
+    await logAgentActionSafe({
+      timestamp,
+      agent: "HemuHemu/OWL",
+      action: "Cashflow Forecast",
+      target: "Rekap_Rekening → Cashflow_Forecast",
+      status: "success",
+      humanApproved: "n/a",
+      notes: `${forecastResult.historical.length} months analyzed, 3-month forecast. Confidence: ${forecastResult.confidence}`,
+    });
+  } catch (error) {
+    console.error("[Agent] Cashflow forecast failed:", error);
+  }
+
+  try {
+    const brandResult = await analyzeBrandPerformance();
+    results.brandPerformance = true;
+
+    await logAgentActionSafe({
+      timestamp,
+      agent: "HemuHemu/OWL",
+      action: "Brand Performance Analysis",
+      target: "Brand_Sales + Brand_Expenses → Brand_Dashboard",
+      status: "success",
+      humanApproved: "n/a",
+      notes: `${brandResult.brands.length} brands. Top: ${brandResult.topPerformer}. Profit: Rp ${brandResult.totalProfit.toLocaleString("id-ID")}`,
+    });
+  } catch (error) {
+    console.error("[Agent] Brand performance analysis failed:", error);
+  }
+
+  try {
+    const roiResult = await analyzeEventROI();
+    results.eventROI = true;
+
+    await logAgentActionSafe({
+      timestamp,
+      agent: "HemuHemu/OWL",
+      action: "Event ROI Analysis",
+      target: "Event_Tenants + Event_Sponsors",
+      status: "success",
+      humanApproved: "n/a",
+      notes: `${roiResult.events.length} events. Overall ROI: ${roiResult.overallROI}%. Best: ${roiResult.bestEvent}`,
+    });
+  } catch (error) {
+    console.error("[Agent] Event ROI analysis failed:", error);
+  }
+
+  try {
+    const segResult = await performRFMSegmentation();
+    results.customerSegmentation = true;
+
+    await logAgentActionSafe({
+      timestamp,
+      agent: "HemuHemu/OWL",
+      action: "Customer RFM Segmentation",
+      target: "Customer_Master + Customer_Interactions",
+      status: "success",
+      humanApproved: "n/a",
+      notes: `${segResult.totalCustomers} customers segmented. Champions: ${segResult.segmentCounts["Champions"]}. At Risk: ${segResult.segmentCounts["At Risk"]}`,
+    });
+  } catch (error) {
+    console.error("[Agent] Customer segmentation failed:", error);
+  }
+
+  try {
+    const taxOptResult = await analyzeTaxOptimization();
+    results.taxOptimization = true;
+
+    await logAgentActionSafe({
+      timestamp,
+      agent: "HemuHemu/OWL",
+      action: "Tax Optimization Analysis",
+      target: "COA + Pajak_Tracking",
+      status: "success",
+      humanApproved: "n/a",
+      notes: `${taxOptResult.items.length} items. Potential saving: Rp ${taxOptResult.totalPotentialSaving.toLocaleString("id-ID")}`,
+    });
+  } catch (error) {
+    console.error("[Agent] Tax optimization analysis failed:", error);
+  }
+
   // ── Summary ──
   const phase1Complete = results.health && results.transactions && results.stockAlerts && results.invoices && results.taxReminders && results.eventPipeline;
   const phase2Complete = results.procurement && results.reconciliation && results.compliance && results.customerFollowUp && results.eventWorkflow;
+  const phase3Complete = results.cashflowForecast && results.brandPerformance && results.eventROI && results.customerSegmentation && results.taxOptimization;
 
   await logAgentActionSafe({
     timestamp,
     agent: "HemuHemu/OWL",
     action: "Full Daily Agent Run",
     target: "All SWI Systems",
-    status: phase1Complete && phase2Complete ? "success" : "failed",
+    status: phase1Complete && phase2Complete && phase3Complete ? "success" : "partial",
     humanApproved: "n/a",
-    notes: `Phase1: H=${results.health} T=${results.transactions} S=${results.stockAlerts} I=${results.invoices} Tax=${results.taxReminders} E=${results.eventPipeline} | Phase2: P=${results.procurement} R=${results.reconciliation} C=${results.compliance} CF=${results.customerFollowUp} EW=${results.eventWorkflow}`,
+    notes: `Phase1: H=${results.health} T=${results.transactions} S=${results.stockAlerts} I=${results.invoices} Tax=${results.taxReminders} E=${results.eventPipeline} | Phase2: P=${results.procurement} R=${results.reconciliation} C=${results.compliance} CF=${results.customerFollowUp} EW=${results.eventWorkflow} | Phase3: CF=${results.cashflowForecast} BP=${results.brandPerformance} ROI=${results.eventROI} CS=${results.customerSegmentation} TO=${results.taxOptimization}`,
   });
 
   return results;
