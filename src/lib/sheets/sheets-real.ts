@@ -56,6 +56,8 @@ export const SHEETS: Record<string, { range: string; description: string }> = {
   ComplianceChecks:  { range: "Compliance_Checks!A1:L1000",     description: "Formula compliance checks, allergen labels, IFRA/BPOM notes" },
   ProductBatches:    { range: "Product_Batches!A1:M1000",       description: "Batch traceability for finished products" },
   QCChecklist:       { range: "QC_Checklist!A1:I1000",          description: "QC checklist results per batch and stage" },
+  AgentAuditLog:     { range: "Agent_Audit_Log!A1:H10000",      description: "Agent action audit trail — all agent actions logged here" },
+  AgentApprovals:    { range: "Agent_Approvals!A1:J5000",       description: "Pending and resolved approval requests from agents" },
 };
 
 // ── Auth ──────────────────────────────────────────────────────────

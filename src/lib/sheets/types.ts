@@ -71,6 +71,8 @@ export const SHEET_NAMES = [
     "BrandSales",
     "BrandExpenses",
     "BrandDashboard",
+  "AgentAuditLog",
+  "AgentApprovals",
 ] as const;
 
 export type SheetName = (typeof SHEET_NAMES)[number];

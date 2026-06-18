@@ -111,17 +111,25 @@ SWI saat ini punya **systemswi** — ERP dashboard yang sudah 31 modul. Tapi ini
 - [x] Gmail integration, Email inbox
 - [x] E2E Workflow Dashboard
 
-### Phase 1: Agent Infrastructure (Bulan 1-2)
+### Phase 1: Agent Infrastructure (Bulan 1-2) — 🟡 IN PROGRESS
 **Goal:** Agent bisa menjalankan task harian otomatis
 
-| # | Task | Agent Action | Human Touch |
-|---|------|-------------|-------------|
-| 1.1 | **Daily Health Check** | Agent cek semua API, Sheets, Vercel setiap jam 6 pagi | Alert via Telegram jika ada masalah |
-| 1.2 | **Transaction Detection** | Agent detect mutasi bank dari Rekening_Koran | Konfirmasi kategori via Telegram |
-| 1.3 | **Invoice Generation** | Agent generate invoice dari PO + data vendor | Review & approve via Telegram |
-| 1.4 | **Tax Reminder** | Agent cek Tax Calendar, kirim H-3 reminder | Manusia file SPT |
-| 1.5 | **Stock Alert** | Agent cek Inventory, kirim alert jika stok minimum | Approve PO via Telegram |
-| 1.6 | **Event Pipeline Update** | Agent update Event_Tenants & Event_Sponsors dari CRM | Review via dashboard |
+| # | Task | Status | Notes |
+|---|------|--------|-------|
+| 1.1 | **Daily Health Check** | ✅ DONE | `src/lib/agent/health-check.ts` + `src/app/api/agent/health/route.ts` — Checks Sheets, Finance, Inventory, Vercel, Alerts. Sends report via Telegram. |
+| 1.2 | **Transaction Detection** | ✅ DONE | `src/lib/agent/transaction-detection.ts` + `src/app/api/agent/transactions/route.ts` — Reads Rekening_Koran, suggests categories via keyword matching, flags high-value txn. |
+| 1.3 | **Invoice Generation** | 🔵 TODO | Generate invoice dari PO + data vendor, review via Telegram |
+| 1.4 | **Tax Reminder** | 🔵 TODO | Cek Tax Calendar, kirim H-3 reminder |
+| 1.5 | **Stock Alert** | ✅ DONE | `src/app/api/agent/stock-alert/route.ts` — Reads Inventory_Master, sends Telegram alerts for low/critical stock |
+| 1.6 | **Event Pipeline Update** | 🔵 TODO | Update Event_Tenants & Event_Sponsors dari CRM |
+
+**Infrastructure Built:**
+- `src/lib/agent/audit.ts` — Google Sheets-based audit logger (Agent_Audit_Log sheet)
+- `src/lib/agent/telegram.ts` — Telegram bot integration (alerts, approval inline keyboard, health reports)
+- `src/lib/agent/orchestrator.ts` — Daily agent run coordinator (all Phase 1 tasks)
+- `src/app/api/agent/telegram-webhook/route.ts` — Handles Telegram callbacks (approve/reject buttons + /stop emergency)
+- Google Sheets: Agent_Audit_Log + AgentApprovals sheet configs added to SHEETS map
+- Approval gate: `requestApproval()` function with Telegram inline keyboard (Approve/Reject buttons)
 
 **Technical:**
 - Cron jobs dengan approval gate (Telegram button: Approve / Reject)
@@ -245,11 +253,22 @@ Timestamp | Agent | Action | Target | Status | Human Approved | Notes
 
 ## 🎯 Immediate Next Steps (Minggu Ini)
 
-1. **Setup Agent Audit Log sheet** di Google Sheets
-2. **Implement approval gate** — Telegram button untuk approve/reject
-3. **Daily health check cron** — Agent cek semua sistem, report via Telegram
-4. **Transaction detection** — Agent baca mutasi bank, suggest kategori
-5. **Stock alert** — Agent cek inventory, kirim alert jika minimum
+1. ~~**Setup Agent Audit Log sheet** di Google Sheets~~ ✅ DONE — `Agent_Audit_Log` + `AgentApprovals` sheet configs added
+2. ~~**Implement approval gate** — Telegram button untuk approve/reject~~ ✅ DONE — `telegram.ts` + `telegram-webhook` route with inline keyboard
+3. ~~**Daily health check cron** — Agent cek semua sistem, report via Telegram~~ ✅ DONE — `health-check.ts` + `/api/agent/health`
+4. ~~**Transaction detection** — Agent baca mutasi bank, suggest kategori~~ ✅ DONE — `transaction-detection.ts` + `/api/agent/transactions`
+5. ~~**Stock alert** — Agent cek inventory, kirim alert jika minimum~~ ✅ DONE — `/api/agent/stock-alert`
+6. **Invoice Generation** — Generate invoice dari PO + data vendor, review via Telegram
+7. **Tax Reminder** — Cek Tax Calendar, kirim H-3 reminder
+8. **Event Pipeline Update** — Update Event_Tenants & Event_Sponsors dari CRM
+
+### Setup Required (Environment Variables)
+To activate Telegram integration, set these env vars:
+- `TELEGRAM_BOT_TOKEN` — Bot token from @BotFather
+- `TELEGRAM_CHAT_ID` — Default chat ID for alerts
+- `TELEGRAM_APPROVAL_CHAT_ID` — Chat ID for approval requests (defaults to TELEGRAM_CHAT_ID)
+
+Then set webhook: `GET /api/agent/telegram-webhook?url=https://systemswi.vercel.app/api/agent/telegram-webhook`
 
 ---
 
