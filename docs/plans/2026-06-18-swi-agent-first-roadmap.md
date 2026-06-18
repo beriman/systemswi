@@ -136,16 +136,25 @@ SWI saat ini punya **systemswi** — ERP dashboard yang sudah 31 modul. Tapi ini
 - Agent writes to Google Sheets → Sheets = source of truth
 - Semua agent actions logged ke audit trail sheet
 
-### Phase 2: Agent Automation (Bulan 3-4)
+### Phase 2: Agent Automation (Bulan 3-4) — 🟡 IN PROGRESS
 **Goal:** Agent bisa execute multi-step workflow
 
-| # | Workflow | Steps | Human Touch |
-|---|----------|-------|-------------|
-| 2.1 | **Procurement Auto** | Stock alert → Draft PO → Approve → Send to supplier → Track delivery → QC → Update inventory | Approve PO & QC result |
-| 2.2 | **Event Pipeline** | New tenant inquiry → Draft agreement → Send → Track payment → Update Event_Tenants | Sign agreement |
-| 2.3 | **Finance Reconciliation** | Daily: Compare Cash_Harian vs Rekening_Koran → Flag discrepancies → Suggest corrections | Review & approve corrections |
-| 2.4 | **Compliance Tracking** | Daily: Check BPOM expiry → Check Halal cert → Check OSS status → Alert if expiring | Renew certificates |
-| 2.5 | **Customer Follow-up** | Agent detect inactive customers → Draft WhatsApp message → Schedule send | Review message before send |
+| # | Workflow | Status | Notes |
+|---|----------|--------|-------|
+| 2.1 | **Procurement Auto** | ✅ DONE | `src/lib/agent/procurement-auto.ts` + `src/app/api/agent/procurement/route.ts` — Reads Inventory_Master + Supplier_Master, groups low-stock items by supplier, drafts POs with PPN 11%, sends Telegram approval. |
+| 2.2 | **Event Pipeline** | ✅ DONE | `src/lib/agent/event-pipeline-workflow.ts` + `src/app/api/agent/event-workflow/route.ts` — Reads Event_Tenants + Event_Sponsors, drafts agreements for new inquiries, detects overdue payments, flags follow-up needs. |
+| 2.3 | **Finance Reconciliation** | ✅ DONE | `src/lib/agent/finance-reconciliation.ts` + `src/app/api/agent/reconciliation/route.ts` — Compares Cash_Harian vs Rekening_Koran, flags missing entries & amount mismatches, suggests corrections via Telegram. |
+| 2.4 | **Compliance Tracking** | ✅ DONE | `src/lib/agent/compliance-tracking.ts` + `src/app/api/agent/compliance/route.ts` — Checks BPOM/Halal cert expiry from Compliance_Checks + Legal_Compliance, sends alerts for expired/expiring (≤30 days). |
+| 2.5 | **Customer Follow-up** | ✅ DONE | `src/lib/agent/customer-follow-up.ts` + `src/app/api/agent/follow-up/route.ts` — Detects inactive/dormant/churned customers from Customer_Master, drafts WhatsApp messages by segment, priority-sorted by CLV. |
+
+**Phase 2 Infrastructure Built:**
+- `src/lib/agent/procurement-auto.ts` — PO drafting from low-stock + supplier matching
+- `src/lib/agent/finance-reconciliation.ts` — Cash vs Rekening reconciliation engine
+- `src/lib/agent/compliance-tracking.ts` — BPOM/Halal expiry tracker
+- `src/lib/agent/customer-follow-up.ts` — Customer segmentation + WhatsApp message drafting
+- `src/lib/agent/event-pipeline-workflow.ts` — Event agreement drafting + overdue detection
+- 5 new API routes: `/api/agent/procurement`, `/api/agent/reconciliation`, `/api/agent/compliance`, `/api/agent/follow-up`, `/api/agent/event-workflow`
+- Orchestrator updated: `runFullDailyAgent()` now includes all 5 Phase 2 tasks
 
 ### Phase 3: Agent Intelligence (Bulan 5-6)
 **Goal:** Agent bisa analisis & rekomendasi

@@ -1,5 +1,6 @@
-// Agent Orchestrator — Phase 1 Core
-// Coordinates all agent tasks: health checks, audit logging, alerts, approvals
+// Agent Orchestrator — Phase 1 + Phase 2 Core
+// Coordinates all agent tasks: health checks, audit logging, alerts, approvals,
+// procurement, reconciliation, compliance, customer follow-up, event workflow
 
 import { logAgentActionSafe } from "./audit";
 import { sendTelegramMessage, sendHealthReport, sendTelegramAlert, sendTelegramApproval, isTelegramConfigured } from "./telegram";
@@ -8,6 +9,13 @@ import { detectTransactions, formatTransactionForTelegram } from "./transaction-
 import { readRange, appendRows } from "@/lib/sheets/sheets-real";
 import { runTaxReminderCheck } from "./tax-reminder";
 import { runEventPipelineAnalysis, formatEventPipelineForTelegram } from "./event-pipeline";
+
+// ── Phase 2 imports ────────────────────────────────────────────────
+import { draftProcurementPOs, formatProcurementForTelegram } from "./procurement-auto";
+import { runReconciliation, formatReconciliationForTelegram } from "./finance-reconciliation";
+import { runComplianceCheck, formatComplianceForTelegram } from "./compliance-tracking";
+import { runCustomerFollowUp, formatFollowUpForTelegram } from "./customer-follow-up";
+import { runEventPipelineWorkflow, formatEventPipelineForTelegram as formatEventPipelineWorkflowForTelegram } from "./event-pipeline-workflow";
 
 export const APPROVAL_THRESHOLD = 10_000_000; // Rp 10 juta
 
@@ -45,7 +53,6 @@ export async function dailyTransactionDetection(): Promise<void> {
   });
 
   if (isTelegramConfigured()) {
-    // Send high-priority transactions (large amounts)
     const highValueTx = result.transactions.filter(
       (t) => t.debit > APPROVAL_THRESHOLD || t.credit > APPROVAL_THRESHOLD
     );
@@ -61,7 +68,6 @@ export async function dailyTransactionDetection(): Promise<void> {
       }
     }
 
-    // Send summary of transactions needing review
     if (result.summary.needsReview > 0) {
       const reviewTx = result.transactions.filter((t) => t.confidence === "low");
       const text = `⚠️ <b>${result.summary.needsReview} Transaksi Perlu Review</b>
@@ -135,7 +141,6 @@ export async function requestApproval(params: {
   const approvalId = `APR-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
   const timestamp = new Date().toISOString();
 
-  // Write to Agent_Approvals sheet
   await appendRows("AgentApprovals", [[
     approvalId,
     params.title,
@@ -173,7 +178,102 @@ export async function requestApproval(params: {
   return approvalId;
 }
 
-// ── Full Daily Run — executes all Phase 1 tasks ──
+// ── Phase 2: Procurement Auto (Task 2.1) ──
+export async function dailyProcurementCheck(): Promise<void> {
+  const report = await draftProcurementPOs();
+
+  await logAgentActionSafe({
+    timestamp: new Date().toISOString(),
+    agent: "HemuHemu/OWL",
+    action: "Procurement Auto Check",
+    target: "Inventory_Master + Supplier_Master",
+    status: "success",
+    humanApproved: "pending",
+    notes: `${report.totalDrafts} PO drafts, ${report.lowStockItems.length} low stock, Rp ${report.totalValue.toLocaleString("id-ID")}`,
+  });
+
+  if (isTelegramConfigured() && report.totalDrafts > 0) {
+    await sendTelegramMessage(formatProcurementForTelegram(report));
+  }
+}
+
+// ── Phase 2: Finance Reconciliation (Task 2.3) ──
+export async function dailyReconciliation(): Promise<void> {
+  const report = await runReconciliation();
+
+  await logAgentActionSafe({
+    timestamp: new Date().toISOString(),
+    agent: "HemuHemu/OWL",
+    action: "Finance Reconciliation",
+    target: "Cash_Harian + Rekening_Koran",
+    status: "success",
+    humanApproved: "n/a",
+    notes: `${report.discrepancies.length} discrepancies, net Rp ${report.netDifference.toLocaleString("id-ID")}`,
+  });
+
+  if (isTelegramConfigured() && report.discrepancies.length > 0) {
+    await sendTelegramMessage(formatReconciliationForTelegram(report));
+  }
+}
+
+// ── Phase 2: Compliance Tracking (Task 2.4) ──
+export async function dailyComplianceCheck(): Promise<void> {
+  const report = await runComplianceCheck();
+
+  await logAgentActionSafe({
+    timestamp: new Date().toISOString(),
+    agent: "HemuHemu/OWL",
+    action: "Compliance Check",
+    target: "Compliance_Checks + Legal_Compliance",
+    status: "success",
+    humanApproved: "n/a",
+    notes: `Expired: ${report.expired}, Expiring: ${report.expiringSoon}, Valid: ${report.valid}`,
+  });
+
+  if (isTelegramConfigured() && report.totalAlerts > 0) {
+    await sendTelegramMessage(formatComplianceForTelegram(report));
+  }
+}
+
+// ── Phase 2: Customer Follow-up (Task 2.5) ──
+export async function dailyCustomerFollowUp(): Promise<void> {
+  const report = await runCustomerFollowUp();
+
+  await logAgentActionSafe({
+    timestamp: new Date().toISOString(),
+    agent: "HemuHemu/OWL",
+    action: "Customer Follow-up",
+    target: "Customer_Master + Customer_Interactions",
+    status: "success",
+    humanApproved: "pending",
+    notes: `${report.totalDrafts} drafts, ${report.churnedCount} churned, ${report.dormantCount} dormant`,
+  });
+
+  if (isTelegramConfigured() && report.totalDrafts > 0) {
+    await sendTelegramMessage(formatFollowUpForTelegram(report));
+  }
+}
+
+// ── Phase 2: Event Pipeline Workflow (Task 2.2) ──
+export async function dailyEventWorkflow(): Promise<void> {
+  const report = await runEventPipelineWorkflow();
+
+  await logAgentActionSafe({
+    timestamp: new Date().toISOString(),
+    agent: "HemuHemu/OWL",
+    action: "Event Pipeline Workflow",
+    target: "Event_Tenants + Event_Sponsors",
+    status: "success",
+    humanApproved: "pending",
+    notes: `${report.totalAgreementDrafts} drafts, ${report.totalOverdue} overdue, ${report.followUpNeeded.length} follow-up`,
+  });
+
+  if (isTelegramConfigured() && (report.totalAgreementDrafts > 0 || report.totalOverdue > 0 || report.followUpNeeded.length > 0)) {
+    await sendTelegramMessage(formatEventPipelineWorkflowForTelegram(report));
+  }
+}
+
+// ── Full Daily Run — executes all Phase 1 + Phase 2 tasks ──
 export async function runFullDailyAgent(): Promise<{
   health: boolean;
   transactions: boolean;
@@ -181,10 +281,28 @@ export async function runFullDailyAgent(): Promise<{
   invoices: boolean;
   taxReminders: boolean;
   eventPipeline: boolean;
+  procurement: boolean;
+  reconciliation: boolean;
+  compliance: boolean;
+  customerFollowUp: boolean;
+  eventWorkflow: boolean;
 }> {
-  const results = { health: false, transactions: false, stockAlerts: false, invoices: false, taxReminders: false, eventPipeline: false };
+  const results = {
+    health: false,
+    transactions: false,
+    stockAlerts: false,
+    invoices: false,
+    taxReminders: false,
+    eventPipeline: false,
+    procurement: false,
+    reconciliation: false,
+    compliance: false,
+    customerFollowUp: false,
+    eventWorkflow: false,
+  };
   const timestamp = new Date().toISOString();
 
+  // ── Phase 1 tasks ──
   try {
     await dailyHealthCheck();
     results.health = true;
@@ -266,14 +384,54 @@ export async function runFullDailyAgent(): Promise<{
     console.error("[Agent] Event pipeline update failed:", error);
   }
 
+  // ── Phase 2 tasks ──
+  try {
+    await dailyProcurementCheck();
+    results.procurement = true;
+  } catch (error) {
+    console.error("[Agent] Procurement check failed:", error);
+  }
+
+  try {
+    await dailyReconciliation();
+    results.reconciliation = true;
+  } catch (error) {
+    console.error("[Agent] Reconciliation failed:", error);
+  }
+
+  try {
+    await dailyComplianceCheck();
+    results.compliance = true;
+  } catch (error) {
+    console.error("[Agent] Compliance check failed:", error);
+  }
+
+  try {
+    await dailyCustomerFollowUp();
+    results.customerFollowUp = true;
+  } catch (error) {
+    console.error("[Agent] Customer follow-up failed:", error);
+  }
+
+  try {
+    await dailyEventWorkflow();
+    results.eventWorkflow = true;
+  } catch (error) {
+    console.error("[Agent] Event workflow failed:", error);
+  }
+
+  // ── Summary ──
+  const phase1Complete = results.health && results.transactions && results.stockAlerts && results.invoices && results.taxReminders && results.eventPipeline;
+  const phase2Complete = results.procurement && results.reconciliation && results.compliance && results.customerFollowUp && results.eventWorkflow;
+
   await logAgentActionSafe({
     timestamp,
     agent: "HemuHemu/OWL",
     action: "Full Daily Agent Run",
     target: "All SWI Systems",
-    status: results.health && results.transactions && results.stockAlerts && results.invoices && results.taxReminders ? "success" : "failed",
+    status: phase1Complete && phase2Complete ? "success" : "failed",
     humanApproved: "n/a",
-    notes: `Health: ${results.health}, Transactions: ${results.transactions}, Stock: ${results.stockAlerts}, Invoices: ${results.invoices}, TaxReminders: ${results.taxReminders}, EventPipeline: ${results.eventPipeline}`,
+    notes: `Phase1: H=${results.health} T=${results.transactions} S=${results.stockAlerts} I=${results.invoices} Tax=${results.taxReminders} E=${results.eventPipeline} | Phase2: P=${results.procurement} R=${results.reconciliation} C=${results.compliance} CF=${results.customerFollowUp} EW=${results.eventWorkflow}`,
   });
 
   return results;
