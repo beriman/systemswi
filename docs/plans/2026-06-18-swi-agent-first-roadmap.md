@@ -177,16 +177,23 @@ SWI saat ini punya **systemswi** — ERP dashboard yang sudah 31 modul. Tapi ini
 - Orchestrator updated: `runFullDailyAgent()` now includes all 5 Phase 3 tasks
 - Audit status type extended: added `"partial"` status for partial completion
 
-### Phase 4: Agent Ecosystem (Bulan 7-12) — 🔵 NEXT (Blocked: External API Credentials)
+### Phase 4: Agent Ecosystem (Bulan 7-12) — 🟡 SCAFFOLD READY
 **Goal:** Agent bisa berinteraksi dengan sistem eksternal
 
-| # | Integration | Compliance Note |
-|---|-------------|-----------------|
-| 4.1 | **e-Faktur DJP** | Agent generate faktur → Upload ke DJP via API (perlu izin DJP) |
-| 4.2 | **OSS/BPOM** | Agent track status → Reminder 30 hari sebelum expiry |
-| 4.3 | **Bank BRI API** | Auto-sync mutasi (perlu API key dari BRI) |
-| 4.4 | **WhatsApp Business API** | Auto-reply FAQ, broadcast promo (perlu Meta Business verification) |
-| 4.5 | **Sukuk Payment** | Auto-calculate profit distribution → Generate payment schedule |
+| # | Integration | Status | Compliance Note |
+|---|-------------|--------|-----------------|
+| 4.1 | **e-Faktur DJP** | 🟡 Scaffold | Agent generate faktur → Upload ke DJP via API (perlu izin DJP) |
+| 4.2 | **OSS/BPOM** | 🟡 Scaffold | Agent track status → Reminder 30 hari sebelum expiry |
+| 4.3 | **Bank BRI API** | 🟡 Scaffold | Auto-sync mutasi (perlu API key dari BRI) |
+| 4.4 | **WhatsApp Business API** | 🟡 Scaffold | Auto-reply FAQ, broadcast promo (perlu Meta Business verification) |
+| 4.5 | **Sukuk Payment** | 🟡 Scaffold | Auto-calculate profit distribution → Generate payment schedule |
+
+**Phase 4 Infrastructure Built (Scaffold):**
+- `src/lib/agent/phase4-scaffold.ts` — 5 integration stubs with typed interfaces, isConfigured() checks, TODO guides, orchestrator
+- `src/app/api/agent/phase4/route.ts` — GET + POST API route to trigger Phase 4 checks
+- `src/lib/agent/index.ts` — exports added
+- Each module logs "not configured" status until env vars are set
+- Telegram status report lists which integrations are active vs blocked
 
 ---
 
@@ -274,19 +281,22 @@ Timestamp | Agent | Action | Target | Status | Human Approved | Notes
 
 ✅ **Semua Phase 1-3 sudah COMPLETE!** Tidak ada task yang tersisa di fase-fase ini.
 
-### Phase 4 — Blocked on External Credentials
-Phase 4 membutuhkan akses ke sistem eksternal. Yang diperlukan:
-- **4.1 e-Faktur DJP:** Perlu izin API dari DJP + credentials e-Faktur
-- **4.2 OSS/BPOM:** Perlu API key dari OSS/BPOM portal
-- **4.3 Bank BRI API:** Perlu API key dari BRI (sudah punya rekening, perlu apply API access)
-- **4.4 WhatsApp Business API:** Perlu Meta Business verification + API token
-- **4.5 Sukuk Payment:** Perlu detail akad sukuk + payment schedule template
+### Phase 4 — Scaffold Ready, Blocked on External Credentials
+Phase 4 scaffolding is complete. The code structure is ready — each module will activate automatically when the corresponding env vars are set.
 
-**Action items untuk manusia:**
+**Yang sudah siap (scaffold):**
+- ✅ `src/lib/agent/phase4-scaffold.ts` — 5 integration modules with typed interfaces
+- ✅ `src/app/api/agent/phase4/route.ts` — API trigger endpoint
+- ✅ `src/lib/agent/index.ts` — exports
+
+**Yang perlu dilakukan manusia untuk mengaktifkan:**
 1. Apply BRI API access untuk auto-sync mutasi
 2. Meta Business verification untuk WhatsApp API
 3. DJP e-Faktur API registration
 4. OSS/BPOM API credentials
+5. Sukuk contract/API details
+
+**Cara aktifkan:** Set env vars yang sesuai di Vercel → Settings → Environment Variables. Agent akan otomatis detect dan jalankan integrasi.
 
 ### Setup Required (Environment Variables)
 To activate Telegram integration, set these env vars:
@@ -299,6 +309,6 @@ Then set webhook: `GET /api/agent/telegram-webhook?url=https://systemswi.vercel.
 ---
 
 *Document created: 2026-06-18 by OWL/HemuHemu*
-*Last updated: 2026-06-19 by OWL/HemuHemu — Phase 1-3 ✅ COMPLETE, Phase 4 🔵 NEXT (blocked on external credentials)*
+*Last updated: 2026-06-19 by OWL/HemuHemu — Phase 1-3 ✅ COMPLETE, Phase 4 🟡 SCAFFOLD READY (5 integration stubs, needs external credentials to activate)*
 *Review cycle: Quarterly ( setiap 3 bulan)*
 *Next review: September 2026*
