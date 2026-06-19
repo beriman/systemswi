@@ -42,6 +42,7 @@ const NAV_ITEMS: NavItem[] = [
     { label: "Reports", href: "/reports", icon: "📈", feature: "dashboard" },
     { label: "Sukuk Mikro", href: "/sukuk", icon: "🪙", feature: "dashboard" },
     { label: "AI Chat", href: "/ai-chat", icon: "🤖", feature: "ai-features" },
+    { label: "Agent Dashboard", href: "/agent-dashboard", icon: "🦉", feature: "ai-features" },
     { label: "Users", href: "/users", icon: "👥", feature: "user-management" },
     { label: "Settings", href: "/settings", icon: "⚙️", feature: "settings" },
 ];
