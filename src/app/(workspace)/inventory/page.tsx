@@ -1,6 +1,20 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { X, Pencil, Trash2, Plus, ArrowDownCircle, ArrowUpCircle, RefreshCw, AlertTriangle, Package, DollarSign, Warehouse } from "lucide-react";
+
+/* ── Types ── */
 
 type InventoryItem = {
   id: string;
@@ -51,63 +65,77 @@ type InventoryResponse = {
       totalValue: number;
       alertCount: number;
       reorderPlan: Array<{
-        id: string;
-        sku: string;
-        name: string;
-        vendor: string;
-        location: string;
-        qty: number;
-        unit: string;
-        minimumQty: number;
-        reorderQty: number;
-        status: InventoryItem["status"];
-        notes: string;
+        id: string; sku: string; name: string; vendor: string; location: string;
+        qty: number; unit: string; minimumQty: number; reorderQty: number;
+        status: string; notes: string;
       }>;
     };
   };
 };
 
+/* ── Helpers ── */
+
 const rupiah = (value: number) =>
   new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(value || 0);
 
+const fmtNum = (value: number) =>
+  new Intl.NumberFormat("id-ID").format(value || 0);
+
 const statusClass: Record<string, string> = {
-  ok: "bg-emerald-500/15 text-emerald-300",
-  low: "bg-amber-500/15 text-amber-300",
-  critical: "bg-orange-500/15 text-orange-300",
-  empty: "bg-red-500/15 text-red-300",
+  ok: "bg-green-100 text-green-700",
+  low: "bg-yellow-100 text-yellow-700",
+  critical: "bg-orange-100 text-orange-700",
+  empty: "bg-red-100 text-red-700",
 };
+
+function stockStatusBadge(status: string) {
+  return <Badge className={statusClass[status] || "bg-gray-100 text-gray-700"}>{status}</Badge>;
+}
 
 function isMerchandiseItem(item: InventoryItem) {
   const haystack = `${item.category} ${item.sku} ${item.name} ${item.location} ${item.notes}`.toLowerCase();
   return haystack.includes("merch") || haystack.includes("tim") || haystack.includes("apparel") || haystack.includes("retail");
 }
 
-function MetricCard({ label, value, hint }: { label: string; value: string; hint: string }) {
-  return (
-    <div className="rounded-3xl bg-white/[0.04] p-5 shadow-sm ring-1 ring-white/10">
-      <p className="text-sm text-[#6b9e8f]">{label}</p>
-      <p className="mt-2 text-2xl font-semibold text-white">{value}</p>
-      <p className="mt-1 text-xs text-white/45">{hint}</p>
-    </div>
-  );
+function today() {
+  return new Date().toISOString().slice(0, 10);
 }
+
+const CATEGORIES = ["raw_material", "packaging", "finished_good", "merchandise", "retail_merch", "other"];
+const CATEGORY_LABELS: Record<string, string> = {
+  raw_material: "Bahan Baku",
+  packaging: "Packaging",
+  finished_good: "Barang Jadi",
+  merchandise: "Merchandise",
+  retail_merch: "Retail Merch",
+  other: "Lainnya",
+};
+
+/* ── Main Component ── */
 
 export default function InventoryPage() {
   const [data, setData] = useState<InventoryResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
-  const [selectedId, setSelectedId] = useState("");
   const [viewMode, setViewMode] = useState<"all" | "merchandise">("all");
+  const [activeTab, setActiveTab] = useState("master");
+  const [editItem, setEditItem] = useState<InventoryItem | null>(null);
+  const [showAddItem, setShowAddItem] = useState(false);
+  const [deleting, setDeleting] = useState<string | null>(null);
 
   async function loadInventory() {
     setLoading(true);
-    const res = await fetch("/api/inventory", { cache: "no-store" });
-    const json = await res.json();
-    if (!res.ok) throw new Error(json.error || "Gagal load inventory");
-    setData(json);
-    if (!selectedId && json.items?.[0]?.id) setSelectedId(json.items[0].id);
-    setLoading(false);
+    try {
+      const res = await fetch("/api/inventory", { cache: "no-store" });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Gagal load inventory");
+      setData(json);
+    } catch (error) {
+      setMessage(String(error));
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {
@@ -115,13 +143,7 @@ export default function InventoryPage() {
       setMessage(String(error));
       setLoading(false);
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const selectedItem = useMemo(
-    () => data?.items.find((item) => item.id === selectedId) || data?.items[0],
-    [data?.items, selectedId]
-  );
 
   const visibleItems = useMemo(() => {
     const items = data?.items || [];
@@ -160,189 +182,545 @@ export default function InventoryPage() {
     }
   }
 
+  async function saveItem(e: FormEvent<HTMLFormElement>, isEdit: boolean) {
+    e.preventDefault();
+    setSaving(true);
+    setMessage("");
+    const form = new FormData(e.currentTarget);
+    const payload: Record<string, string | number> = {
+      name: String(form.get("name") || ""),
+      sku: String(form.get("sku") || ""),
+      category: String(form.get("category") || "raw_material"),
+      unit: String(form.get("unit") || "pcs"),
+      qty: Number(form.get("qty") || 0),
+      minimumQty: Number(form.get("minimumQty") || 0),
+      reorderQty: Number(form.get("reorderQty") || 0),
+      unitCost: Number(form.get("unitCost") || 0),
+      supplier: String(form.get("supplier") || ""),
+      location: String(form.get("location") || ""),
+      notes: String(form.get("notes") || ""),
+    };
+    if (isEdit && editItem) {
+      payload.id = editItem.id;
+    }
+    try {
+      const res = await fetch("/api/inventory/items", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Gagal simpan item");
+      setMessage(`✅ ${isEdit ? "Item diupdate" : "Item baru ditambahkan"}: ${json.item?.name || payload.name}`);
+      setEditItem(null);
+      setShowAddItem(false);
+      await loadInventory();
+    } catch (error) {
+      setMessage(`❌ ${String(error)}`);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDeleteItem(id: string) {
+    if (!confirm("Hapus item ini dari Inventory_Master?")) return;
+    setDeleting(id);
+    setMessage("");
+    try {
+      const res = await fetch("/api/inventory/items", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Gagal hapus item");
+      setMessage(`✅ Item dihapus`);
+      await loadInventory();
+    } catch (error) {
+      setMessage(`❌ ${String(error)}`);
+    } finally {
+      setDeleting(null);
+    }
+  }
+
+  const summary = data?.summary;
+  const alerts = data?.summary.alerts || [];
+
   return (
-    <main className="min-h-screen bg-[#080c0a] p-6 text-white">
-      <div className="mx-auto max-w-7xl space-y-6">
-        <header className="rounded-[2rem] bg-gradient-to-br from-[#0D9488]/25 via-white/[0.04] to-[#F97316]/15 p-8 shadow-xl ring-1 ring-white/10">
-          <p className="text-sm uppercase tracking-[0.35em] text-[#6b9e8f]">Operations Command Center</p>
-          <div className="mt-3 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-            <div>
-              <h1 className="text-4xl font-bold">Inventory Bahan Baku, Packaging & Merch TIM</h1>
-              <p className="mt-3 max-w-3xl text-white/65">
-                Source of truth Google Sheets: master stok, movement masuk/keluar/adjustment, nilai inventory,
-                minimum stock alert, serta tracking SKU retail/merchandise TIM dengan vendor dan reorder khusus.
-              </p>
-            </div>
-            <button
-              onClick={() => loadInventory()}
-              className="rounded-full bg-[#0D9488] px-5 py-3 text-sm font-semibold text-white hover:bg-[#0f766e]"
-            >
-              Refresh Sheets
-            </button>
-          </div>
-        </header>
-
-        {message && <div className="rounded-2xl bg-white/[0.06] p-4 text-sm text-white/80 ring-1 ring-white/10">{message}</div>}
-        {data?.sourceStatus === "degraded" && (
-          <div className="rounded-2xl bg-amber-500/10 p-4 text-sm text-amber-100 ring-1 ring-amber-400/30">
-            ⚠️ Google Workspace perlu re-auth. Inventory tampil read-only/fallback kosong; movement stock diblokir sampai OAuth aktif kembali. {data.warning}
-          </div>
-        )}
-
-        <section className="grid gap-4 md:grid-cols-4">
-          <MetricCard label="Total SKU" value={String(data?.summary.totalItems || 0)} hint="bahan, packaging, barang jadi, merch" />
-          <MetricCard label="Nilai Inventory" value={rupiah(data?.summary.totalValue || 0)} hint="qty × unit cost" />
-          <MetricCard label="SKU Merch TIM" value={String(data?.summary.merchandise?.totalItems || 0)} hint={`${rupiah(data?.summary.merchandise?.totalValue || 0)} nilai retail`} />
-          <MetricCard label="Merch Reorder" value={String(data?.summary.merchandise?.alertCount || 0)} hint="SKU merch low/critical" />
-        </section>
-
-        <section className="rounded-3xl bg-white/[0.04] p-5 ring-1 ring-white/10">
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <div>
-              <h2 className="text-xl font-semibold">Inventory Mode</h2>
-              <p className="text-sm text-white/45">Filter cepat untuk operasional produksi atau SKU retail Merchandise TIM.</p>
-            </div>
-            <div className="flex rounded-full bg-black/30 p-1 ring-1 ring-white/10">
-              <button onClick={() => setViewMode("all")} className={`rounded-full px-4 py-2 text-sm ${viewMode === "all" ? "bg-[#0D9488] text-white" : "text-white/60"}`}>Semua SKU</button>
-              <button onClick={() => setViewMode("merchandise")} className={`rounded-full px-4 py-2 text-sm ${viewMode === "merchandise" ? "bg-[#F97316] text-white" : "text-white/60"}`}>Merch TIM</button>
-            </div>
-          </div>
-          <div className="mt-4 grid gap-3 md:grid-cols-3">
-            {(data?.summary.merchandise?.reorderPlan || []).slice(0, 3).map((item) => (
-              <div key={item.id} className="rounded-2xl bg-black/20 p-4 ring-1 ring-white/10">
-                <div className="flex justify-between gap-3">
-                  <p className="font-medium text-white">{item.name}</p>
-                  <span className={`rounded-full px-2 py-1 text-xs ${statusClass[item.status]}`}>{item.status}</span>
-                </div>
-                <p className="mt-1 text-xs text-white/45">{item.sku || item.id} • Vendor {item.vendor} • Lokasi {item.location}</p>
-                <p className="mt-2 text-sm text-white/60">Stok {item.qty} {item.unit}; min {item.minimumQty}; reorder {item.reorderQty}.</p>
-              </div>
-            ))}
-            {!data?.summary.merchandise?.reorderPlan?.length && (
-              <div className="rounded-2xl bg-black/20 p-4 text-sm text-white/45 ring-1 ring-white/10 md:col-span-3">
-                Belum ada alert merch TIM. Jika SKU retail belum muncul, isi/validasi Inventory_Master dengan kategori merchandise/retail_merch atau catatan merch/TIM.
-              </div>
-            )}
-          </div>
-        </section>
-
-        <section className="grid gap-6 lg:grid-cols-[1fr_420px]">
-          <div className="rounded-3xl bg-white/[0.04] p-5 ring-1 ring-white/10">
-            <div className="mb-4 flex items-center justify-between">
+    <div className="space-y-6">
+      {/* Edit Item Modal */}
+      {editItem && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <Card className="w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <CardHeader className="flex flex-row items-center justify-between">
               <div>
-                <h2 className="text-xl font-semibold">{viewMode === "merchandise" ? "Master Stok Merch TIM" : "Master Stok"}</h2>
-                <p className="text-sm text-white/45">{data?.source || "Google Sheets"} • {visibleItems.length} SKU tampil</p>
+                <CardTitle>Edit Item</CardTitle>
+                <CardDescription>{editItem.sku} — {editItem.name}</CardDescription>
               </div>
-              {loading && <span className="text-sm text-white/50">Loading…</span>}
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[900px] text-left text-sm">
-                <thead className="text-xs uppercase text-white/40">
-                  <tr>
-                    <th className="py-3 pr-4">Item</th>
-                    <th className="py-3 pr-4">Kategori</th>
-                    <th className="py-3 pr-4">Qty</th>
-                    <th className="py-3 pr-4">Minimum</th>
-                    <th className="py-3 pr-4">Status</th>
-                    <th className="py-3 pr-4">Supplier</th>
-                    <th className="py-3 pr-4">Lokasi</th>
-                    <th className="py-3 pr-4">Nilai</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-white/10">
-                  {visibleItems.map((item) => (
-                    <tr key={item.id} className="text-white/75">
-                      <td className="py-3 pr-4">
-                        <button onClick={() => setSelectedId(item.id)} className="text-left hover:text-[#5eead4]">
-                          <div className="font-medium text-white">{item.name}</div>
-                          <div className="text-xs text-white/40">{item.sku || item.id}</div>
-                        </button>
-                      </td>
-                      <td className="py-3 pr-4">{item.category}</td>
-                      <td className="py-3 pr-4">{item.qty} {item.unit}</td>
-                      <td className="py-3 pr-4">{item.minimumQty} {item.unit}</td>
-                      <td className="py-3 pr-4"><span className={`rounded-full px-3 py-1 text-xs ${statusClass[item.status]}`}>{item.status}</span></td>
-                      <td className="py-3 pr-4">{item.supplier}</td>
-                      <td className="py-3 pr-4">{item.location}</td>
-                      <td className="py-3 pr-4">{rupiah(item.qty * item.unitCost)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
+              <Button variant="ghost" size="sm" onClick={() => setEditItem(null)}>
+                <X className="h-4 w-4" />
+              </Button>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={(e) => saveItem(e, true)} className="space-y-4">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <Label className="mb-1 block text-xs text-muted-foreground">SKU</Label>
+                    <input name="sku" defaultValue={editItem.sku} required className="h-9 w-full rounded-md border bg-background px-3 text-sm" />
+                  </div>
+                  <div>
+                    <Label className="mb-1 block text-xs text-muted-foreground">Nama Item</Label>
+                    <input name="name" defaultValue={editItem.name} required className="h-9 w-full rounded-md border bg-background px-3 text-sm" />
+                  </div>
+                </div>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <Label className="mb-1 block text-xs text-muted-foreground">Kategori</Label>
+                    <select name="category" defaultValue={editItem.category} className="h-9 w-full rounded-md border bg-background px-3 text-sm">
+                      {CATEGORIES.map((c) => <option key={c} value={c}>{CATEGORY_LABELS[c] || c}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <Label className="mb-1 block text-xs text-muted-foreground">Unit</Label>
+                    <input name="unit" defaultValue={editItem.unit} className="h-9 w-full rounded-md border bg-background px-3 text-sm" />
+                  </div>
+                </div>
+                <div className="grid gap-4 md:grid-cols-3">
+                  <div>
+                    <Label className="mb-1 block text-xs text-muted-foreground">Qty</Label>
+                    <input name="qty" type="number" defaultValue={editItem.qty} min={0} step="0.01" className="h-9 w-full rounded-md border bg-background px-3 text-sm" />
+                  </div>
+                  <div>
+                    <Label className="mb-1 block text-xs text-muted-foreground">Minimum</Label>
+                    <input name="minimumQty" type="number" defaultValue={editItem.minimumQty} min={0} className="h-9 w-full rounded-md border bg-background px-3 text-sm" />
+                  </div>
+                  <div>
+                    <Label className="mb-1 block text-xs text-muted-foreground">Reorder Qty</Label>
+                    <input name="reorderQty" type="number" defaultValue={editItem.reorderQty} min={0} className="h-9 w-full rounded-md border bg-background px-3 text-sm" />
+                  </div>
+                </div>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <Label className="mb-1 block text-xs text-muted-foreground">Unit Cost (Rp)</Label>
+                    <input name="unitCost" type="number" defaultValue={editItem.unitCost} min={0} className="h-9 w-full rounded-md border bg-background px-3 text-sm" />
+                  </div>
+                  <div>
+                    <Label className="mb-1 block text-xs text-muted-foreground">Supplier</Label>
+                    <input name="supplier" defaultValue={editItem.supplier} className="h-9 w-full rounded-md border bg-background px-3 text-sm" />
+                  </div>
+                </div>
+                <div>
+                  <Label className="mb-1 block text-xs text-muted-foreground">Lokasi</Label>
+                  <input name="location" defaultValue={editItem.location} className="h-9 w-full rounded-md border bg-background px-3 text-sm" />
+                </div>
+                <div>
+                  <Label className="mb-1 block text-xs text-muted-foreground">Catatan</Label>
+                  <textarea name="notes" rows={2} defaultValue={editItem.notes} className="w-full rounded-md border bg-background px-3 py-2 text-sm" />
+                </div>
+                <div className="flex gap-2 justify-end">
+                  <Button type="button" variant="outline" onClick={() => setEditItem(null)}>Batal</Button>
+                  <Button type="submit" disabled={saving}>{saving ? "Menyimpan..." : "💾 Simpan"}</Button>
+                </div>
+              </form>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
-          <aside className="space-y-6">
-            <form onSubmit={submitMovement} className="rounded-3xl bg-white/[0.04] p-5 ring-1 ring-white/10">
-              <h2 className="text-xl font-semibold">Input Movement</h2>
-              <p className="mt-1 text-sm text-white/45">Masuk, keluar produksi, atau adjustment stock.</p>
-              <div className="mt-5 space-y-4">
-                <label className="block text-sm text-white/60">Item
-                  <select name="itemId" value={selectedItem?.id || ""} onChange={(e) => setSelectedId(e.target.value)} className="mt-1 w-full rounded-2xl bg-black/30 p-3 text-white ring-1 ring-white/10">
-                    {data?.items.map((item) => <option key={item.id} value={item.id}>{item.name} — {item.qty} {item.unit}</option>)}
-                  </select>
-                </label>
-                <div className="grid grid-cols-2 gap-3">
-                  <label className="block text-sm text-white/60">Tipe
-                    <select name="type" className="mt-1 w-full rounded-2xl bg-black/30 p-3 text-white ring-1 ring-white/10">
-                      <option value="in">Masuk</option>
-                      <option value="out">Keluar</option>
+      {/* Add Item Modal */}
+      {showAddItem && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <Card className="w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle>Tambah Item Baru</CardTitle>
+                <CardDescription>Tambah item ke Inventory Master</CardDescription>
+              </div>
+              <Button variant="ghost" size="sm" onClick={() => setShowAddItem(false)}>
+                <X className="h-4 w-4" />
+              </Button>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={(e) => saveItem(e, false)} className="space-y-4">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <Label className="mb-1 block text-xs text-muted-foreground">SKU *</Label>
+                    <input name="sku" required placeholder="RM-ALC-96" className="h-9 w-full rounded-md border bg-background px-3 text-sm" />
+                  </div>
+                  <div>
+                    <Label className="mb-1 block text-xs text-muted-foreground">Nama Item *</Label>
+                    <input name="name" required placeholder="Alcohol 96%" className="h-9 w-full rounded-md border bg-background px-3 text-sm" />
+                  </div>
+                </div>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <Label className="mb-1 block text-xs text-muted-foreground">Kategori</Label>
+                    <select name="category" defaultValue="raw_material" className="h-9 w-full rounded-md border bg-background px-3 text-sm">
+                      {CATEGORIES.map((c) => <option key={c} value={c}>{CATEGORY_LABELS[c] || c}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <Label className="mb-1 block text-xs text-muted-foreground">Unit</Label>
+                    <input name="unit" defaultValue="pcs" className="h-9 w-full rounded-md border bg-background px-3 text-sm" />
+                  </div>
+                </div>
+                <div className="grid gap-4 md:grid-cols-3">
+                  <div>
+                    <Label className="mb-1 block text-xs text-muted-foreground">Qty Awal</Label>
+                    <input name="qty" type="number" defaultValue={0} min={0} step="0.01" className="h-9 w-full rounded-md border bg-background px-3 text-sm" />
+                  </div>
+                  <div>
+                    <Label className="mb-1 block text-xs text-muted-foreground">Minimum</Label>
+                    <input name="minimumQty" type="number" defaultValue={0} min={0} className="h-9 w-full rounded-md border bg-background px-3 text-sm" />
+                  </div>
+                  <div>
+                    <Label className="mb-1 block text-xs text-muted-foreground">Reorder Qty</Label>
+                    <input name="reorderQty" type="number" defaultValue={0} min={0} className="h-9 w-full rounded-md border bg-background px-3 text-sm" />
+                  </div>
+                </div>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <Label className="mb-1 block text-xs text-muted-foreground">Unit Cost (Rp)</Label>
+                    <input name="unitCost" type="number" defaultValue={0} min={0} className="h-9 w-full rounded-md border bg-background px-3 text-sm" />
+                  </div>
+                  <div>
+                    <Label className="mb-1 block text-xs text-muted-foreground">Supplier</Label>
+                    <input name="supplier" placeholder="TBA" className="h-9 w-full rounded-md border bg-background px-3 text-sm" />
+                  </div>
+                </div>
+                <div>
+                  <Label className="mb-1 block text-xs text-muted-foreground">Lokasi</Label>
+                  <input name="location" placeholder="Gudang Produksi" className="h-9 w-full rounded-md border bg-background px-3 text-sm" />
+                </div>
+                <div>
+                  <Label className="mb-1 block text-xs text-muted-foreground">Catatan</Label>
+                  <textarea name="notes" rows={2} className="w-full rounded-md border bg-background px-3 py-2 text-sm" />
+                </div>
+                <div className="flex gap-2 justify-end">
+                  <Button type="button" variant="outline" onClick={() => setShowAddItem(false)}>Batal</Button>
+                  <Button type="submit" disabled={saving}>{saving ? "Menyimpan..." : "💾 Tambah Item"}</Button>
+                </div>
+              </form>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Header */}
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div>
+          <h2 className="text-2xl font-bold flex items-center gap-2">
+            <Warehouse className="h-6 w-6" />
+            Inventory & Stok
+          </h2>
+          <p className="text-muted-foreground">
+            Master stok bahan baku, packaging, barang jadi & merchandise — real-time dari Google Sheets.
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <Button onClick={() => setShowAddItem(true)} size="sm">
+            <Plus className="h-4 w-4 mr-1" /> Tambah Item
+          </Button>
+          <Button onClick={loadInventory} disabled={loading} variant="outline" size="sm">
+            <RefreshCw className={`h-4 w-4 mr-1 ${loading ? "animate-spin" : ""}`} /> Refresh
+          </Button>
+        </div>
+      </div>
+
+      {message && (
+        <Card className={message.startsWith("✅") ? "border-green-200 bg-green-50" : "border-red-200 bg-red-50"}>
+          <CardContent className="py-3 text-sm">{message}</CardContent>
+        </Card>
+      )}
+
+      {data?.sourceStatus === "degraded" && (
+        <Card className="border-yellow-200 bg-yellow-50">
+          <CardContent className="py-3 text-sm text-yellow-800">
+            ⚠️ Google OAuth perlu re-auth. Data inventory mungkin tidak lengkap.
+          </CardContent>
+        </Card>
+      )}
+
+      {/* KPI Cards */}
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardDescription className="flex items-center gap-1"><Package className="h-3 w-3" /> Total SKU</CardDescription>
+            <CardTitle className="text-2xl">{loading ? "..." : fmtNum(summary?.totalItems || 0)}</CardTitle>
+          </CardHeader>
+          <CardContent><p className="text-xs text-muted-foreground">bahan, packaging, barang jadi, merch</p></CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardDescription className="flex items-center gap-1"><DollarSign className="h-3 w-3" /> Nilai Inventory</CardDescription>
+            <CardTitle className="text-2xl">{loading ? "..." : rupiah(summary?.totalValue || 0)}</CardTitle>
+          </CardHeader>
+          <CardContent><p className="text-xs text-muted-foreground">qty × unit cost</p></CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardDescription className="flex items-center gap-1"><AlertTriangle className="h-3 w-3" /> Alert Stok</CardDescription>
+            <CardTitle className="text-2xl">{(summary?.lowStockCount || 0) + (summary?.criticalCount || 0)}</CardTitle>
+          </CardHeader>
+          <CardContent><p className="text-xs text-muted-foreground">{summary?.lowStockCount || 0} low, {summary?.criticalCount || 0} critical/empty</p></CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardDescription>Merch TIM</CardDescription>
+            <CardTitle className="text-2xl">{loading ? "..." : fmtNum(summary?.merchandise?.totalItems || 0)}</CardTitle>
+          </CardHeader>
+          <CardContent><p className="text-xs text-muted-foreground">{rupiah(summary?.merchandise?.totalValue || 0)} nilai retail</p></CardContent>
+        </Card>
+      </div>
+
+      {/* Filter */}
+      <div className="flex gap-2">
+        <Button
+          variant={viewMode === "all" ? "default" : "outline"}
+          size="sm"
+          onClick={() => setViewMode("all")}
+        >
+          Semua SKU
+        </Button>
+        <Button
+          variant={viewMode === "merchandise" ? "default" : "outline"}
+          size="sm"
+          onClick={() => setViewMode("merchandise")}
+        >
+          Merch TIM
+        </Button>
+      </div>
+
+      {/* Tabs */}
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList>
+          <TabsTrigger value="master">Master Stok</TabsTrigger>
+          <TabsTrigger value="movement">Input Movement</TabsTrigger>
+          <TabsTrigger value="alerts">Alert Restock ({alerts.length})</TabsTrigger>
+          <TabsTrigger value="recent">Recent Movements</TabsTrigger>
+        </TabsList>
+
+        {/* Master Stok */}
+        <TabsContent value="master" className="mt-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>{viewMode === "merchandise" ? "Master Stok Merch TIM" : "Master Stok"}</CardTitle>
+              <CardDescription>{visibleItems.length} SKU — data real-time dari Google Sheets</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {loading ? (
+                <div className="space-y-3">{[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-10 w-full" />)}</div>
+              ) : visibleItems.length > 0 ? (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Item</TableHead>
+                        <TableHead>Kategori</TableHead>
+                        <TableHead className="text-right">Qty</TableHead>
+                        <TableHead className="text-right">Min</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead className="text-right">Unit Cost</TableHead>
+                        <TableHead className="text-right">Nilai</TableHead>
+                        <TableHead>Supplier</TableHead>
+                        <TableHead>Lokasi</TableHead>
+                        <TableHead className="text-center">Aksi</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {visibleItems.map((item) => (
+                        <TableRow key={item.id}>
+                          <TableCell>
+                            <div className="font-medium">{item.name}</div>
+                            <div className="text-xs text-muted-foreground">{item.sku}</div>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline" className="text-xs">{CATEGORY_LABELS[item.category] || item.category}</Badge>
+                          </TableCell>
+                          <TableCell className="text-right">{fmtNum(item.qty)} {item.unit}</TableCell>
+                          <TableCell className="text-right">{fmtNum(item.minimumQty)}</TableCell>
+                          <TableCell>{stockStatusBadge(item.status)}</TableCell>
+                          <TableCell className="text-right">{rupiah(item.unitCost)}</TableCell>
+                          <TableCell className="text-right font-medium">{rupiah(item.qty * item.unitCost)}</TableCell>
+                          <TableCell className="text-sm">{item.supplier || "TBA"}</TableCell>
+                          <TableCell className="text-sm">{item.location || "TBA"}</TableCell>
+                          <TableCell>
+                            <div className="flex items-center justify-center gap-1">
+                              <Button variant="ghost" size="sm" onClick={() => setEditItem(item)} title="Edit">
+                                <Pencil className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleDeleteItem(item.id)}
+                                disabled={deleting === item.id}
+                                className="text-red-500 hover:text-red-700"
+                                title="Hapus"
+                              >
+                                {deleting === item.id ? "..." : <Trash2 className="h-3.5 w-3.5" />}
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              ) : (
+                <EmptyState title="Belum ada item" description="Tambah item inventory untuk mulai tracking stok." />
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Input Movement */}
+        <TabsContent value="movement" className="mt-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Input Movement</CardTitle>
+              <CardDescription>Catat stok masuk, keluar, atau adjustment — langsung tersimpan ke Google Sheets.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={submitMovement} className="space-y-4">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <Label className="mb-1 block text-xs text-muted-foreground">Item *</Label>
+                    <select name="itemId" required className="h-9 w-full rounded-md border bg-background px-3 text-sm">
+                      <option value="">Pilih item</option>
+                      {(data?.items || []).map((item) => (
+                        <option key={item.id} value={item.id}>{item.name} — {item.qty} {item.unit}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <Label className="mb-1 block text-xs text-muted-foreground">Tipe Movement *</Label>
+                    <select name="type" required className="h-9 w-full rounded-md border bg-background px-3 text-sm">
+                      <option value="in">Masuk (In)</option>
+                      <option value="out">Keluar (Out)</option>
                       <option value="adjustment">Adjustment Qty Final</option>
                     </select>
-                  </label>
-                  <label className="block text-sm text-white/60">Qty
-                    <input name="quantity" required type="number" min="0.01" step="0.01" className="mt-1 w-full rounded-2xl bg-black/30 p-3 text-white ring-1 ring-white/10" />
-                  </label>
-                </div>
-                <label className="block text-sm text-white/60">Referensi PO/Batch/Invoice
-                  <input name="reference" placeholder="PO-20260610-001 / BATCH-ARC" className="mt-1 w-full rounded-2xl bg-black/30 p-3 text-white ring-1 ring-white/10" />
-                </label>
-                <label className="block text-sm text-white/60">Proof URL
-                  <input name="proofUrl" placeholder="Drive URL bukti pembelian / QC" className="mt-1 w-full rounded-2xl bg-black/30 p-3 text-white ring-1 ring-white/10" />
-                </label>
-                <label className="block text-sm text-white/60">PIC
-                  <input name="pic" defaultValue="HemuHemu/OWL" className="mt-1 w-full rounded-2xl bg-black/30 p-3 text-white ring-1 ring-white/10" />
-                </label>
-                <label className="block text-sm text-white/60">Catatan
-                  <textarea name="notes" rows={3} className="mt-1 w-full rounded-2xl bg-black/30 p-3 text-white ring-1 ring-white/10" />
-                </label>
-                <button disabled={saving} className="w-full rounded-full bg-[#F97316] px-5 py-3 font-semibold text-white hover:bg-[#ea580c] disabled:opacity-50">
-                  {saving ? "Menyimpan…" : "Simpan ke Google Sheets"}
-                </button>
-              </div>
-            </form>
-
-            <div className="rounded-3xl bg-white/[0.04] p-5 ring-1 ring-white/10">
-              <h2 className="text-xl font-semibold">Alert Restock</h2>
-              <div className="mt-4 space-y-3">
-                {data?.summary.alerts.length ? data.summary.alerts.map((item) => (
-                  <div key={item.id} className="rounded-2xl bg-black/20 p-3 ring-1 ring-white/10">
-                    <div className="flex justify-between gap-3">
-                      <p className="font-medium">{item.name}</p>
-                      <span className={`rounded-full px-2 py-1 text-xs ${statusClass[item.status]}`}>{item.status}</span>
-                    </div>
-                    <p className="mt-1 text-sm text-white/50">Stock {item.qty} {item.unit}; minimum {item.minimumQty}. Reorder disarankan {item.reorderQty} {item.unit}.</p>
                   </div>
-                )) : <p className="text-sm text-white/45">Tidak ada alert aktif.</p>}
-              </div>
-            </div>
-          </aside>
-        </section>
+                </div>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <Label className="mb-1 block text-xs text-muted-foreground">Quantity *</Label>
+                    <input name="quantity" required type="number" min="0.01" step="0.01" className="h-9 w-full rounded-md border bg-background px-3 text-sm" />
+                  </div>
+                  <div>
+                    <Label className="mb-1 block text-xs text-muted-foreground">Referensi PO/Batch/Invoice</Label>
+                    <input name="reference" placeholder="PO-20260610-001 / BATCH-ARC" className="h-9 w-full rounded-md border bg-background px-3 text-sm" />
+                  </div>
+                </div>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <Label className="mb-1 block text-xs text-muted-foreground">Proof URL</Label>
+                    <input name="proofUrl" placeholder="Drive URL bukti pembelian / QC" className="h-9 w-full rounded-md border bg-background px-3 text-sm" />
+                  </div>
+                  <div>
+                    <Label className="mb-1 block text-xs text-muted-foreground">PIC</Label>
+                    <input name="pic" defaultValue="HemuHemu/OWL" className="h-9 w-full rounded-md border bg-background px-3 text-sm" />
+                  </div>
+                </div>
+                <div>
+                  <Label className="mb-1 block text-xs text-muted-foreground">Catatan</Label>
+                  <textarea name="notes" rows={2} className="w-full rounded-md border bg-background px-3 py-2 text-sm" />
+                </div>
+                <Button type="submit" disabled={saving}>
+                  {saving ? "Menyimpan..." : "💾 Simpan Movement"}
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-        <section className="rounded-3xl bg-white/[0.04] p-5 ring-1 ring-white/10">
-          <h2 className="text-xl font-semibold">Recent Movements</h2>
-          <div className="mt-4 overflow-x-auto">
-            <table className="w-full min-w-[760px] text-left text-sm">
-              <thead className="text-xs uppercase text-white/40"><tr><th className="py-2 pr-4">Tanggal</th><th className="py-2 pr-4">SKU</th><th className="py-2 pr-4">Tipe</th><th className="py-2 pr-4">Qty</th><th className="py-2 pr-4">Ref</th><th className="py-2 pr-4">PIC</th><th className="py-2 pr-4">Proof</th></tr></thead>
-              <tbody className="divide-y divide-white/10">
-                {data?.movements.map((movement) => (
-                  <tr key={movement.id} className="text-white/70"><td className="py-2 pr-4">{movement.date}</td><td className="py-2 pr-4">{movement.sku}</td><td className="py-2 pr-4">{movement.type}</td><td className="py-2 pr-4">{movement.quantity}</td><td className="py-2 pr-4">{movement.reference || "-"}</td><td className="py-2 pr-4">{movement.pic || "-"}</td><td className="py-2 pr-4">{movement.proofUrl ? <a href={movement.proofUrl} className="text-[#5eead4]" target="_blank">open</a> : "-"}</td></tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      </div>
-    </main>
+        {/* Alerts */}
+        <TabsContent value="alerts" className="mt-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-amber-500" />
+                Alert Restock
+              </CardTitle>
+              <CardDescription>Item dengan stok di bawah minimum atau critical.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {alerts.length > 0 ? (
+                <div className="space-y-3">
+                  {alerts.map((item) => (
+                    <div key={item.id} className="flex items-center justify-between p-3 rounded-lg border bg-muted/30">
+                      <div>
+                        <div className="font-medium">{item.name}</div>
+                        <div className="text-xs text-muted-foreground">{item.sku} • {CATEGORY_LABELS[item.category] || item.category}</div>
+                      </div>
+                      <div className="text-right">
+                        {stockStatusBadge(item.status)}
+                        <div className="text-xs text-muted-foreground mt-1">
+                          Stok {item.qty} {item.unit} / min {item.minimumQty}
+                        </div>
+                        <div className="text-xs text-amber-600">Reorder disarankan: {item.reorderQty} {item.unit}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <EmptyState title="Tidak ada alert" description="Semua stok dalam batas aman." />
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Recent Movements */}
+        <TabsContent value="recent" className="mt-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Recent Movements</CardTitle>
+              <CardDescription>30 movement terakhir dari Google Sheets.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {loading ? (
+                <div className="space-y-3">{[1, 2, 3].map((i) => <Skeleton key={i} className="h-10 w-full" />)}</div>
+              ) : (data?.movements || []).length > 0 ? (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Tanggal</TableHead>
+                        <TableHead>SKU</TableHead>
+                        <TableHead>Tipe</TableHead>
+                        <TableHead className="text-right">Qty</TableHead>
+                        <TableHead>Ref</TableHead>
+                        <TableHead>PIC</TableHead>
+                        <TableHead>Proof</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {(data?.movements || []).map((m) => (
+                        <TableRow key={m.id}>
+                          <TableCell className="text-sm">{m.date || m.timestamp?.slice(0, 10)}</TableCell>
+                          <TableCell className="text-sm font-mono">{m.sku || m.itemId}</TableCell>
+                          <TableCell>
+                            <Badge variant={m.type === "in" ? "default" : m.type === "out" ? "destructive" : "secondary"} className="text-xs">
+                              {m.type === "in" ? "↓ Masuk" : m.type === "out" ? "↑ Keluar" : "↔ Adj"}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-right text-sm">{m.quantity}</TableCell>
+                          <TableCell className="text-sm">{m.reference || "-"}</TableCell>
+                          <TableCell className="text-sm">{m.pic || "-"}</TableCell>
+                          <TableCell className="text-sm">
+                            {m.proofUrl ? <a href={m.proofUrl} className="text-blue-500 hover:underline" target="_blank">open</a> : "-"}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              ) : (
+                <EmptyState title="Belum ada movement" description="Catat stok masuk/keluar untuk mulai tracking." />
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+    </div>
   );
 }
