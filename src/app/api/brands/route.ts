@@ -1,7 +1,7 @@
 // GET /api/brands — Brand production/sales/expense analytics
 // POST /api/brands — Append brand, production, sale, or expense rows
 import { NextRequest, NextResponse } from "next/server";
-import { appendRows, readRanges } from "@/lib/sheets/sheets-real";
+import { appendRows, readRanges, updateRow, deleteRow } from "@/lib/sheets/sheets-real";
 
 const BRAND_RANGES = {
   master: "Brand_Master!A1:K200",
@@ -347,7 +347,66 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, action, id });
     }
 
-    return NextResponse.json({ error: "Unknown action", available: ["add-brand", "production", "sale", "expense"] }, { status: 400 });
+    if (action === "update-batch") {
+      const id = String(body.id || "").trim();
+      if (!id) return NextResponse.json({ error: "Batch id is required" }, { status: 400 });
+      // Find the row in Brand_Production by ID
+      const prodData = await readRanges(["Brand_Production!A1:T1000"]);
+      const prodRows = prodData["Brand_Production!A1:T1000"] || [];
+      let rowIdx = -1;
+      for (let i = 1; i < prodRows.length; i++) {
+        if ((prodRows[i][0] || "") === id) { rowIdx = i; break; }
+      }
+      if (rowIdx === -1) return NextResponse.json({ error: `Batch ${id} not found` }, { status: 404 });
+      const rowNum = rowIdx + 1; // 1-indexed
+      const existing = prodRows[rowIdx];
+      const qty = body.qtyProduced !== undefined ? n(body.qtyProduced) : n(existing[8]);
+      const rawMat = body.rawMaterialCost !== undefined ? n(body.rawMaterialCost) : n(existing[10]);
+      const bottling = body.bottlingCost !== undefined ? n(body.bottlingCost) : n(existing[11]);
+      const packaging = body.packagingCost !== undefined ? n(body.packagingCost) : n(existing[12]);
+      const other = body.otherCost !== undefined ? n(body.otherCost) : n(existing[13]);
+      const totalCost = body.totalProductionCost !== undefined
+        ? n(body.totalProductionCost)
+        : (rawMat + bottling + packaging + other);
+      const hppPerUnit = qty ? Math.round(totalCost / qty) : 0;
+      const updatedRow = [
+        id,
+        body.date !== undefined ? body.date : existing[1],
+        body.brandId !== undefined ? body.brandId : existing[2],
+        body.brandName !== undefined ? body.brandName : existing[3],
+        body.sku !== undefined ? body.sku : existing[4],
+        body.productName !== undefined ? body.productName : existing[5],
+        body.productType !== undefined ? body.productType : existing[6],
+        body.batchCode !== undefined ? body.batchCode : existing[7],
+        qty,
+        body.unit !== undefined ? body.unit : existing[9],
+        rawMat, bottling, packaging, other,
+        hppPerUnit,
+        totalCost,
+        body.status !== undefined ? body.status : existing[16],
+        body.qcStatus !== undefined ? body.qcStatus : existing[17],
+        body.stockLocation !== undefined ? body.stockLocation : existing[18],
+        body.notes !== undefined ? body.notes : existing[19],
+      ];
+      await updateRow("Brand_Production", rowNum, updatedRow);
+      return NextResponse.json({ success: true, action, id, row: rowNum });
+    }
+
+    if (action === "delete-batch") {
+      const id = String(body.id || "").trim();
+      if (!id) return NextResponse.json({ error: "Batch id is required" }, { status: 400 });
+      const prodData = await readRanges(["Brand_Production!A1:T1000"]);
+      const prodRows = prodData["Brand_Production!A1:T1000"] || [];
+      let rowIdx = -1;
+      for (let i = 1; i < prodRows.length; i++) {
+        if ((prodRows[i][0] || "") === id) { rowIdx = i; break; }
+      }
+      if (rowIdx === -1) return NextResponse.json({ error: `Batch ${id} not found` }, { status: 404 });
+      await deleteRow("Brand_Production", rowIdx + 1);
+      return NextResponse.json({ success: true, action, id });
+    }
+
+    return NextResponse.json({ error: "Unknown action", available: ["add-brand", "production", "sale", "expense", "update-batch", "delete-batch"] }, { status: 400 });
   } catch (error) {
     return NextResponse.json({ error: "Failed to append brand data", details: String(error) }, { status: 500 });
   }
