@@ -11,7 +11,6 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { X, Pencil, Trash2, Plus, ArrowDownCircle, ArrowUpCircle, RefreshCw, AlertTriangle, Package, DollarSign, Warehouse } from "lucide-react";
 
 /* ── Types ── */
