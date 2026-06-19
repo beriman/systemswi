@@ -177,21 +177,26 @@ SWI saat ini punya **systemswi** — ERP dashboard yang sudah 31 modul. Tapi ini
 - Orchestrator updated: `runFullDailyAgent()` now includes all 5 Phase 3 tasks
 - Audit status type extended: added `"partial"` status for partial completion
 
-### Phase 4: Agent Ecosystem (Bulan 7-12) — 🟡 SCAFFOLD READY
+### Phase 4: Agent Ecosystem (Bulan 7-12) — 🟡 ENHANCED (Local Logic Ready)
 **Goal:** Agent bisa berinteraksi dengan sistem eksternal
 
 | # | Integration | Status | Compliance Note |
 |---|-------------|--------|-----------------|
-| 4.1 | **e-Faktur DJP** | 🟡 Scaffold | Agent generate faktur → Upload ke DJP via API (perlu izin DJP) |
-| 4.2 | **OSS/BPOM** | 🟡 Scaffold | Agent track status → Reminder 30 hari sebelum expiry |
-| 4.3 | **Bank BRI API** | 🟡 Scaffold | Auto-sync mutasi (perlu API key dari BRI) |
-| 4.4 | **WhatsApp Business API** | 🟡 Scaffold | Auto-reply FAQ, broadcast promo (perlu Meta Business verification) |
-| 4.5 | **Sukuk Payment** | 🟡 Scaffold | Auto-calculate profit distribution → Generate payment schedule |
+| 4.1 | **e-Faktur DJP** | 🟡 Enhanced | Agent reads POs, drafts e-Faktur with PPN 11%, sends Telegram approval. API upload gated by DJP_EFATUR_API_KEY |
+| 4.2 | **OSS/BPOM** | 🟡 Enhanced | Agent reads Compliance_Checks, tracks expiry, sends alerts. API update gated by OSS_API_KEY |
+| 4.3 | **Bank BRI API** | 🟡 Enhanced | Agent analyzes existing Rekening_Koran data. Auto-sync gated by BRI_API_KEY + BRI_API_SECRET |
+| 4.4 | **WhatsApp Business API** | 🟡 Enhanced | Agent reads Customer_Interactions, drafts FAQ/follow-up messages. Send gated by WHATSAPP_BUSINESS_TOKEN |
+| 4.5 | **Sukuk Payment** | 🟡 Enhanced | Agent reads SukukInvestor + SukukSchedule, calculates monthly profit distribution. Execution gated by SUKUK_CONTRACT_ADDRESS |
 
-**Phase 4 Infrastructure Built (Scaffold):**
-- `src/lib/agent/phase4-scaffold.ts` — 5 integration stubs with typed interfaces, isConfigured() checks, TODO guides, orchestrator
-- `src/app/api/agent/phase4/route.ts` — GET + POST API route to trigger Phase 4 checks
-- `src/lib/agent/index.ts` — exports added
+**Phase 4 Infrastructure Built (Enhanced):**
+- `src/lib/agent/phase4-scaffold.ts` — 5 integration modules with REAL local logic:
+  - e-Faktur: reads Purchase_Orders → drafts invoices with PPN 11% → Telegram approval
+  - BPOM/OSS: reads Compliance_Checks → tracks expiry → Telegram alerts
+  - BRI: reads Rekening_Koran → analyzes patterns → summary report
+  - WhatsApp: reads Customer_Interactions → drafts FAQ/follow-up → approval queue
+  - Sukuk: reads SukukInvestor + SukukSchedule → calculates profit distribution → approval
+- `src/app/api/agent/phase4/route.ts` — GET + POST API trigger
+- `src/lib/agent/orchestrator.ts` — Phase 4 integrated into `runFullDailyAgent()`
 - Each module logs "not configured" status until env vars are set
 - Telegram status report lists which integrations are active vs blocked
 
@@ -281,15 +286,18 @@ Timestamp | Agent | Action | Target | Status | Human Approved | Notes
 
 ✅ **Semua Phase 1-3 sudah COMPLETE!** Tidak ada task yang tersisa di fase-fase ini.
 
-### Phase 4 — Scaffold Ready, Blocked on External Credentials
-Phase 4 scaffolding is complete. The code structure is ready — each module will activate automatically when the corresponding env vars are set.
+### Phase 4 — Enhanced: Local Logic Ready, External API Gated
+Phase 4 modules now have **real local logic** — they read from Google Sheets, prepare drafts, and send Telegram approval requests. The only thing gated by env vars is the final external API call.
 
-**Yang sudah siap (scaffold):**
-- ✅ `src/lib/agent/phase4-scaffold.ts` — 5 integration modules with typed interfaces
-- ✅ `src/app/api/agent/phase4/route.ts` — API trigger endpoint
-- ✅ `src/lib/agent/index.ts` — exports
+**Yang sudah siap (local logic):**
+- ✅ e-Faktur: reads Purchase_Orders → drafts invoices with PPN 11% → Telegram approval
+- ✅ BPOM/OSS: reads Compliance_Checks → tracks expiry → Telegram alerts
+- ✅ BRI: reads Rekening_Koran → analyzes patterns → summary report
+- ✅ WhatsApp: reads Customer_Interactions → drafts FAQ/follow-up → approval queue
+- ✅ Sukuk: reads SukukInvestor + SukukSchedule → calculates profit distribution → approval
+- ✅ Integrated into `runFullDailyAgent()` orchestrator
 
-**Yang perlu dilakukan manusia untuk mengaktifkan:**
+**Yang perlu dilakukan manusia untuk mengaktifkan API eksternal:**
 1. Apply BRI API access untuk auto-sync mutasi
 2. Meta Business verification untuk WhatsApp API
 3. DJP e-Faktur API registration
@@ -309,6 +317,6 @@ Then set webhook: `GET /api/agent/telegram-webhook?url=https://systemswi.vercel.
 ---
 
 *Document created: 2026-06-18 by OWL/HemuHemu*
-*Last updated: 2026-06-19 by OWL/HemuHemu — Phase 1-3 ✅ COMPLETE, Phase 4 🟡 SCAFFOLD READY (5 integration stubs, needs external credentials to activate)*
+*Last updated: 2026-06-19 by OWL/HemuHemu — Phase 4 🟡 ENHANCED: 5 modules with real local logic (Sheets read → draft → Telegram approval). External API calls gated by env vars. Integrated into orchestrator.*
 *Review cycle: Quarterly ( setiap 3 bulan)*
 *Next review: September 2026*

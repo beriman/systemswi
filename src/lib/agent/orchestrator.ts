@@ -25,6 +25,9 @@ import { analyzeEventROI, formatEventROIForTelegram } from "./event-roi";
 import { performRFMSegmentation, formatSegmentationForTelegram } from "./customer-segmentation";
 import { analyzeTaxOptimization, formatTaxOptimizationForTelegram } from "./tax-optimization";
 
+// ── Phase 4 import ────────────────────────────────────────────────
+import { runPhase4Checks } from "./phase4-scaffold";
+
 export const APPROVAL_THRESHOLD = 10_000_000; // Rp 10 juta
 
 // ── Daily Health Check (Task 1.1) ──
@@ -281,7 +284,7 @@ export async function dailyEventWorkflow(): Promise<void> {
   }
 }
 
-// ── Full Daily Run — executes all Phase 1 + Phase 2 + Phase 3 tasks ──
+// ── Full Daily Run — executes all Phase 1 + Phase 2 + Phase 3 + Phase 4 tasks ──
 export async function runFullDailyAgent(): Promise<{
   health: boolean;
   transactions: boolean;
@@ -299,6 +302,7 @@ export async function runFullDailyAgent(): Promise<{
   eventROI: boolean;
   customerSegmentation: boolean;
   taxOptimization: boolean;
+  phase4: boolean;
 }> {
   const results = {
     health: false,
@@ -317,6 +321,7 @@ export async function runFullDailyAgent(): Promise<{
     eventROI: false,
     customerSegmentation: false,
     taxOptimization: false,
+    phase4: false,
   };
   const timestamp = new Date().toISOString();
 
@@ -524,6 +529,24 @@ export async function runFullDailyAgent(): Promise<{
     console.error("[Agent] Tax optimization analysis failed:", error);
   }
 
+  // ── Phase 4 tasks (External Integrations) ──
+  try {
+    const phase4Result = await runPhase4Checks();
+    results.phase4 = true;
+
+    await logAgentActionSafe({
+      timestamp,
+      agent: "HemuHemu/OWL",
+      action: "Phase 4 Integration Run",
+      target: "All External APIs",
+      status: "success",
+      humanApproved: "pending",
+      notes: `eFaktur=${phase4Result.eFaktur} BPOM=${phase4Result.bpom} BRI=${phase4Result.bri} WA=${phase4Result.whatsApp} Sukuk=${phase4Result.sukuk}`,
+    });
+  } catch (error) {
+    console.error("[Agent] Phase 4 integration run failed:", error);
+  }
+
   // ── Summary ──
   const phase1Complete = results.health && results.transactions && results.stockAlerts && results.invoices && results.taxReminders && results.eventPipeline;
   const phase2Complete = results.procurement && results.reconciliation && results.compliance && results.customerFollowUp && results.eventWorkflow;
@@ -536,7 +559,7 @@ export async function runFullDailyAgent(): Promise<{
     target: "All SWI Systems",
     status: phase1Complete && phase2Complete && phase3Complete ? "success" : "partial",
     humanApproved: "n/a",
-    notes: `Phase1: H=${results.health} T=${results.transactions} S=${results.stockAlerts} I=${results.invoices} Tax=${results.taxReminders} E=${results.eventPipeline} | Phase2: P=${results.procurement} R=${results.reconciliation} C=${results.compliance} CF=${results.customerFollowUp} EW=${results.eventWorkflow} | Phase3: CF=${results.cashflowForecast} BP=${results.brandPerformance} ROI=${results.eventROI} CS=${results.customerSegmentation} TO=${results.taxOptimization}`,
+    notes: `Phase1: H=${results.health} T=${results.transactions} S=${results.stockAlerts} I=${results.invoices} Tax=${results.taxReminders} E=${results.eventPipeline} | Phase2: P=${results.procurement} R=${results.reconciliation} C=${results.compliance} CF=${results.customerFollowUp} EW=${results.eventWorkflow} | Phase3: CF=${results.cashflowForecast} BP=${results.brandPerformance} ROI=${results.eventROI} CS=${results.customerSegmentation} TO=${results.taxOptimization} | Phase4: ${results.phase4}`,
   });
 
   return results;
