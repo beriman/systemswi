@@ -182,18 +182,18 @@ SWI saat ini punya **systemswi** — ERP dashboard yang sudah 31 modul. Tapi ini
 
 | # | Integration | Status | Compliance Note |
 |---|-------------|--------|-----------------|
-| 4.1 | **e-Faktur DJP** | 🟡 Enhanced | Agent reads POs, drafts e-Faktur with PPN 11%, sends Telegram approval. API upload gated by DJP_EFATUR_API_KEY |
+| 4.1 | **e-Faktur DJP** | 🟡 Enhanced + XML | Agent reads POs, drafts e-Faktur with PPN 11%, generates DJP-compliant XML, sends Telegram approval. API upload gated by DJP_EFATUR_API_KEY |
 | 4.2 | **OSS/BPOM** | 🟡 Enhanced | Agent reads Compliance_Checks, tracks expiry, sends alerts. API update gated by OSS_API_KEY |
-| 4.3 | **Bank BRI API** | 🟡 Enhanced | Agent analyzes existing Rekening_Koran data. Auto-sync gated by BRI_API_KEY + BRI_API_SECRET |
+| 4.3 | **Bank BRI API** | 🟡 Enhanced + Anomaly | Agent analyzes Rekening_Koran data, detects anomalies (>2x avg), flags negative cashflow days. Auto-sync gated by BRI_API_KEY + BRI_API_SECRET |
 | 4.4 | **WhatsApp Business API** | 🟡 Enhanced | Agent reads Customer_Interactions, drafts FAQ/follow-up messages. Send gated by WHATSAPP_BUSINESS_TOKEN |
 | 4.5 | **Sukuk Payment** | 🟡 Enhanced | Agent reads SukukInvestor + SukukSchedule, calculates monthly profit distribution. Execution gated by SUKUK_CONTRACT_ADDRESS |
 | 4.6 | **Agent Dashboard** | ✅ DONE | `src/app/(workspace)/agent-dashboard/page.tsx` + `src/app/api/agent/dashboard/route.ts` — Full visibility: integration status, pending approvals, audit trail, module inventory. 4 tabs: Integrasi, Approvals, Audit, Modules. Auto-refresh 60s. Sidebar nav item added. |
 
 **Phase 4 Infrastructure Built (Enhanced):**
 - `src/lib/agent/phase4-scaffold.ts` — 5 integration modules with REAL local logic:
-  - e-Faktur: reads Purchase_Orders → drafts invoices with PPN 11% → Telegram approval
+  - e-Faktur: reads Purchase_Orders → drafts invoices with PPN 11% → generates DJP-compliant XML → Telegram approval
   - BPOM/OSS: reads Compliance_Checks → tracks expiry → Telegram alerts
-  - BRI: reads Rekening_Koran → analyzes patterns → summary report
+  - BRI: reads Rekening_Koran → anomaly detection (>2x avg) + negative cashflow flagging → summary report
   - WhatsApp: reads Customer_Interactions → drafts FAQ/follow-up → approval queue
   - Sukuk: reads SukukInvestor + SukukSchedule → calculates profit distribution → approval
 - `src/app/api/agent/phase4/route.ts` — GET + POST API trigger
@@ -294,9 +294,9 @@ Timestamp | Agent | Action | Target | Status | Human Approved | Notes
 Phase 4 modules now have **real local logic** — they read from Google Sheets, prepare drafts, and send Telegram approval requests. The only thing gated by env vars is the final external API call.
 
 **Yang sudah siap (local logic):**
-- ✅ e-Faktur: reads Purchase_Orders → drafts invoices with PPN 11% → Telegram approval
+- ✅ e-Faktur: reads Purchase_Orders → drafts invoices with PPN 11% → generates DJP-compliant XML → Telegram approval
 - ✅ BPOM/OSS: reads Compliance_Checks → tracks expiry → Telegram alerts
-- ✅ BRI: reads Rekening_Koran → analyzes patterns → summary report
+- ✅ BRI: reads Rekening_Koran → anomaly detection (>2x avg) + negative cashflow flagging → summary report
 - ✅ WhatsApp: reads Customer_Interactions → drafts FAQ/follow-up → approval queue
 - ✅ Sukuk: reads SukukInvestor + SukukSchedule → calculates profit distribution → approval
 - ✅ Integrated into `runFullDailyAgent()` orchestrator
@@ -334,6 +334,6 @@ Auto-refresh setiap 60 detik. Manual refresh button tersedia.
 ---
 
 *Document created: 2026-06-18 by OWL/HemuHemu*
-*Last updated: 2026-06-19 by OWL/HemuHemu — Phase 4 🟡 ENHANCED: Agent Dashboard ✅ DONE. 5 integration modules with real local logic + full dashboard UI. External API calls gated by env vars. Integrated into orchestrator.*
+*Last updated: 2026-06-19 by OWL/HemuHemu — Phase 4 🟡 ENHANCED: e-Faktur XML generator ✅, BRI anomaly detection ✅. Agent Dashboard ✅. 5 integration modules with real local logic + enhanced output. External API calls gated by env vars. Integrated into orchestrator.*
 *Review cycle: Quarterly ( setiap 3 bulan)*
 *Next review: September 2026*

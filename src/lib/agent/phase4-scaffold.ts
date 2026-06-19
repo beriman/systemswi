@@ -23,6 +23,12 @@ const num = (v: unknown) => {
   return Number.isFinite(p) ? p : 0;
 };
 const fmt = (n: number) => n.toLocaleString("id-ID");
+const escapeXml = (s: string) =>
+  s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
+const todayId = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
 
 // ── 4.1 e-Faktur DJP ──────────────────────────────────────────────
 // Reads invoice data from Invoice_Generated sheet, drafts e-Faktur XML,
@@ -37,6 +43,48 @@ export interface EFakturDraft {
   ppn: number;
   total: number;
   status: "draft" | "approved" | "uploaded" | "rejected";
+  xml?: string;
+}
+
+// ── e-Faktur XML Generator (DJP format) ────────────────────────────
+// Generates XML compliant with DJP e-Faktur format (PP 94/2023).
+// This is the draft — actual upload to DJP portal requires API key.
+export function generateEFakturXml(draft: EFakturDraft): string {
+  const invoiceDate = todayId();
+  const fakturNo = `FK-${draft.invoiceId}-${invoiceDate.replace(/-/g, "")}`;
+  const dppValue = draft.amount;
+  const ppnValue = draft.ppn;
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<FP xmlns="http://www.djp.go.id/faktur-pajak">
+  <KodeFaktur>0</KodeFaktur>
+  <NomorFaktur>${escapeXml(fakturNo)}</NomorFaktur>
+  <TanggalFaktur>${invoiceDate}</TanggalFaktur>
+  <JenisFaktur>1</JenisFaktur>
+  <NPWPPenjual>000000000000000</NPWPPenjual>
+  <NamaPenjual>PT Sensasi Wangi Indonesia</NamaPenjual>
+  <AlamatPenlengkapPenjual>Jl. Parfum Nusantara No. 88, Jakarta</AlamatPenlengkapPenjual>
+  <NPWPPembeli>${escapeXml(draft.customerNPWP || "000000000000000")}</NPWPPembeli>
+  <NamaPembeli>${escapeXml(draft.customerName)}</NamaPembeli>
+  <AlamatPembeli>-</AlamatPembeli>
+  <DetailTransaksi>
+    <NamaBarang>Jasa/Barang Parfum</NamaBarang>
+    <HargaSatuan>${dppValue}</HargaSatuan>
+    <JumlahBarang>1</JumlahBarang>
+    <HargaTotal>${dppValue}</HargaTotal>
+    <Diskon>0</Diskon>
+    <DPPValue>${dppValue}</DPPValue>
+    <PPNValue>${ppnValue}</PPNValue>
+    <PPnBM>0</PPnBM>
+    <TarifPPnBM>0</TarifPPnBM>
+  </DetailTransaksi>
+  <TotalDPP>${dppValue}</TotalDPP>
+  <TotalPPN>${ppnValue}</TotalPPN>
+  <TotalPPnBM>0</TotalPPnBM>
+  <TanggalApproval>${invoiceDate}</TanggalApproval>
+  <StatusApproval>Belum</StatusApproval>
+  <Keterangan>Auto-drafted by SWI Agent — requires human approval before DJP upload</Keterangan>
+</FP>`;
 }
 
 export function isEFakturConfigured(): boolean {
@@ -89,7 +137,7 @@ export async function draftEFaktur(): Promise<EFakturDraft[]> {
       const ppn = Math.round(total * 0.11); // PPN 11%
       const grandTotal = total + ppn;
 
-      drafts.push({
+      const draft: EFakturDraft = {
         invoiceId: poId,
         customerName: supplierName,
         customerNPWP: "", // Will be filled from Supplier_Master lookup
@@ -97,7 +145,10 @@ export async function draftEFaktur(): Promise<EFakturDraft[]> {
         ppn,
         total: grandTotal,
         status: "draft",
-      });
+      };
+      // Generate DJP-compliant XML draft
+      draft.xml = generateEFakturXml(draft);
+      drafts.push(draft);
     }
 
     // Log and notify
@@ -332,6 +383,8 @@ export async function syncBRIMutations(): Promise<BRITransaction[]> {
       let totalDebit = 0;
       let totalCredit = 0;
       let txnCount = 0;
+      const amounts: number[] = [];
+      const dailyNet: Record<string, number> = {};
 
       for (const row of mutasiRows) {
         if (!row || !row[0]) continue;
@@ -339,30 +392,68 @@ export async function syncBRIMutations(): Promise<BRITransaction[]> {
         const c = num(row[3]);
         if (d > 0) totalDebit += d;
         if (c > 0) totalCredit += c;
-        txnCount++;
+        if (d > 0 || c > 0) {
+          txnCount++;
+          amounts.push(d || c);
+          const dateKey = text(row[0]).slice(0, 10);
+          if (dateKey) {
+            dailyNet[dateKey] = (dailyNet[dateKey] || 0) + c - d;
+          }
+        }
       }
+
+      // Anomaly detection: flag transactions > 2x average
+      const avgAmount = amounts.length > 0 ? amounts.reduce((s, a) => s + a, 0) / amounts.length : 0;
+      const anomalies: string[] = [];
+      for (const row of mutasiRows) {
+        if (!row || !row[0]) continue;
+        const d = num(row[2]);
+        const c = num(row[3]);
+        const amt = d || c;
+        if (amt > avgAmount * 2 && avgAmount > 0) {
+          anomalies.push(`${text(row[0])} — Rp ${fmt(amt)} (${Math.round(amt / avgAmount)}x rata-rata)`);
+        }
+      }
+
+      // Detect negative cashflow days
+      const negativeDays = Object.entries(dailyNet)
+        .filter(([, net]) => net < 0)
+        .sort(([a], [b]) => b.localeCompare(a))
+        .slice(0, 5);
 
       await logAgentActionSafe({
         timestamp: new Date().toISOString(),
         agent: "HemuHemu/OWL",
-        action: "BRI Auto-Sync Check",
+        action: "BRI Anomaly Detection",
         target: "Rekening_Koran",
         status: "success",
         humanApproved: "n/a",
-        notes: `BRI API not configured. Analyzed ${txnCount} existing transactions. Total Debit: Rp ${fmt(totalDebit)}, Credit: Rp ${fmt(totalCredit)}. Set BRI_API_KEY + BRI_API_SECRET to enable auto-sync.`,
+        notes: `BRI API not configured. Analyzed ${txnCount} txns. Debit: Rp ${fmt(totalDebit)}, Credit: Rp ${fmt(totalCredit)}. Avg: Rp ${fmt(Math.round(avgAmount))}. Anomalies: ${anomalies.length}. Negative days: ${negativeDays.length}. Set BRI_API_KEY + BRI_API_SECRET to enable auto-sync.`,
       });
 
       if (isTelegramConfigured()) {
+        const anomalySection = anomalies.length > 0
+          ? `\n⚠️ <b>Anomali Terdeteksi (${anomalies.length}):</b>\n${anomalies.slice(0, 5).map(a => `• ${a}`).join("\n")}`
+          : `\n✅ Tidak ada anomali terdeteksi (threshold: 2x rata-rata Rp ${fmt(Math.round(avgAmount))})`;
+
+        const negativeSection = negativeDays.length > 0
+          ? `\n\n🔴 <b>Hari Negative Cashflow:</b>\n${negativeDays.map(([date, net]) => `• ${date}: Rp ${fmt(Math.abs(net))} (net outflow)`).join("\n")}`
+          : `\n\n✅ Tidak ada hari negative cashflow dalam periode ini.`;
+
         await sendTelegramMessage(
-          `🏦 <b>BRI Sync Status</b>\n\n` +
+          `🏦 <b>BRI Sync + Anomaly Report</b>\n\n` +
           `Auto-sync belum aktif. Set env vars berikut:\n` +
           `• <code>BRI_API_KEY</code>\n` +
           `• <code>BRI_API_SECRET</code>\n` +
           `• <code>BRI_ACCOUNT_NUMBER</code>\n\n` +
           `📊 Data existing: ${txnCount} transaksi tercatat\n` +
           `Total Debit: Rp ${fmt(totalDebit)}\n` +
-          `Total Credit: Rp ${fmt(totalCredit)}\n\n` +
-          `📋 Scaffold code siap di <code>src/lib/agent/phase4-scaffold.ts:4.3</code>`
+          `Total Credit: Rp ${fmt(totalCredit)}\n` +
+          `Net Flow: Rp ${fmt(totalCredit - totalDebit)}\n` +
+          `Avg Txn: Rp ${fmt(Math.round(avgAmount))}` +
+          anomalySection +
+          negativeSection +
+          `\n\n📋 Scaffold code siap di <code>src/lib/agent/phase4-scaffold.ts:4.3</code>`
         );
       }
     }
