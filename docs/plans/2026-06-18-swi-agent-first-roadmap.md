@@ -177,7 +177,7 @@ SWI saat ini punya **systemswi** — ERP dashboard yang sudah 31 modul. Tapi ini
 - Orchestrator updated: `runFullDailyAgent()` now includes all 5 Phase 3 tasks
 - Audit status type extended: added `"partial"` status for partial completion
 
-### Phase 4: Agent Ecosystem (Bulan 7-12) — 🟡 ENHANCED (Local Logic Ready)
+### Phase 4: Agent Ecosystem (Bulan 7-12) — 🟡 ENHANCED (Local Logic + Dashboard Ready)
 **Goal:** Agent bisa berinteraksi dengan sistem eksternal
 
 | # | Integration | Status | Compliance Note |
@@ -187,6 +187,7 @@ SWI saat ini punya **systemswi** — ERP dashboard yang sudah 31 modul. Tapi ini
 | 4.3 | **Bank BRI API** | 🟡 Enhanced | Agent analyzes existing Rekening_Koran data. Auto-sync gated by BRI_API_KEY + BRI_API_SECRET |
 | 4.4 | **WhatsApp Business API** | 🟡 Enhanced | Agent reads Customer_Interactions, drafts FAQ/follow-up messages. Send gated by WHATSAPP_BUSINESS_TOKEN |
 | 4.5 | **Sukuk Payment** | 🟡 Enhanced | Agent reads SukukInvestor + SukukSchedule, calculates monthly profit distribution. Execution gated by SUKUK_CONTRACT_ADDRESS |
+| 4.6 | **Agent Dashboard** | ✅ DONE | `src/app/(workspace)/agent-dashboard/page.tsx` + `src/app/api/agent/dashboard/route.ts` — Full visibility: integration status, pending approvals, audit trail, module inventory. 4 tabs: Integrasi, Approvals, Audit, Modules. Auto-refresh 60s. Sidebar nav item added. |
 
 **Phase 4 Infrastructure Built (Enhanced):**
 - `src/lib/agent/phase4-scaffold.ts` — 5 integration modules with REAL local logic:
@@ -196,6 +197,9 @@ SWI saat ini punya **systemswi** — ERP dashboard yang sudah 31 modul. Tapi ini
   - WhatsApp: reads Customer_Interactions → drafts FAQ/follow-up → approval queue
   - Sukuk: reads SukukInvestor + SukukSchedule → calculates profit distribution → approval
 - `src/app/api/agent/phase4/route.ts` — GET + POST API trigger
+- `src/app/api/agent/dashboard/route.ts` — Aggregated dashboard data: integrations, approvals, audit, modules
+- `src/app/(workspace)/agent-dashboard/page.tsx` — Full dashboard UI with 4 tabs (Integrasi, Approvals, Audit, Modules)
+- `src/components/layout/sidebar.tsx` — Added "Agent Dashboard" nav item (🦉 icon)
 - `src/lib/agent/orchestrator.ts` — Phase 4 integrated into `runFullDailyAgent()`
 - Each module logs "not configured" status until env vars are set
 - Telegram status report lists which integrations are active vs blocked
@@ -316,7 +320,20 @@ Then set webhook: `GET /api/agent/telegram-webhook?url=https://systemswi.vercel.
 
 ---
 
+### 🦉 Agent Dashboard — NEW
+**URL:** `/agent-dashboard` (sidebar: 🦉 Agent Dashboard)
+
+Dashboard memberikan visibility penuh ke semua agent activities:
+- **Tab Integrasi:** Status 6 external API (e-Faktur, BPOM, BRI, WhatsApp, Sukuk, Telegram) — aktif vs blocked
+- **Tab Approvals:** Queue pending human-in-the-loop approvals dari Agent_Approvals sheet
+- **Tab Audit Trail:** 30 aksi agent terakhir dari Agent_Audit_Log sheet
+- **Tab Modules:** Semua 21 agent modules dari Phase 1-4 dengan status
+
+Auto-refresh setiap 60 detik. Manual refresh button tersedia.
+
+---
+
 *Document created: 2026-06-18 by OWL/HemuHemu*
-*Last updated: 2026-06-19 by OWL/HemuHemu — Phase 4 🟡 ENHANCED: 5 modules with real local logic (Sheets read → draft → Telegram approval). External API calls gated by env vars. Integrated into orchestrator.*
+*Last updated: 2026-06-19 by OWL/HemuHemu — Phase 4 🟡 ENHANCED: Agent Dashboard ✅ DONE. 5 integration modules with real local logic + full dashboard UI. External API calls gated by env vars. Integrated into orchestrator.*
 *Review cycle: Quarterly ( setiap 3 bulan)*
 *Next review: September 2026*
