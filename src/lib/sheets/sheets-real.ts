@@ -58,6 +58,14 @@ export const SHEETS: Record<string, { range: string; description: string }> = {
   QCChecklist:       { range: "QC_Checklist!A1:I1000",          description: "QC checklist results per batch and stage" },
   AgentAuditLog:     { range: "Agent_Audit_Log!A1:H10000",      description: "Agent action audit trail — all agent actions logged here" },
   AgentApprovals:    { range: "Agent_Approvals!A1:J5000",       description: "Pending and resolved approval requests from agents" },
+  Ecommerse:         { range: "Ecommerse!A1:Z1000",            description: "E-commerce transactions (online orders)" },
+  EcommerseMetrics:  { range: "Ecommerse_Metrics!A1:Z100",     description: "E-commerce aggregated metrics" },
+  MerchTIM:          { range: "Merch_TIM!A1:L1000",           description: "Merchandise TIM product catalog" },
+  StoreDaily:        { range: "Store_Daily!A1:J1000",         description: "Store daily sales log (structured)" },
+  StoreDailyLog:     { range: "Store_Daily_Log!A1:J1000",     description: "Store daily sales log (legacy)" },
+  EventBudget:       { range: "Event_Budget!A1:H1000",        description: "Event budget tracking" },
+  EventTenants:      { range: "Event_Tenants!A1:J1000",       description: "Event tenant/brand participation" },
+  EventSponsors:     { range: "Event_Sponsors!A1:J1000",      description: "Event sponsor management" },
 };
 
 // ── Auth ──────────────────────────────────────────────────────────

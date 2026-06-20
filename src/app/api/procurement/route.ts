@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { googleWorkspaceDegradedSource, googleWorkspaceWriteBlockedSource, isGoogleWorkspaceAuthError } from "@/lib/api/google-workspace-error";
-import { appendRows, readRange, updateRow } from "@/lib/sheets/sheets-real";
+import { appendRows, readRange, updateRow, deleteRow } from "@/lib/sheets/sheets-real";
 import { appendSwiMemoryLog } from "@/lib/google/audit-log";
 
 export const runtime = "nodejs";
@@ -16,6 +16,7 @@ type Supplier = {
   status: string;
   lastPo: string;
   notes: string;
+  rowNumber: number;
 };
 
 type PurchaseOrder = {
@@ -83,7 +84,7 @@ function stockStatus(qty: number, minimumQty: number) {
 }
 
 function parseSuppliers(rows: string[][]): Supplier[] {
-  return rows.slice(1).filter((row) => row.some(Boolean)).map((row) => ({
+  return rows.slice(1).filter((row) => row.some(Boolean)).map((row, index) => ({
     id: text(row[0]),
     name: text(row[1]),
     category: text(row[2]) || "TBA",
@@ -94,6 +95,7 @@ function parseSuppliers(rows: string[][]): Supplier[] {
     status: text(row[7]) || "draft",
     lastPo: text(row[8]),
     notes: text(row[9]),
+    rowNumber: index + 2,
   })).filter((supplier) => supplier.id && supplier.name);
 }
 
@@ -382,7 +384,89 @@ export async function POST(request: NextRequest) {
       }, { status: 201 });
     }
 
-    return NextResponse.json({ error: "action wajib create-po atau receive" }, { status: 400 });
+    if (action === "create-supplier") {
+      const name = text(body.name);
+      const category = text(body.category);
+      const contact = text(body.contact);
+      if (!name) return NextResponse.json({ error: "name wajib diisi" }, { status: 400 });
+      if (!category) return NextResponse.json({ error: "category wajib diisi" }, { status: 400 });
+      const id = text(body.id) || `SUP-${Date.now()}`;
+      const row = [
+        id,
+        name,
+        category,
+        contact,
+        text(body.channel) || "WhatsApp",
+        numberValue(body.leadTimeDays) || 7,
+        numberValue(body.rating) || 3,
+        text(body.status) || "active",
+        text(body.lastPo) || "",
+        text(body.notes) || "",
+      ];
+      await appendRows("SupplierMaster", [row]);
+      const auditStatus = await appendProcurementAudit({
+        action: "Procurement Supplier Created",
+        target: `Supplier_Master:${id}`,
+        summary: `Created supplier ${name} (${category}). Contact: ${contact}. Lead time: ${numberValue(body.leadTimeDays) || 7} days.`,
+      });
+      return NextResponse.json({ success: true, action, supplier: { id, name, category }, auditStatus }, { status: 201 });
+    }
+
+    if (action === "update-supplier") {
+      const supplierId = text(body.supplierId);
+      if (!supplierId) return NextResponse.json({ error: "supplierId wajib diisi" }, { status: 400 });
+      const supplier = suppliers.find((s) => s.id.toLowerCase() === supplierId.toLowerCase());
+      if (!supplier) return NextResponse.json({ error: "supplier tidak ditemukan" }, { status: 404 });
+      const row = [
+        supplier.id,
+        text(body.name) || supplier.name,
+        text(body.category) || supplier.category,
+        text(body.contact) || supplier.contact,
+        text(body.channel) || supplier.channel,
+        numberValue(body.leadTimeDays) || supplier.leadTimeDays,
+        numberValue(body.rating) || supplier.rating,
+        text(body.status) || supplier.status,
+        text(body.lastPo) || supplier.lastPo,
+        text(body.notes) || supplier.notes,
+      ];
+      await updateRow("SupplierMaster", supplier.rowNumber, row);
+      const auditStatus = await appendProcurementAudit({
+        action: "Procurement Supplier Updated",
+        target: `Supplier_Master:${supplier.id}`,
+        summary: `Updated supplier ${text(body.name) || supplier.name}. Status: ${text(body.status) || supplier.status}.`,
+      });
+      return NextResponse.json({ success: true, action, supplier: { id: supplier.id, name: text(body.name) || supplier.name }, auditStatus }, { status: 200 });
+    }
+
+    if (action === "delete-supplier") {
+      const supplierId = text(body.supplierId);
+      if (!supplierId) return NextResponse.json({ error: "supplierId wajib diisi" }, { status: 400 });
+      const supplier = suppliers.find((s) => s.id.toLowerCase() === supplierId.toLowerCase());
+      if (!supplier) return NextResponse.json({ error: "supplier tidak ditemukan" }, { status: 404 });
+      await deleteRow("SupplierMaster", supplier.rowNumber);
+      const auditStatus = await appendProcurementAudit({
+        action: "Procurement Supplier Deleted",
+        target: `Supplier_Master:${supplier.id}`,
+        summary: `Deleted supplier ${supplier.name} (${supplier.category}).`,
+      });
+      return NextResponse.json({ success: true, action, deleted: supplier.id, auditStatus }, { status: 200 });
+    }
+
+    if (action === "delete-po") {
+      const poId = text(body.poId);
+      if (!poId) return NextResponse.json({ error: "poId wajib diisi" }, { status: 400 });
+      const po = purchaseOrders.find((p) => p.id.toLowerCase() === poId.toLowerCase());
+      if (!po) return NextResponse.json({ error: "PO tidak ditemukan" }, { status: 404 });
+      await deleteRow("PurchaseOrders", po.rowNumber);
+      const auditStatus = await appendProcurementAudit({
+        action: "Procurement PO Deleted",
+        target: `Purchase_Orders:${po.id}`,
+        summary: `Deleted PO ${po.id} (${po.itemName} from ${po.supplierName}).`,
+      });
+      return NextResponse.json({ success: true, action, deleted: po.id, auditStatus }, { status: 200 });
+    }
+
+    return NextResponse.json({ error: "action tidak valid. Pilih: create-po, receive, create-supplier, update-supplier, delete-supplier, delete-po" }, { status: 400 });
   } catch (error) {
     if (isGoogleWorkspaceAuthError(error)) {
       return NextResponse.json({

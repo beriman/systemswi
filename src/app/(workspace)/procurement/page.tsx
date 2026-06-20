@@ -1,6 +1,16 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState, useCallback } from "react";
+import { Pencil, Trash2, Plus, Package, ShoppingCart, FileCheck, Truck } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 
 type Supplier = {
   id: string;
@@ -26,10 +36,11 @@ type PurchaseOrder = {
   unit: string;
   unitCost: number;
   total: number;
-  status: string;
+  status: "draft" | "ordered" | "partial" | "received" | "cancelled";
   expectedDate: string;
   proofUrl: string;
   notes: string;
+  rowNumber: number;
 };
 
 type Receipt = {
@@ -40,7 +51,7 @@ type Receipt = {
   itemId: string;
   sku: string;
   quantity: number;
-  qcStatus: string;
+  qcStatus: "pending" | "passed" | "failed";
   qcNotes: string;
   proofUrl: string;
   pic: string;
@@ -48,285 +59,792 @@ type Receipt = {
   notes: string;
 };
 
-type ProcurementResponse = {
-  source: string;
-  sourceStatus?: "live" | "degraded" | "blocked";
-  warning?: string;
+type ProcurementData = {
   suppliers: Supplier[];
   purchaseOrders: PurchaseOrder[];
   receipts: Receipt[];
-  summary: {
-    totalPo: number;
-    openPo: number;
-    orderedValue: number;
-    pendingReceive: number;
-    qcFailed: number;
-    latestPo: PurchaseOrder[];
-    latestReceipts: Receipt[];
+};
+
+const formatRupiah = (value: number) =>
+  new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(value || 0);
+
+const formatDate = (dateStr: string) => {
+  if (!dateStr) return "-";
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return dateStr;
+  return d.toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" });
+};
+
+const statusBadgeVariant: Record<string, "default" | "secondary" | "destructive" | "outline" | "success" | "warning"> = {
+  draft: "secondary",
+  ordered: "default",
+  partial: "warning",
+  received: "success",
+  cancelled: "destructive",
+  pending: "secondary",
+  passed: "success",
+  failed: "destructive",
+};
+
+const statusLabel: Record<string, string> = {
+  draft: "Draft",
+  ordered: "Ordered",
+  partial: "Partial",
+  received: "Received",
+  cancelled: "Cancelled",
+  pending: "Pending",
+  passed: "Passed",
+  failed: "Failed",
+};
+
+function SupplierForm({ suppliers, onSave, onCancel }: {
+  suppliers: Supplier[];
+  onSave: (data: Record<string, string>) => void;
+  onCancel: () => void;
+}) {
+  const [name, setName] = useState("");
+  const [category, setCategory] = useState("");
+  const [contact, setContact] = useState("");
+  const [channel, setChannel] = useState("WhatsApp");
+  const [leadTimeDays, setLeadTimeDays] = useState("7");
+  const [rating, setRating] = useState("3");
+  const [status, setStatus] = useState("active");
+  const [notes, setNotes] = useState("");
+
+  const handleSubmit = (e: FormEvent) => {
+    e.preventDefault();
+    onSave({
+      name, category, contact, channel, leadTimeDays, rating, status, notes,
+    });
   };
-};
 
-const rupiah = (value: number) => new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(value || 0);
-
-const statusClass: Record<string, string> = {
-  draft: "bg-white/10 text-white/70",
-  ordered: "bg-sky-500/15 text-sky-300",
-  partial: "bg-amber-500/15 text-amber-300",
-  received: "bg-emerald-500/15 text-emerald-300",
-  cancelled: "bg-red-500/15 text-red-300",
-  pending: "bg-white/10 text-white/70",
-  passed: "bg-emerald-500/15 text-emerald-300",
-  failed: "bg-red-500/15 text-red-300",
-};
-
-function MetricCard({ label, value, hint }: { label: string; value: string; hint: string }) {
   return (
-    <div className="rounded-3xl bg-white/[0.04] p-5 shadow-sm ring-1 ring-white/10">
-      <p className="text-sm text-[#6b9e8f]">{label}</p>
-      <p className="mt-2 text-2xl font-semibold text-white">{value}</p>
-      <p className="mt-1 text-xs text-white/45">{hint}</p>
-    </div>
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <Label htmlFor="supplier-name">Nama Supplier</Label>
+          <Input id="supplier-name" value={name} onChange={(e) => setName(e.target.value)} required placeholder="PT. Sumber Wangi" />
+        </div>
+        <div>
+          <Label htmlFor="supplier-category">Kategori</Label>
+          <Input id="supplier-category" value={category} onChange={(e) => setCategory(e.target.value)} required placeholder="Chemical, Packaging, Operational" />
+        </div>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <Label htmlFor="supplier-contact">Kontak (WA/Email)</Label>
+          <Input id="supplier-contact" value={contact} onChange={(e) => setContact(e.target.value)} required placeholder="08123456789" />
+        </div>
+        <div>
+          <Label htmlFor="supplier-channel">Channel</Label>
+          <Input id="supplier-channel" value={channel} onChange={(e) => setChannel(e.target.value)} />
+        </div>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div>
+          <Label htmlFor="supplier-leadtime">Lead Time (hari)</Label>
+          <Input id="supplier-leadtime" type="number" min="1" value={leadTimeDays} onChange={(e) => setLeadTimeDays(e.target.value)} />
+        </div>
+        <div>
+          <Label htmlFor="supplier-rating">Rating (1-5)</Label>
+          <Input id="supplier-rating" type="number" min="1" max="5" value={rating} onChange={(e) => setRating(e.target.value)} />
+        </div>
+        <div>
+          <Label htmlFor="supplier-status">Status</Label>
+          <Input id="supplier-status" value={status} onChange={(e) => setStatus(e.target.value)} />
+        </div>
+      </div>
+      <div>
+        <Label htmlFor="supplier-notes">Catatan</Label>
+        <Textarea id="supplier-notes" value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} />
+      </div>
+      <DialogFooter>
+        <Button type="button" variant="outline" onClick={onCancel}>Batal</Button>
+        <Button type="submit">Simpan Supplier</Button>
+      </DialogFooter>
+    </form>
+  );
+}
+
+function PoForm({ suppliers, onSubmit, onCancel }: {
+  suppliers: Supplier[];
+  onSubmit: (data: Record<string, string>) => void;
+  onCancel: () => void;
+}) {
+  const [supplierId, setSupplierId] = useState("");
+  const [itemId, setItemId] = useState("");
+  const [itemName, setItemName] = useState("");
+  const [quantity, setQuantity] = useState("");
+  const [unit, setUnit] = useState("unit");
+  const [unitCost, setUnitCost] = useState("");
+  const [expectedDate, setExpectedDate] = useState("");
+  const [proofUrl, setProofUrl] = useState("");
+  const [notes, setNotes] = useState("");
+
+  const handleSubmit = (e: FormEvent) => {
+    e.preventDefault();
+    onSubmit({
+      supplierId, itemId, itemName, quantity, unit, unitCost, expectedDate, proofUrl, notes,
+    });
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div>
+        <Label htmlFor="po-supplier">Supplier</Label>
+        <select
+          id="po-supplier"
+          className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
+          value={supplierId}
+          onChange={(e) => setSupplierId(e.target.value)}
+          required
+        >
+          <option value="">Pilih Supplier</option>
+          {suppliers.map((s) => (
+            <option key={s.id} value={s.id}>{s.name} — {s.category}</option>
+          ))}
+        </select>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <Label htmlFor="po-itemid">Item ID / SKU</Label>
+          <Input id="po-itemid" value={itemId} onChange={(e) => setItemId(e.target.value)} required placeholder="RM-ESS-001" />
+        </div>
+        <div>
+          <Label htmlFor="po-itemname">Nama Item</Label>
+          <Input id="po-itemname" value={itemName} onChange={(e) => setItemName(e.target.value)} required placeholder="Essential Oil TBA" />
+        </div>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div>
+          <Label htmlFor="po-qty">Qty</Label>
+          <Input id="po-qty" type="number" min="0.01" step="0.01" value={quantity} onChange={(e) => setQuantity(e.target.value)} required />
+        </div>
+        <div>
+          <Label htmlFor="po-unit">Unit</Label>
+          <Input id="po-unit" value={unit} onChange={(e) => setUnit(e.target.value)} />
+        </div>
+        <div>
+          <Label htmlFor="po-cost">Unit Cost (Rp)</Label>
+          <Input id="po-cost" type="number" min="0" step="1" value={unitCost} onChange={(e) => setUnitCost(e.target.value)} />
+        </div>
+      </div>
+      <div>
+        <Label htmlFor="po-eta">Expected Date</Label>
+        <Input id="po-eta" type="date" value={expectedDate} onChange={(e) => setExpectedDate(e.target.value)} />
+      </div>
+      <div>
+        <Label htmlFor="po-proof">Proof / Invoice URL</Label>
+        <Input id="po-proof" value={proofUrl} onChange={(e) => setProofUrl(e.target.value)} placeholder="Drive URL" />
+      </div>
+      <div>
+        <Label htmlFor="po-notes">Catatan</Label>
+        <Textarea id="po-notes" value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} />
+      </div>
+      <DialogFooter>
+        <Button type="button" variant="outline" onClick={onCancel}>Batal</Button>
+        <Button type="submit">Simpan PO</Button>
+      </DialogFooter>
+    </form>
+  );
+}
+
+function ReceiptForm({ purchaseOrders, onSubmit, onCancel }: {
+  purchaseOrders: PurchaseOrder[];
+  onSubmit: (data: Record<string, string>) => void;
+  onCancel: () => void;
+}) {
+  const [poId, setPoId] = useState("");
+  const [quantity, setQuantity] = useState("");
+  const [qcStatus, setQcStatus] = useState("pending");
+  const [qcNotes, setQcNotes] = useState("");
+  const [proofUrl, setProofUrl] = useState("");
+  const [pic, setPic] = useState("HemuHemu/OWL");
+  const [notes, setNotes] = useState("");
+
+  const selectedPo = purchaseOrders.find((po) => po.id === poId);
+
+  const handleSubmit = (e: FormEvent) => {
+    e.preventDefault();
+    onSubmit({
+      poId, quantity, qcStatus, qcNotes, proofUrl, pic, notes,
+    });
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div>
+        <Label htmlFor="rcv-po">Purchase Order</Label>
+        <select
+          id="rcv-po"
+          className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
+          value={poId}
+          onChange={(e) => setPoId(e.target.value)}
+          required
+        >
+          <option value="">Pilih PO</option>
+          {purchaseOrders.map((po) => (
+            <option key={po.id} value={po.id}>{po.id} — {po.itemName} ({po.supplierName})</option>
+          ))}
+        </select>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <Label htmlFor="rcv-qty">Qty Received</Label>
+          <Input id="rcv-qty" type="number" min="0.01" step="0.01" value={quantity} onChange={(e) => setQuantity(e.target.value)} required defaultValue={selectedPo?.quantity || ""} />
+        </div>
+        <div>
+          <Label htmlFor="rcv-qc">QC Status</Label>
+          <select
+            id="rcv-qc"
+            className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
+            value={qcStatus}
+            onChange={(e) => setQcStatus(e.target.value)}
+          >
+            <option value="pending">Pending</option>
+            <option value="passed">Passed</option>
+            <option value="failed">Failed</option>
+          </select>
+        </div>
+      </div>
+      <div>
+        <Label htmlFor="rcv-qcnotes">QC Notes</Label>
+        <Textarea id="rcv-qcnotes" value={qcNotes} onChange={(e) => setQcNotes(e.target.value)} rows={2} placeholder="Batch diterima, COA/expiry/fisik dicek" />
+      </div>
+      <div>
+        <Label htmlFor="rcv-proof">Proof URL</Label>
+        <Input id="rcv-proof" value={proofUrl} onChange={(e) => setProofUrl(e.target.value)} placeholder="Drive URL surat jalan/foto barang/QC" />
+      </div>
+      <div>
+        <Label htmlFor="rcv-pic">PIC</Label>
+        <Input id="rcv-pic" value={pic} onChange={(e) => setPic(e.target.value)} />
+      </div>
+      <div>
+        <Label htmlFor="rcv-notes">Catatan Tambahan</Label>
+        <Textarea id="rcv-notes" value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} />
+      </div>
+      <DialogFooter>
+        <Button type="button" variant="outline" onClick={onCancel}>Batal</Button>
+        <Button type="submit">Simpan Receiving</Button>
+      </DialogFooter>
+    </form>
   );
 }
 
 export default function ProcurementPage() {
-  const [data, setData] = useState<ProcurementResponse | null>(null);
+  const [data, setData] = useState<ProcurementData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [savingPo, setSavingPo] = useState(false);
-  const [savingReceipt, setSavingReceipt] = useState(false);
-  const [message, setMessage] = useState("");
-  const [selectedSupplier, setSelectedSupplier] = useState("");
-  const [selectedPo, setSelectedPo] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [activeTab, setActiveTab] = useState("suppliers");
 
-  async function loadProcurement() {
+  // Dialog states
+  const [showSupplierDialog, setShowSupplierDialog] = useState(false);
+  const [showPoDialog, setShowPoDialog] = useState(false);
+  const [showReceiptDialog, setShowReceiptDialog] = useState(false);
+  const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
+
+  const loadProcurement = useCallback(async () => {
     setLoading(true);
-    const res = await fetch("/api/procurement", { cache: "no-store" });
-    const json = await res.json();
-    if (!res.ok) throw new Error(json.error || "Gagal load procurement");
-    setData(json);
-    if (!selectedSupplier && json.suppliers?.[0]?.id) setSelectedSupplier(json.suppliers[0].id);
-    const openPo = json.purchaseOrders?.find((po: PurchaseOrder) => po.status !== "received" && po.status !== "cancelled");
-    if (!selectedPo && openPo?.id) setSelectedPo(openPo.id);
-    setLoading(false);
-  }
+    try {
+      const res = await fetch("/api/procurement", { cache: "no-store" });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Gagal load procurement");
+      setData({
+        suppliers: json.suppliers || [],
+        purchaseOrders: json.purchaseOrders || [],
+        receipts: json.receipts || [],
+      });
+    } catch (error) {
+      setMessage({ type: "error", text: `❌ ${String(error)}` });
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    loadProcurement().catch((error) => {
-      setMessage(`❌ ${String(error)}`);
-      setLoading(false);
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    loadProcurement();
+  }, [loadProcurement]);
 
   const openPos = useMemo(
     () => data?.purchaseOrders.filter((po) => po.status !== "received" && po.status !== "cancelled") || [],
     [data?.purchaseOrders]
   );
 
-  const selectedPoData = openPos.find((po) => po.id === selectedPo) || openPos[0];
-
-  async function submitPo(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setSavingPo(true);
-    setMessage("");
-    const form = new FormData(event.currentTarget);
-    const payload = {
-      action: "create-po",
-      supplierId: form.get("supplierId"),
-      itemId: form.get("itemId"),
-      itemName: form.get("itemName"),
-      quantity: form.get("quantity"),
-      unit: form.get("unit"),
-      unitCost: form.get("unitCost"),
-      expectedDate: form.get("expectedDate"),
-      proofUrl: form.get("proofUrl"),
-      notes: form.get("notes"),
+  const stats = useMemo(() => {
+    const suppliers = data?.suppliers || [];
+    const pos = data?.purchaseOrders || [];
+    const receipts = data?.receipts || [];
+    const open = pos.filter((po) => ["draft", "ordered", "partial"].includes(po.status));
+    return {
+      totalSuppliers: suppliers.length,
+      openPo: open.length,
+      pendingReceipts: open.filter((po) => po.status !== "received").length,
+      totalPoValue: open.reduce((sum, po) => sum + po.total, 0),
+      qcFailed: receipts.filter((r) => r.qcStatus === "failed").length,
     };
+  }, [data]);
+
+  async function handleSaveSupplier(formData: Record<string, string>) {
+    setSaving(true);
+    setMessage(null);
     try {
-      const res = await fetch("/api/procurement", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      const payload = {
+        action: editingSupplier ? "update-supplier" : "create-supplier",
+        ...editingSupplier ? { supplierId: editingSupplier.id } : {},
+        ...formData,
+      };
+      const res = await fetch("/api/procurement", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Gagal membuat PO");
-      setMessage(`✅ PO dibuat: ${json.po.id} (${json.po.supplierName}) total ${rupiah(json.po.total)}`);
-      event.currentTarget.reset();
+      if (!res.ok) throw new Error(json.error || "Gagal menyimpan supplier");
+      setMessage({ type: "success", text: `✅ Supplier ${formData.name} berhasil disimpan` });
+      setShowSupplierDialog(false);
+      setEditingSupplier(null);
       await loadProcurement();
     } catch (error) {
-      setMessage(`❌ ${String(error)}`);
+      setMessage({ type: "error", text: `❌ ${String(error)}` });
     } finally {
-      setSavingPo(false);
+      setSaving(false);
     }
   }
 
-  async function submitReceipt(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setSavingReceipt(true);
-    setMessage("");
-    const form = new FormData(event.currentTarget);
-    const payload = {
-      action: "receive",
-      poId: form.get("poId"),
-      quantity: form.get("quantity"),
-      qcStatus: form.get("qcStatus"),
-      qcNotes: form.get("qcNotes"),
-      proofUrl: form.get("proofUrl"),
-      pic: form.get("pic"),
-      notes: form.get("notes"),
-    };
+  async function handleDeleteSupplier(supplierId: string) {
+    if (!confirm("Hapus supplier ini?")) return;
+    setSaving(true);
     try {
-      const res = await fetch("/api/procurement", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      const res = await fetch("/api/procurement", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "delete-supplier", supplierId }),
+      });
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Gagal menerima barang");
-      setMessage(`✅ Receiving tersimpan: ${json.receipt.id}, QC ${json.receipt.qcStatus}, inventory ${json.inventoryUpdated ? "terupdate" : "tidak diubah"}`);
-      event.currentTarget.reset();
+      if (!res.ok) throw new Error(json.error || "Gagal menghapus supplier");
+      setMessage({ type: "success", text: "✅ Supplier berhasil dihapus" });
       await loadProcurement();
     } catch (error) {
-      setMessage(`❌ ${String(error)}`);
+      setMessage({ type: "error", text: `❌ ${String(error)}` });
     } finally {
-      setSavingReceipt(false);
+      setSaving(false);
+    }
+  }
+
+  async function handleSubmitPo(formData: Record<string, string>) {
+    setSaving(true);
+    setMessage(null);
+    try {
+      const res = await fetch("/api/procurement", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "create-po", ...formData }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Gagal membuat PO");
+      setMessage({ type: "success", text: `✅ PO dibuat: ${json.po?.id || ""} — ${formatRupiah(json.po?.total || 0)}` });
+      setShowPoDialog(false);
+      await loadProcurement();
+    } catch (error) {
+      setMessage({ type: "error", text: `❌ ${String(error)}` });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleSubmitReceipt(formData: Record<string, string>) {
+    setSaving(true);
+    setMessage(null);
+    try {
+      const res = await fetch("/api/procurement", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "receive", ...formData }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Gagal menyimpan receiving");
+      setMessage({ type: "success", text: `✅ Receiving tersimpan: ${json.receipt?.id || ""}, QC ${json.receipt?.qcStatus || ""}` });
+      setShowReceiptDialog(false);
+      await loadProcurement();
+    } catch (error) {
+      setMessage({ type: "error", text: `❌ ${String(error)}` });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDeletePo(poId: string) {
+    if (!confirm("Hapus PO ini?")) return;
+    setSaving(true);
+    try {
+      const res = await fetch("/api/procurement", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "delete-po", poId }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Gagal menghapus PO");
+      setMessage({ type: "success", text: "✅ PO berhasil dihapus" });
+      await loadProcurement();
+    } catch (error) {
+      setMessage({ type: "error", text: `❌ ${String(error)}` });
+    } finally {
+      setSaving(false);
     }
   }
 
   return (
-    <main className="min-h-screen bg-[#080c0a] p-6 text-white">
-      <div className="mx-auto max-w-7xl space-y-6">
-        <header className="rounded-[2rem] bg-gradient-to-br from-[#0D9488]/25 via-white/[0.04] to-[#F97316]/15 p-8 shadow-xl ring-1 ring-white/10">
-          <p className="text-sm uppercase tracking-[0.35em] text-[#6b9e8f]">Procurement Command Center</p>
-          <div className="mt-3 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-            <div>
-              <h1 className="text-4xl font-bold">Supplier, Purchase Order & Receiving QC</h1>
-              <p className="mt-3 max-w-3xl text-white/65">
-                Source of truth Google Sheets untuk supplier, PO, penerimaan barang, QC intake, dan auto-update inventory saat QC passed.
-              </p>
-            </div>
-            <button onClick={() => loadProcurement()} className="rounded-full bg-[#0D9488] px-5 py-3 text-sm font-semibold text-white hover:bg-[#0f766e]">
-              Refresh Sheets
-            </button>
-          </div>
-        </header>
-
-        {message && <div className="rounded-2xl bg-white/[0.06] p-4 text-sm text-white/80 ring-1 ring-white/10">{message}</div>}
-        {data?.sourceStatus === "degraded" && (
-          <div className="rounded-2xl bg-amber-500/10 p-4 text-sm text-amber-100 ring-1 ring-amber-400/30">
-            ⚠️ Google Workspace perlu re-auth. Halaman procurement tetap read-only dengan fallback kosong; write PO/receiving diblokir sampai OAuth aktif kembali. {data.warning}
-          </div>
-        )}
-
-        <section className="grid gap-4 md:grid-cols-5">
-          <MetricCard label="Supplier" value={String(data?.suppliers.length || 0)} hint="vendor aktif/draft" />
-          <MetricCard label="Open PO" value={String(data?.summary.openPo || 0)} hint="draft/ordered/partial" />
-          <MetricCard label="Nilai Open PO" value={rupiah(data?.summary.orderedValue || 0)} hint="belum full received" />
-          <MetricCard label="Pending Receive" value={String(data?.summary.pendingReceive || 0)} hint="perlu follow up" />
-          <MetricCard label="QC Failed" value={String(data?.summary.qcFailed || 0)} hint="butuh tindakan" />
-        </section>
-
-        <section className="grid gap-6 lg:grid-cols-[1fr_430px]">
-          <div className="rounded-3xl bg-white/[0.04] p-5 ring-1 ring-white/10">
-            <div className="mb-4 flex items-center justify-between">
-              <div>
-                <h2 className="text-xl font-semibold">Purchase Orders</h2>
-                <p className="text-sm text-white/45">{data?.source || "Google Sheets"}</p>
-              </div>
-              {loading && <span className="text-sm text-white/50">Loading…</span>}
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[1000px] text-left text-sm">
-                <thead className="text-xs uppercase text-white/40">
-                  <tr><th className="py-3 pr-4">PO</th><th className="py-3 pr-4">Supplier</th><th className="py-3 pr-4">Item</th><th className="py-3 pr-4">Qty</th><th className="py-3 pr-4">Total</th><th className="py-3 pr-4">Status</th><th className="py-3 pr-4">ETA</th><th className="py-3 pr-4">Proof</th></tr>
-                </thead>
-                <tbody className="divide-y divide-white/10">
-                  {data?.purchaseOrders.map((po) => (
-                    <tr key={po.id} className="text-white/75">
-                      <td className="py-3 pr-4"><button onClick={() => setSelectedPo(po.id)} className="font-medium text-white hover:text-[#5eead4]">{po.id}</button><div className="text-xs text-white/40">{po.date}</div></td>
-                      <td className="py-3 pr-4">{po.supplierName}</td>
-                      <td className="py-3 pr-4"><div>{po.itemName}</div><div className="text-xs text-white/40">{po.itemId}</div></td>
-                      <td className="py-3 pr-4">{po.quantity} {po.unit}</td>
-                      <td className="py-3 pr-4">{rupiah(po.total)}</td>
-                      <td className="py-3 pr-4"><span className={`rounded-full px-3 py-1 text-xs ${statusClass[po.status] || statusClass.draft}`}>{po.status}</span></td>
-                      <td className="py-3 pr-4">{po.expectedDate}</td>
-                      <td className="py-3 pr-4">{po.proofUrl ? <a href={po.proofUrl} target="_blank" className="text-[#5eead4]">open</a> : "-"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <aside className="space-y-6">
-            <form onSubmit={submitPo} className="rounded-3xl bg-white/[0.04] p-5 ring-1 ring-white/10">
-              <h2 className="text-xl font-semibold">Buat Purchase Order</h2>
-              <p className="mt-1 text-sm text-white/45">Buat PO berbasis Supplier_Master. Gunakan TBA untuk detail yang belum terverifikasi.</p>
-              <div className="mt-5 space-y-4">
-                <label className="block text-sm text-white/60">Supplier
-                  <select name="supplierId" value={selectedSupplier} onChange={(e) => setSelectedSupplier(e.target.value)} className="mt-1 w-full rounded-2xl bg-black/30 p-3 text-white ring-1 ring-white/10">
-                    {data?.suppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name} — {supplier.category}</option>)}
-                  </select>
-                </label>
-                <div className="grid grid-cols-2 gap-3">
-                  <label className="block text-sm text-white/60">Item ID / SKU<input name="itemId" required placeholder="RM-ESS-001" className="mt-1 w-full rounded-2xl bg-black/30 p-3 text-white ring-1 ring-white/10" /></label>
-                  <label className="block text-sm text-white/60">Nama Item<input name="itemName" required placeholder="Essential Oil TBA" className="mt-1 w-full rounded-2xl bg-black/30 p-3 text-white ring-1 ring-white/10" /></label>
-                </div>
-                <div className="grid grid-cols-3 gap-3">
-                  <label className="block text-sm text-white/60">Qty<input name="quantity" required type="number" min="0.01" step="0.01" className="mt-1 w-full rounded-2xl bg-black/30 p-3 text-white ring-1 ring-white/10" /></label>
-                  <label className="block text-sm text-white/60">Unit<input name="unit" defaultValue="unit" className="mt-1 w-full rounded-2xl bg-black/30 p-3 text-white ring-1 ring-white/10" /></label>
-                  <label className="block text-sm text-white/60">Unit Cost<input name="unitCost" type="number" min="0" step="1" className="mt-1 w-full rounded-2xl bg-black/30 p-3 text-white ring-1 ring-white/10" /></label>
-                </div>
-                <label className="block text-sm text-white/60">Expected Date<input name="expectedDate" type="date" className="mt-1 w-full rounded-2xl bg-black/30 p-3 text-white ring-1 ring-white/10" /></label>
-                <label className="block text-sm text-white/60">Proof / Invoice URL<input name="proofUrl" placeholder="Drive URL invoice/quotation" className="mt-1 w-full rounded-2xl bg-black/30 p-3 text-white ring-1 ring-white/10" /></label>
-                <label className="block text-sm text-white/60">Catatan<textarea name="notes" rows={2} className="mt-1 w-full rounded-2xl bg-black/30 p-3 text-white ring-1 ring-white/10" /></label>
-                <button disabled={savingPo} className="w-full rounded-full bg-[#F97316] px-5 py-3 font-semibold text-white hover:bg-[#ea580c] disabled:opacity-50">{savingPo ? "Menyimpan…" : "Simpan PO ke Sheets"}</button>
-              </div>
-            </form>
-
-            <form onSubmit={submitReceipt} className="rounded-3xl bg-white/[0.04] p-5 ring-1 ring-white/10">
-              <h2 className="text-xl font-semibold">Receiving + QC</h2>
-              <p className="mt-1 text-sm text-white/45">Jika QC passed dan item ada di Inventory_Master, stok otomatis bertambah.</p>
-              <div className="mt-5 space-y-4">
-                <label className="block text-sm text-white/60">Open PO
-                  <select name="poId" value={selectedPoData?.id || ""} onChange={(e) => setSelectedPo(e.target.value)} className="mt-1 w-full rounded-2xl bg-black/30 p-3 text-white ring-1 ring-white/10">
-                    {openPos.map((po) => <option key={po.id} value={po.id}>{po.id} — {po.itemName}</option>)}
-                  </select>
-                </label>
-                <div className="grid grid-cols-2 gap-3">
-                  <label className="block text-sm text-white/60">Qty Received<input name="quantity" required type="number" min="0.01" step="0.01" defaultValue={selectedPoData?.quantity || ""} className="mt-1 w-full rounded-2xl bg-black/30 p-3 text-white ring-1 ring-white/10" /></label>
-                  <label className="block text-sm text-white/60">QC Status<select name="qcStatus" className="mt-1 w-full rounded-2xl bg-black/30 p-3 text-white ring-1 ring-white/10"><option value="passed">Passed</option><option value="pending">Pending</option><option value="failed">Failed</option></select></label>
-                </div>
-                <label className="block text-sm text-white/60">QC Notes<textarea name="qcNotes" rows={2} placeholder="Batch diterima, COA/expiry/fisik dicek" className="mt-1 w-full rounded-2xl bg-black/30 p-3 text-white ring-1 ring-white/10" /></label>
-                <label className="block text-sm text-white/60">Proof URL<input name="proofUrl" placeholder="Drive URL surat jalan/foto barang/QC" className="mt-1 w-full rounded-2xl bg-black/30 p-3 text-white ring-1 ring-white/10" /></label>
-                <label className="block text-sm text-white/60">PIC<input name="pic" defaultValue="HemuHemu/OWL" className="mt-1 w-full rounded-2xl bg-black/30 p-3 text-white ring-1 ring-white/10" /></label>
-                <button disabled={savingReceipt || !openPos.length} className="w-full rounded-full bg-[#0D9488] px-5 py-3 font-semibold text-white hover:bg-[#0f766e] disabled:opacity-50">{savingReceipt ? "Menyimpan…" : "Simpan Receiving QC"}</button>
-              </div>
-            </form>
-          </aside>
-        </section>
-
-        <section className="grid gap-6 lg:grid-cols-2">
-          <div className="rounded-3xl bg-white/[0.04] p-5 ring-1 ring-white/10">
-            <h2 className="text-xl font-semibold">Supplier Master</h2>
-            <div className="mt-4 space-y-3">
-              {data?.suppliers.map((supplier) => (
-                <div key={supplier.id} className="rounded-2xl bg-black/20 p-4 ring-1 ring-white/10">
-                  <div className="flex items-start justify-between gap-3"><div><p className="font-medium">{supplier.name}</p><p className="text-xs text-white/40">{supplier.id} • {supplier.category}</p></div><span className="rounded-full bg-white/10 px-3 py-1 text-xs text-white/65">{supplier.status}</span></div>
-                  <p className="mt-2 text-sm text-white/55">Kontak: {supplier.contact} / {supplier.channel} • Lead time {supplier.leadTimeDays || 0} hari • Rating {supplier.rating || 0}/5</p>
-                  {supplier.notes && <p className="mt-1 text-xs text-white/40">{supplier.notes}</p>}
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="rounded-3xl bg-white/[0.04] p-5 ring-1 ring-white/10">
-            <h2 className="text-xl font-semibold">Recent Goods Receipts</h2>
-            <div className="mt-4 overflow-x-auto">
-              <table className="w-full min-w-[680px] text-left text-sm">
-                <thead className="text-xs uppercase text-white/40"><tr><th className="py-2 pr-4">Tanggal</th><th className="py-2 pr-4">Receipt</th><th className="py-2 pr-4">PO</th><th className="py-2 pr-4">Qty</th><th className="py-2 pr-4">QC</th><th className="py-2 pr-4">Proof</th></tr></thead>
-                <tbody className="divide-y divide-white/10">
-                  {data?.receipts.slice(0, 20).map((receipt) => (
-                    <tr key={receipt.id} className="text-white/70"><td className="py-2 pr-4">{receipt.date}</td><td className="py-2 pr-4">{receipt.id}</td><td className="py-2 pr-4">{receipt.poId}</td><td className="py-2 pr-4">{receipt.quantity}</td><td className="py-2 pr-4"><span className={`rounded-full px-2 py-1 text-xs ${statusClass[receipt.qcStatus] || statusClass.pending}`}>{receipt.qcStatus}</span></td><td className="py-2 pr-4">{receipt.proofUrl ? <a href={receipt.proofUrl} className="text-[#5eead4]" target="_blank">open</a> : "-"}</td></tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </section>
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-bold flex items-center gap-2">
+            <Package className="h-6 w-6" />
+            Procurement & PO
+          </h2>
+          <p className="text-muted-foreground">
+            Supplier management, purchase orders, goods receipts — source of truth Google Sheets
+          </p>
+        </div>
+        <Button variant="outline" onClick={loadProcurement} disabled={loading}>
+          {loading ? "Loading..." : "Refresh"}
+        </Button>
       </div>
-    </main>
+
+      {/* Message Banner */}
+      {message && (
+        <div className={`px-4 py-3 rounded-lg text-sm border ${
+          message.type === "success"
+            ? "bg-green-50 text-green-700 border-green-200"
+            : "bg-red-50 text-red-700 border-red-200"
+        }`}>
+          {message.text}
+          <button onClick={() => setMessage(null)} className="ml-3 text-xs underline">Tutup</button>
+        </div>
+      )}
+
+      {/* KPI Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardDescription className="flex items-center gap-1">
+              <Package className="h-3 w-3" /> Total Suppliers
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{stats.totalSuppliers}</div>
+            <div className="text-xs text-muted-foreground">vendor aktif</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardDescription className="flex items-center gap-1">
+              <ShoppingCart className="h-3 w-3" /> Open PO
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{stats.openPo}</div>
+            <div className="text-xs text-muted-foreground">draft/ordered/partial</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardDescription className="flex items-center gap-1">
+              <Truck className="h-3 w-3" /> Pending Receipt
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{stats.pendingReceipts}</div>
+            <div className="text-xs text-muted-foreground">perlu follow up</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardDescription className="flex items-center gap-1">
+              <FileCheck className="h-3 w-3" /> Total PO Value
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{formatRupiah(stats.totalPoValue)}</div>
+            <div className="text-xs text-muted-foreground">open PO bulan ini</div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Tabs */}
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList className="grid w-full grid-cols-4 lg:w-auto">
+          <TabsTrigger value="suppliers">Suppliers</TabsTrigger>
+          <TabsTrigger value="po">Purchase Orders</TabsTrigger>
+          <TabsTrigger value="receipts">Receipts</TabsTrigger>
+          <TabsTrigger value="master">Supplier Master</TabsTrigger>
+        </TabsList>
+
+        {/* Suppliers Tab */}
+        <TabsContent value="suppliers">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle>Supplier List</CardTitle>
+                <CardDescription>Daftar semua supplier terdaftar di Google Sheets</CardDescription>
+              </div>
+              <Dialog open={showSupplierDialog} onOpenChange={setShowSupplierDialog}>
+                <DialogTrigger asChild>
+                  <Button size="sm" onClick={() => setEditingSupplier(null)}>
+                    <Plus className="h-4 w-4 mr-1" /> Supplier
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="max-w-lg">
+                  <DialogHeader>
+                    <DialogTitle>{editingSupplier ? "Edit Supplier" : "Tambah Supplier Baru"}</DialogTitle>
+                    <DialogDescription>Form supplier — data langsung ditulis ke sheet Supplier_Master</DialogDescription>
+                  </DialogHeader>
+                  <SupplierForm
+                    suppliers={data?.suppliers || []}
+                    onSave={handleSaveSupplier}
+                    onCancel={() => { setShowSupplierDialog(false); setEditingSupplier(null); }}
+                  />
+                </DialogContent>
+              </Dialog>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Category</TableHead>
+                    <TableHead>Contact</TableHead>
+                    <TableHead>Lead Time</TableHead>
+                    <TableHead>Rating</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {loading ? (
+                    <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">Loading...</TableCell></TableRow>
+                  ) : !data?.suppliers.length ? (
+                    <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">Belum ada supplier. Tambah supplier pertama.</TableCell></TableRow>
+                  ) : (
+                    data?.suppliers.map((supplier) => (
+                      <TableRow key={supplier.id}>
+                        <TableCell className="font-medium">{supplier.name}</TableCell>
+                        <TableCell>{supplier.category}</TableCell>
+                        <TableCell className="text-sm">{supplier.contact}</TableCell>
+                        <TableCell>{supplier.leadTimeDays} hari</TableCell>
+                        <TableCell>{"★".repeat(supplier.rating || 0)}</TableCell>
+                        <TableCell>
+                          <Badge variant={statusBadgeVariant[supplier.status] || "secondary"}>
+                            {statusLabel[supplier.status] || supplier.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button variant="ghost" size="sm" onClick={() => { setEditingSupplier(supplier); setShowSupplierDialog(true); }}>
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button variant="ghost" size="sm" className="text-red-500" onClick={() => handleDeleteSupplier(supplier.id)}>
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Purchase Orders Tab */}
+        <TabsContent value="po">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle>Purchase Orders</CardTitle>
+                <CardDescription>Semua PO yang belum fully received</CardDescription>
+              </div>
+              <Dialog open={showPoDialog} onOpenChange={setShowPoDialog}>
+                <DialogTrigger asChild>
+                  <Button size="sm">
+                    <Plus className="h-4 w-4 mr-1" /> New PO
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="max-w-lg">
+                  <DialogHeader>
+                    <DialogTitle>Buat Purchase Order</DialogTitle>
+                    <DialogDescription>PO akan ditulis ke sheet Purchase_Orders</DialogDescription>
+                  </DialogHeader>
+                  <PoForm
+                    suppliers={data?.suppliers || []}
+                    onSubmit={handleSubmitPo}
+                    onCancel={() => setShowPoDialog(false)}
+                  />
+                </DialogContent>
+              </Dialog>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>PO ID</TableHead>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Supplier</TableHead>
+                    <TableHead>Item</TableHead>
+                    <TableHead>Qty</TableHead>
+                    <TableHead>Total</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>ETA</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {loading ? (
+                    <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground">Loading...</TableCell></TableRow>
+                  ) : !data?.purchaseOrders.length ? (
+                    <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground">Belum ada PO. Buat PO pertama.</TableCell></TableRow>
+                  ) : (
+                    data?.purchaseOrders.map((po) => (
+                      <TableRow key={po.id}>
+                        <TableCell className="font-medium">{po.id}</TableCell>
+                        <TableCell>{formatDate(po.date)}</TableCell>
+                        <TableCell>{po.supplierName}</TableCell>
+                        <TableCell>
+                          <div>{po.itemName}</div>
+                          <div className="text-xs text-muted-foreground">{po.itemId}</div>
+                        </TableCell>
+                        <TableCell>{po.quantity} {po.unit}</TableCell>
+                        <TableCell>{formatRupiah(po.total)}</TableCell>
+                        <TableCell>
+                          <Badge variant={statusBadgeVariant[po.status] || "secondary"}>
+                            {statusLabel[po.status] || po.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>{formatDate(po.expectedDate)}</TableCell>
+                        <TableCell className="text-right">
+                          <Button variant="ghost" size="sm" className="text-red-500" onClick={() => handleDeletePo(po.id)}>
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Receipts Tab */}
+        <TabsContent value="receipts">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle>Goods Receipts</CardTitle>
+                <CardDescription>Riwayat penerimaan barang & QC</CardDescription>
+              </div>
+              <Dialog open={showReceiptDialog} onOpenChange={setShowReceiptDialog}>
+                <DialogTrigger asChild>
+                  <Button size="sm" disabled={openPos.length === 0}>
+                    <Plus className="h-4 w-4 mr-1" /> New Receipt
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="max-w-lg">
+                  <DialogHeader>
+                    <DialogTitle>Receiving + QC</DialogTitle>
+                    <DialogDescription>Jika QC passed, stok otomatis bertambah di Inventory_Master</DialogDescription>
+                  </DialogHeader>
+                  <ReceiptForm
+                    purchaseOrders={openPos}
+                    onSubmit={handleSubmitReceipt}
+                    onCancel={() => setShowReceiptDialog(false)}
+                  />
+                </DialogContent>
+              </Dialog>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Receipt</TableHead>
+                    <TableHead>Date</TableHead>
+                    <TableHead>PO Ref</TableHead>
+                    <TableHead>Qty</TableHead>
+                    <TableHead>QC Status</TableHead>
+                    <TableHead>PIC</TableHead>
+                    <TableHead>Proof</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {loading ? (
+                    <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">Loading...</TableCell></TableRow>
+                  ) : !data?.receipts.length ? (
+                    <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">Belum ada receipt. Terima barang untuk membuat receipt.</TableCell></TableRow>
+                  ) : (
+                    data?.receipts.slice(0, 50).map((receipt) => (
+                      <TableRow key={receipt.id}>
+                        <TableCell className="font-medium">{receipt.id}</TableCell>
+                        <TableCell>{formatDate(receipt.date)}</TableCell>
+                        <TableCell>{receipt.poId}</TableCell>
+                        <TableCell>{receipt.quantity}</TableCell>
+                        <TableCell>
+                          <Badge variant={statusBadgeVariant[receipt.qcStatus] || "secondary"}>
+                            {statusLabel[receipt.qcStatus] || receipt.qcStatus}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-sm">{receipt.pic}</TableCell>
+                        <TableCell>
+                          {receipt.proofUrl ? (
+                            <a href={receipt.proofUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline text-sm">open</a>
+                          ) : "-"}
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Supplier Master Tab */}
+        <TabsContent value="master">
+          <Card>
+            <CardHeader>
+              <CardTitle>Supplier Master Data</CardTitle>
+              <CardDescription>Detail lengkap setiap supplier</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {!data?.suppliers.length ? (
+                  <div className="col-span-2 text-center py-8 text-muted-foreground">Belum ada data supplier.</div>
+                ) : (
+                  data?.suppliers.map((supplier) => (
+                    <Card key={supplier.id}>
+                      <CardHeader className="pb-2">
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <CardTitle className="text-base">{supplier.name}</CardTitle>
+                            <CardDescription>{supplier.id} • {supplier.category}</CardDescription>
+                          </div>
+                          <Badge variant={statusBadgeVariant[supplier.status] || "secondary"}>
+                            {statusLabel[supplier.status] || supplier.status}
+                          </Badge>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="space-y-1 text-sm">
+                        <p><span className="text-muted-foreground">Kontak:</span> {supplier.contact} / {supplier.channel}</p>
+                        <p><span className="text-muted-foreground">Lead Time:</span> {supplier.leadTimeDays} hari • Rating: {"★".repeat(supplier.rating || 0)}</p>
+                        {supplier.notes && <p className="text-muted-foreground">{supplier.notes}</p>}
+                      </CardContent>
+                    </Card>
+                  ))
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+    </div>
   );
 }

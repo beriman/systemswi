@@ -6,6 +6,7 @@ import {
   getSukukProductsFromSheets,
   addSukukProductToSheets,
 } from "@/lib/sheets/sukuk-sheets";
+import { readRange } from "@/lib/sheets/sheets-real";
 
 function getDbSafe() {
   try {
@@ -19,56 +20,40 @@ function getDbSafe() {
 
 export async function GET() {
   try {
-    const db = getDbSafe();
-    if (!db) {
-      // Fallback: read from Google Sheets
-      const { products, source } = await getSukukProductsFromSheets();
-      return NextResponse.json({
-        products,
-        source,
-        sourceStatus: source === "sheets" ? "live" : "degraded",
-        warning:
-          source === "sheets"
-            ? undefined
-            : "Data source tidak tersedia.",
-      });
-    }
+    // Read directly from Google Sheets (source of truth)
+    const { products, source } = await getSukukProductsFromSheets();
 
-    const products = db.prepare(`
-      SELECT sp.*,
-        (SELECT COALESCE(SUM(si.jumlah_unit), 0) FROM sukuk_investments WHERE product_id = sp.id AND si.status = 'aktif') as unit_terjual,
-        (SELECT COALESCE(SUM(si.nilai_investasi), 0) FROM sukuk_investments WHERE product_id = sp.id AND si.status = 'aktif') as total_terkumpul
-      FROM sukuk_products sp ORDER BY sp.created_at DESC
-    `).all();
-
-    // Enrich with sheets data if available (merge mode)
+    // Enrich with investment summary from Sheets
+    let investments: any[] = [];
     try {
-      const { products: sheetsProducts } = await getSukukProductsFromSheets();
-      if (sheetsProducts.length > 0 && products.length === 0) {
-        return NextResponse.json({
-          products: sheetsProducts.map((sp: any) => ({
-            id: sp.id,
-            kode: sp.id,
-            nama: sp.nama,
-            deskripsi: sp.deskripsi,
-            kategori: sp.kategori,
-            harga_per_unit: sp.modal_dibutuhkan,
-            jumlah_unit: sp.target_investor,
-            nilai_sukuk: sp.modal_dibutuhkan,
-            status: sp.status === "Perencanaan" ? "draft" : "open",
-            unit_terjual: 0,
-            total_terkumpul: 0,
-            from_sheets: true,
-          })),
-          source: "sheets-fallback",
-          sourceStatus: "live",
-        });
+      const invRows = await readRange("SukukMikro_Investments!A1:J1000");
+      if (invRows && invRows.length > 1) {
+        investments = invRows.slice(1).filter((r) => r.some(Boolean));
       }
     } catch {
-      // Sheets not available, return SQLite data
+      // ignore — investments are optional enrichment
     }
 
-    return NextResponse.json({ products, source: "local" });
+    const enriched = products.map((p) => {
+      const productInvestments = investments.filter((inv) => inv[1] === p.id || inv[2] === p.id);
+      const totalTerKumpul = productInvestments.reduce((sum, inv) => sum + (Number(inv[5]) || 0), 0);
+      const unitTerjual = productInvestments.reduce((sum, inv) => sum + (Number(inv[4]) || 0), 0);
+      return {
+        ...p,
+        unit_terjual: unitTerjual,
+        total_terkumpul: totalTerKumpul,
+      };
+    });
+
+    return NextResponse.json({
+      products: enriched,
+      source,
+      sourceStatus: source === "sheets" ? "live" : "degraded",
+      warning:
+        source === "sheets"
+          ? undefined
+          : "Data source tidak tersedia.",
+    });
   } catch (error) {
     return NextResponse.json(
       { products: [], source: "degraded", sourceStatus: "degraded", warning: "Gagal memuat data", details: String(error) },
@@ -80,7 +65,6 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const db = getDbSafe();
 
     const kode = body.kode?.trim();
     const nama = body.nama?.trim();
@@ -94,35 +78,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Try SQLite first
-    if (db) {
-      try {
-        const nilai_sukuk = harga_per_unit * jumlah_unit;
-        const result = db.prepare(`
-          INSERT INTO sukuk_products (kode, nama, deskripsi, kategori, harga_per_unit, jumlah_unit, nilai_sukuk, tenor_bulan, nisbah_investor, nisbah_pengelola, jenis_akad, target_cogs, target_harga_jual, status)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(
-          kode, nama, body.deskripsi || "", body.kategori || "merchandise",
-          harga_per_unit, jumlah_unit, nilai_sukuk,
-          Number(body.tenor_bulan) || 12,
-          Number(body.nisbah_investor) || 50,
-          Number(body.nisbah_pengelola) || 50,
-          body.jenis_akad || "musyarakah",
-          Number(body.target_cogs) || 0,
-          Number(body.target_harga_jual) || 0,
-          body.status || "open"
-        );
-        const product = db.prepare("SELECT * FROM sukuk_products WHERE id = ?").get(result.lastInsertRowid);
-        return NextResponse.json({ product, source: "local" }, { status: 201 });
-      } catch (dbError: any) {
-        if (dbError?.message?.includes("UNIQUE constraint failed")) {
-          return NextResponse.json({ error: "Kode produk sudah digunakan" }, { status: 409 });
-        }
-        // Fall through to sheets
-      }
-    }
-
-    // Fallback: write to Google Sheets
+    // Write to Google Sheets (source of truth)
     const added = await addSukukProductToSheets({
       id: kode,
       nama,
