@@ -1,0 +1,593 @@
+# SWI UI/UX Design Plan — 2026-06-19
+
+## Design System
+- **Framework:** shadcn/ui + Tailwind CSS
+- **Theme:** Light (default shadcn), konsisten di semua module
+- **Layout:** DashboardLayout (sidebar + header + main content)
+- **Components:** Card, Table, Button, Badge, Tabs, Input, Select, Textarea, Dialog/Modal
+- **Icons:** Lucide React
+- **Responsive:** Mobile-first, table breakpoints
+
+## Global UI Structure
+
+```
+┌─────────────────────────────────────────────────┐
+│ Header: Logo SWI | Search | Notifications | User│
+├──────────┬──────────────────────────────────────┤
+│          │                                      │
+│ Sidebar  │  Main Content Area                   │
+│          │                                      │
+│ 📊 Dash  │  ┌──────────────────────────────────┐ │
+│ 💰 Fin   │  │ Page Title + Action Buttons      │ │
+│ 🏭 Prod  │  ├──────────────────────────────────┤ │
+│ 📦 Inv   │  │ KPI Cards (4-6 metrics)          │ │
+│ 🧾 Proc  │  ├──────────────────────────────────┤ │
+│ 🎉 Events│  │ Tabs / Filters                   │ │
+│ 🏪 Store │  ├──────────────────────────────────┤ │
+│ 🪙 Sukuk │  │ Data Table / Forms / Charts      │ │
+│ 🛍️ Ecom  │  │                                  │ │
+│ 📈 Rpts  │  │                                  │ │
+│ 🏷️ Merch │  └──────────────────────────────────┘ │
+│ ✅ Compl │                                      │
+│ 📧 Email│                                      │
+│ ...     │                                      │
+└──────────┴──────────────────────────────────────┘
+```
+
+---
+
+## Module 1: Procurement / PO
+
+### Page: /procurement
+
+#### Layout
+```
+┌─────────────────────────────────────────────────┐
+│ Procurement & PO                    [+ Supplier] │
+│ Supplier management, purchase orders, receipts  │
+├─────────────────────────────────────────────────┤
+│ [Suppliers] [PO] [Receipts] [Supplier Master]    │
+├─────────────────────────────────────────────────┤
+│                                                  │
+│  Tab: Suppliers                                  │
+│  ┌─────────────────────────────────────────────┐ │
+│  │ Search: [________] Category: [All ▼]        │ │
+│  ├─────────────────────────────────────────────┤ │
+│  │ Name │ Category │ Contact │ Lead Time │ ... │ │
+│  │ PT.X │ Chemical │ 0812... │ 7 days    │ ✏️ 🗑│ │
+│  └─────────────────────────────────────────────┘ │
+│                                                  │
+│  Tab: Purchase Orders                            │
+│  ┌─────────────────────────────────────────────┐ │
+│  │ [+ New PO] Filter: [Status ▼] [Supplier ▼]  │ │
+│  ├─────────────────────────────────────────────┤ │
+│  │ PO ID │ Date │ Supplier │ Items │ Status    │ │
+│  │ PO-01 │ 6/19 │ PT.X     │ 3     │ Pending   │ │
+│  └─────────────────────────────────────────────┘ │
+│                                                  │
+│  Tab: Goods Receipts                             │
+│  ┌─────────────────────────────────────────────┐ │
+│  │ [+ New Receipt]                             │ │
+│  ├─────────────────────────────────────────────┤ │
+│  │ Receipt │ PO Ref │ Date │ Item │ QC Status  │ │
+│  │ R-001  │ PO-01  │ 6/19 │ Alc  │ Passed     │ │
+│  └─────────────────────────────────────────────┘ │
+│                                                  │
+└─────────────────────────────────────────────────┘
+```
+
+#### Forms
+- **Supplier Form:** Name, Category (dropdown), Contact Person, WA/Email, Lead Time, Rating, Status
+- **PO Form:** Supplier (dropdown), Date, Item rows (SKU, Name, Qty, Unit, Unit Price, Total), Notes
+- **Receipt Form:** PO Reference (dropdown), Date, Item rows (auto-fill from PO), QC Status, Proof URL
+
+#### KPI Cards
+- Total Suppliers
+- Open PO Count
+- Pending Receipts
+- Total PO Value (month)
+
+---
+
+## Module 2: Events / Fragrantions
+
+### Page: /events
+
+#### Layout
+```
+┌─────────────────────────────────────────────────┐
+│ Events & Fragrantions              [+ New Event] │
+│ Event pipeline, budget, tenants, sponsors        │
+├─────────────────────────────────────────────────┤
+│ [Timeline] [Events] [Budget] [Tenants] [Sponsors]│
+├─────────────────────────────────────────────────┤
+│                                                  │
+│  Tab: Timeline (default view)                    │
+│  ┌─────────────────────────────────────────────┐ │
+│  │  📅 2026                                    │ │
+│  │  ├─ Jun 15  Road to Fragrantions Vol.1  🟢  │ │
+│  │  │  ├─ Venue: Promenade TIM                │ │
+│  │  │  ├─ Budget: Rp 15.000.000              │ │
+│  │  │  ├─ Tenants: 12 brands                  │ │
+│  │  │  └─ Sponsors: 5                        │ │
+│  │  │                                          │ │
+│  │  ├─ Jul 01  Fragrantions 2026         🟡   │ │
+│  │  │  ├─ Venue: Gedung Emeria TIM            │ │
+│  │  │  ├─ Budget: Rp 50.000.000              │ │
+│  │  │  ├─ Tenants: TBD                       │ │
+│  │  │  └─ Sponsors: TBD                      │ │
+│  │  │                                          │ │
+│  │  └─ Aug 15  Road to Fragrantions Vol.2  ⚪  │ │
+│  └─────────────────────────────────────────────┘ │
+│                                                  │
+│  Tab: Events List                                │
+│  ┌─────────────────────────────────────────────┐ │
+│  │ [+ New Event] [Filter: Type ▼] [Status ▼]   │ │
+│  ├─────────────────────────────────────────────┤ │
+│  │ Name │ Type │ Date │ Venue │ Status │ PIC   │ │
+│  │ RTF  │ Road │ 6/15 │ TIM   │ Active │ Wapiq │ │
+│  └─────────────────────────────────────────────┘ │
+│                                                  │
+│  Tab: Budget                                     │
+│  ┌─────────────────────────────────────────────┐ │
+│  │ Event: [RTF Vol.1 ▼] [+ Add Budget Item]    │ │
+│  ├─────────────────────────────────────────────┤ │
+│  │ Category │ Item │ Planned │ Actual │ Var    │ │
+│  │ Venue    │ Sewa │ 10.000  │ 8.000  │ -2.000 │ │
+│  │ Marketing│ Ads  │ 5.000   │ 3.000  │ -2.000 │ │
+│  └─────────────────────────────────────────────┘ │
+│                                                  │
+│  Tab: Tenants                                    │
+│  ┌─────────────────────────────────────────────┐ │
+│  │ Event: [RTF Vol.1 ▼] [+ Add Tenant]         │ │
+│  ├─────────────────────────────────────────────┤ │
+│  │ Brand │ Contact │ Booth │ Status │ Payment  │ │
+│  │ L'Arc │ Budi    │ A1    │ Conf   │ Paid     │ │
+│  └─────────────────────────────────────────────┘ │
+│                                                  │
+│  Tab: Sponsors                                   │
+│  ┌─────────────────────────────────────────────┐ │
+│  │ Event: [RTF Vol.1 ▼] [+ Add Sponsor]        │ │
+│  ├─────────────────────────────────────────────┤ │
+│  │ Company │ Tier │ Amount │ Status │ Contact  │ │
+│  │ Brand X │ Gold │ 5.000  │ Paid   │ Andi     │ │
+│  └─────────────────────────────────────────────┘ │
+│                                                  │
+└─────────────────────────────────────────────────┘
+```
+
+#### Event Detail Modal
+```
+┌──────────────────────────────────────┐
+│ ✏️ Edit Event: Road to Fragrantions  │
+├──────────────────────────────────────┤
+│ Name: [Road to Fragrantions Vol.1  ] │
+│ Type: [Road to Fragrantions     ▼]  │
+│ Date: [2026-06-15                ]  │
+│ Venue: [Promenade TIM            ]  │
+│ PIC:  [Wapiq                    ▼]  │
+│ Status: [Active                 ▼]  │
+│ Instagram: [@fragrantions         ] │
+│ Description: [                     ] │
+│                                      │
+│  [Cancel]              [💾 Save]    │
+└──────────────────────────────────────┘
+```
+
+#### KPI Cards
+- Upcoming Events
+- Total Budget (YTD)
+- Total Tenants
+- Total Sponsors
+
+---
+
+## Module 3: Store Daily
+
+### Page: /store-daily
+
+#### Layout
+```
+┌─────────────────────────────────────────────────┐
+│ Store Daily                        [+ New Entry] │
+│ Daily sales, traffic, conversion tracking       │
+├─────────────────────────────────────────────────┤
+│ [Daily Log] [Analytics]                          │
+├─────────────────────────────────────────────────┤
+│                                                  │
+│  Tab: Daily Log                                  │
+│  ┌─────────────────────────────────────────────┐ │
+│  │ [+ New Entry] Month: [June 2026 ▼]          │ │
+│  ├─────────────────────────────────────────────┤ │
+│  │ Date │ Day │ Open │ Close │ Traffic │ Omzet │ │
+│  │ 6/19 │ Thu │ 10:00│ 21:00 │ 45      │ 2.5jt │ │
+│  │ 6/18 │ Wed │ 10:00│ 21:00 │ 38      │ 1.8jt │ │
+│  └─────────────────────────────────────────────┘ │
+│                                                  │
+│  Tab: Analytics                                  │
+│  ┌─────────────────────────────────────────────┐ │
+│  │  Last 7 Days          │  This Month         │ │
+│  │  ┌──────────────┐     │  ┌──────────────┐   │ │
+│  │  │ Traffic: 280 │     │  │ Traffic: 1.2k│   │ │
+│  │  │ Conv: 12%    │     │  │ Conv: 14%    │   │ │
+│  │  │ Omzet: 12jt  │     │  Omzet: 45jt  │   │ │
+│  │  └──────────────┘     │  └──────────────┘   │ │
+│  └─────────────────────────────────────────────┘ │
+│                                                  │
+└─────────────────────────────────────────────────┘
+```
+
+#### Daily Entry Form
+```
+┌──────────────────────────────────────┐
+│ 📝 New Daily Entry                   │
+├──────────────────────────────────────┤
+│ Date: [2026-06-19                ]  │
+│ Day:  [Thursday (auto)            ]  │
+│ Open:  [10:00                    ]  │
+│ Close: [21:00                    ]  │
+│ Traffic: [45                     ]  │
+│ Transactions: [12                ]  │
+│ Omzet (Rp): [2.500.000           ]  │
+│ Top Product: [EDP 30ml Rose      ] │
+│ Catatan: [                        ] │
+│                                      │
+│  [Cancel]              [💾 Save]    │
+└──────────────────────────────────────┘
+```
+
+---
+
+## Module 4: Sukuk Mikro
+
+### Page: /sukuk
+
+#### Layout
+```
+┌─────────────────────────────────────────────────┐
+│ Sukuk Mikro                    [+ New Investment]│
+│ Produk syariah, investor, bagi hasil            │
+├─────────────────────────────────────────────────┤
+│ [Produk] [Investors] [Distributions] [Schedule]  │
+├─────────────────────────────────────────────────┤
+│                                                  │
+│  Tab: Produk Sukuk                               │
+│  ┌─────────────────────────────────────────────┐ │
+│  │ [+ New Produk]                              │ │
+│  ├─────────────────────────────────────────────┤ │
+│  │ Produk │ Target │ Terkumpul │ Tenor │ Status│ │
+│  │ Store  │ 50jt   │ 30jt      │ 12bln │ Active│ │
+│  │ Merch  │ 25jt   │ 15jt      │ 6bln  │ Active│ │
+│  └─────────────────────────────────────────────┘ │
+│                                                  │
+│  Tab: Investors                                  │
+│  ┌─────────────────────────────────────────────┐ │
+│  │ [+ New Investor]                            │ │
+│  ├─────────────────────────────────────────────┤ │
+│  │ Name │ Produk │ Unit │ Nilai │ Tanggal     │ │
+│  │ Andi │ Store  │ 10   │ 10jt  │ 2026-01-15  │ │
+│  │ Budi │ Merch  │ 5    │ 5jt   │ 2026-02-01  │ │
+│  └─────────────────────────────────────────────┘ │
+│                                                  │
+│  Tab: Distributions                              │
+│  ┌─────────────────────────────────────────────┐ │
+│  │ Periode │ Revenue │ COGS │ Profit │ Nisbah  │ │
+│  │ Q1 2026 │ 15jt    │ 8jt  │ 7jt    │ 50:50   │ │
+│  └─────────────────────────────────────────────┘ │
+│                                                  │
+│  Tab: Payment Schedule                           │
+│  ┌─────────────────────────────────────────────┐ │
+│  │ Periode │ Kuartal │ Revenue │ Laba │ Status │ │
+│  │ 2026-Q1 │ Q1      │ 12.5jt  │ 5jt  │ Paid   │ │
+│  │ 2026-Q2 │ Q2      │ 15jt    │ 6jt  │ Pending│ │
+│  └─────────────────────────────────────────────┘ │
+│                                                  │
+└─────────────────────────────────────────────────┘
+```
+
+#### KPI Cards
+- Total Produk Aktif
+- Total Dana Terkumpul
+- Total Investor
+- Total Profit (YTD)
+
+---
+
+## Module 5: E-Commerce
+
+### Page: /ecommerce
+
+#### Layout
+```
+┌─────────────────────────────────────────────────┐
+│ E-Commerce                          [+ New Order]│
+│ Online orders, metrics, conversion tracking     │
+├─────────────────────────────────────────────────┤
+│ [Transactions] [Metrics]                        │
+├─────────────────────────────────────────────────┤
+│                                                  │
+│  Tab: Transactions                               │
+│  ┌─────────────────────────────────────────────┐ │
+│  │ [+ New] Filter: [Month ▼] [Status ▼]        │ │
+│  ├─────────────────────────────────────────────┤ │
+│  │ Date │ Type │ Category │ Description │ Amount│ │
+│  │ 6/19 │ Sales│ Parfum   │ EDP 30ml x2  │ 300k │ │
+│  │ 6/18 │ Sales│ Merch    │ T-Shirt TIM  │ 150k │ │
+│  └─────────────────────────────────────────────┘ │
+│                                                  │
+│  Tab: Metrics                                    │
+│  ┌─────────────────────────────────────────────┐ │
+│  │  Traffic │ Conv% │ AOV    │ Repeat │ Revenue│ │
+│  │  1.2k    │ 3.2%  │ 280k   │ 15%    │ 12.5jt │ │
+│  └─────────────────────────────────────────────┘ │
+│                                                  │
+└─────────────────────────────────────────────────┘
+```
+
+---
+
+## Module 6: Cashflow
+
+### Page: /cashflow
+
+#### Layout
+```
+┌─────────────────────────────────────────────────┐
+│ Cashflow                        [+ New Actual]   │
+│ Forecast vs Actual cashflow tracking            │
+├─────────────────────────────────────────────────┤
+│ [Forecast] [Actual] [Comparison]                │
+├─────────────────────────────────────────────────┤
+│                                                  │
+│  Tab: Forecast vs Actual                         │
+│  ┌─────────────────────────────────────────────┐ │
+│  │ Month │ Forecast │ Actual │ Variance │ Status│ │
+│  │ Jun   │ 15jt     │ 12jt   │ -3jt     │ ⚠️   │ │
+│  │ Jul   │ 18jt     │ -      │ -        │ ⏳   │ │
+│  └─────────────────────────────────────────────┘ │
+│                                                  │
+│  Tab: Store Cashflow                             │
+│  ┌─────────────────────────────────────────────┐ │
+│  │ [Proyeksi Cashflow Store data from Sheets]  │ │
+│  └─────────────────────────────────────────────┘ │
+│                                                  │
+└─────────────────────────────────────────────────┘
+```
+
+---
+
+## Module 7: Reports
+
+### Page: /reports
+
+#### Layout
+```
+┌─────────────────────────────────────────────────┐
+│ Laporan                        [Export PDF]    │
+│ Laporan harian & bulanan                      │
+├─────────────────────────────────────────────────┤
+│ [Harian] [Bulanan]                               │
+├─────────────────────────────────────────────────┤
+│                                                  │
+│  Tab: Laporan Harian                             │
+│  ┌─────────────────────────────────────────────┐ │
+│  │ Month: [June 2026 ▼] [Export PDF]           │ │
+│  ├─────────────────────────────────────────────┤ │
+│  │ [Laporan data from Laporan_Harian sheet]   │ │
+│  │                                              │ │
+│  │  Pendapatan: Rp 25.000.000                  │ │
+│  │  Pengeluaran: Rp 18.000.000                 │ │
+│  │  Laba Bersih: Rp 7.000.000                  │ │
+│  └─────────────────────────────────────────────┘ │
+│                                                  │
+│  Tab: Laporan Bulanan                            │
+│  ┌─────────────────────────────────────────────┐ │
+│  │ [Laporan data from Laporan_Bulanan sheet]  │ │
+│  │                                              │ │
+│  │  ┌────────┬───────┬───────┬───────┬────────┐│ │
+│  │  │        │ Jan   │ Feb   │ Mar   │ ...    ││ │
+│  │  ├────────┼───────┼───────┼───────┼────────┤│ │
+│  │  │ Revenue│ 20jt  │ 22jt  │ 25jt  │        ││ │
+│  │  │ COGS   │ 10jt  │ 11jt  │ 12jt  │        ││ │
+│  │  │ Profit │ 10jt  │ 11jt  │ 13jt  │        ││ │
+│  │  └────────┴───────┴───────┴───────┴────────┘│ │
+│  └─────────────────────────────────────────────┘ │
+│                                                  │
+└─────────────────────────────────────────────────┘
+```
+
+---
+
+## Module 8: Merch TIM
+
+### Page: /merch
+
+#### Layout
+```
+┌─────────────────────────────────────────────────┐
+│ Merchandise TIM                    [+ New Item]  │
+│ Product catalog, COGS, margin tracking          │
+├─────────────────────────────────────────────────┤
+│ [Products] [Analytics]                          │
+├─────────────────────────────────────────────────┤
+│                                                  │
+│  Tab: Products                                   │
+│  ┌─────────────────────────────────────────────┐ │
+│  │ [+ New Item] Search: [________]             │ │
+│  ├─────────────────────────────────────────────┤ │
+│  │ SKU │ Product │ Category │ COGS │ Price │ Margin │ │
+│  │ M-01│ T-Shirt │ Apparel  │ 50k  │ 120k  │ 58%    │ │
+│  │ M-02│ Tumbler │ Drinkware│ 35k  │ 80k   │ 56%    │ │
+│  └─────────────────────────────────────────────┘ │
+│                                                  │
+│  Tab: Analytics                                  │
+│  ┌─────────────────────────────────────────────┐ │
+│  │  Total SKU: 11  │  Avg Margin: 55%          │ │
+│  │  Total COGS: 850k │  Total Value: 1.2jt      │ │
+│  └─────────────────────────────────────────────┘ │
+│                                                  │
+└─────────────────────────────────────────────────┘
+```
+
+---
+
+## Dashboard Integration
+
+### Updated Main Dashboard (/dashboard)
+
+Dashboard utama harus menampilkan ringkasan SEMUA module:
+
+```
+┌─────────────────────────────────────────────────┐
+│ Executive Dashboard — SWI                       │
+├─────────────────────────────────────────────────┤
+│                                                  │
+│  Row 1: Financial KPIs                          │
+│  ┌────────┬────────┬────────┬────────┐          │
+│  │ Revenue│ Profit │ Cash   │ Margin │          │
+│  │ 25jt   │ 7jt    │ 18jt   │ 28%    │          │
+│  └────────┴────────┴────────┴────────┘          │
+│                                                  │
+│  Row 2: Operations KPIs                          │
+│  ┌────────┬────────┬────────┬────────┐          │
+│  │ Active │ PO     │ Low    │ Upcom  │          │
+│  │ Batch  │ Open   │ Stock  │ Events │          │
+│  │ 3      │ 2      │ 2      │ 1      │          │
+│  └────────┴────────┴────────┴────────┘          │
+│                                                  │
+│  Row 3: Business KPIs                            │
+│  ┌────────┬────────┬────────┬────────┐          │
+│  │ Sukuk  │ E-Com  │ Store  │ Merch  │          │
+│  │ 30jt   │ 12.5jt │ 2.5jt  │ 1.2jt  │          │
+│  │ raised │ rev    │ daily  │ value  │          │
+│  └────────┴────────┴────────┴────────┘          │
+│                                                  │
+│  Row 4: Charts / Tables                          │
+│  ┌──────────────────┬──────────────────┐        │
+│  │ Revenue Trend    │ Top Products     │        │
+│  │ (line chart)     │ (table)          │        │
+│  │                  │                  │        │
+│  │  /\    /\        │ 1. EDP 30ml  45  │        │
+│  │ /  \  /  \       │ 2. Discovery 30  │        │
+│  │/    \/    \___   │ 3. T-Shirt  25  │        │
+│  └──────────────────┴──────────────────┘        │
+│                                                  │
+│  Row 5: Alerts & Actions                         │
+│  ┌─────────────────────────────────────────────┐ │
+│  │ ⚠️ Fixative Base: 3kg (min 5kg) — [Order]  │ │
+│  │ ⚠️ Stiker Label: 80pcs (min 100) — [Order] │ │
+│  │ 📅 Road to Fragrantions: 3 days — [View]   │ │
+│  │ 📋 PO-001: Pending receipt — [Receive]     │ │
+│  └─────────────────────────────────────────────┘ │
+│                                                  │
+└─────────────────────────────────────────────────┘
+```
+
+---
+
+## Navigation / Sidebar Structure
+
+```
+📊 Dashboard (overview semua module)
+├── 💰 Finance
+│   ├── /finance (transactions)
+│   ├── /invoice
+│   ├── /billing
+│   └── /cashflow (NEW)
+├── 🏭 Operations
+│   ├── /production
+│   ├── /inventory
+│   ├── /procurement (NEW)
+│   └── /store-daily (NEW)
+├── 🎉 Events
+│   └── /events (NEW — timeline, budget, tenants, sponsors)
+├── 🛍️ Sales
+│   ├── /ecommerce (NEW)
+│   ├── /merch (NEW)
+│   └── /crm
+├── 🪙 Sukuk
+│   └── /sukuk (NEW — produk, investor, distribusi)
+├── 📈 Reports
+│   ├── /reports (NEW — harian, bulanan)
+│   └── /workflow
+├── ✅ Compliance
+│   ├── /compliance
+│   ├── /bpom
+│   └── /tax-compliance
+├── 🛡️ BPJS
+│   └── /bpjs
+├── 📧 Communication
+│   ├── /email
+│   └── /documents
+└── ⚙️ Settings
+    ├── /settings
+    └── /users
+```
+
+---
+
+## Shared Components
+
+### KPI Card Component
+```tsx
+<Card>
+  <CardHeader className="pb-2">
+    <CardDescription className="flex items-center gap-1">
+      <Icon className="h-3 w-3" /> {label}
+    </CardDescription>
+  </CardHeader>
+  <CardContent>
+    <div className={`text-2xl font-bold ${accent}`}>{value}</div>
+    <div className="text-xs text-muted-foreground">{hint}</div>
+  </CardContent>
+</Card>
+```
+
+### Data Table with Actions
+```tsx
+<Table>
+  <TableHeader>...</TableHeader>
+  <TableBody>
+    {rows.map(row => (
+      <TableRow key={row.id}>
+        {columns.map(col => <TableCell>{row[col]}</TableCell>)}
+        <TableCell>
+          <Button variant="ghost" size="sm" onClick={() => edit(row)}><Pencil className="h-3.5 w-3.5" /></Button>
+          <Button variant="ghost" size="sm" onClick={() => del(row.id)} className="text-red-500"><Trash2 className="h-3.5 w-3.5" /></Button>
+        </TableCell>
+      </TableRow>
+    ))}
+  </TableBody>
+</Table>
+```
+
+### Alert Banner
+```tsx
+<Card className="border-amber-200 bg-amber-50">
+  <CardContent className="py-3 flex items-center gap-2">
+    <AlertTriangle className="h-4 w-4 text-amber-600" />
+    <span className="text-sm">{message}</span>
+    <Button size="sm" className="ml-auto">Action</Button>
+  </CardContent>
+</Card>
+```
+
+---
+
+## Responsive Behavior
+
+### Desktop (>1024px)
+- Full sidebar (256px)
+- 4-column KPI cards
+- Full table with all columns
+
+### Tablet (768-1024px)
+- Collapsible sidebar (64px icons)
+- 2-column KPI cards
+- Table with horizontal scroll
+
+### Mobile (<768px)
+- Hidden sidebar (hamburger menu)
+- 1-column KPI cards
+- Table → card list view
+- Bottom navigation (optional)
