@@ -1,12 +1,21 @@
-// Seed expense data into Google Sheets
-// Run with: npx tsx scripts/seed-expenses.ts
+/**
+ * Seed script for Expense Approval Flow
+ * - Creates Expense_Submissions sheet with headers + 5 sample rows
+ * - Creates Expense_Approvers sheet with headers + 1 approver (Beriman Juliano)
+ *
+ * Run: npx tsx scripts/seed-expenses.ts
+ */
+
 import { google } from "googleapis";
 import fs from "fs";
 
-const SPREADSHEET_ID = process.env.GOOGLE_SHEETS_ID || "1lQ_FX6v-aX0XNwkRO6TyYLU1NGq6lAMFvK88S09KZsA";
+const SPREADSHEET_ID =
+  process.env.GOOGLE_SHEETS_ID ||
+  "1lQ_FX6v-aX0XNwkRO6TyYLU1NGq6lAMFvK88S09KZsA";
 const TOKEN_PATH = "/home/ubuntu/.hermes/google_token.json";
 
 function loadCredentials() {
+  // Try file first
   try {
     const content = JSON.parse(fs.readFileSync(TOKEN_PATH, "utf-8"));
     return {
@@ -16,22 +25,29 @@ function loadCredentials() {
       access_token: content.token || content.access_token || "",
       expiry_date: content.expiry_date || content.expiry || 0,
     };
-  } catch {
-    return null;
+  } catch {}
+  // Fallback to env
+  const client_id = process.env.GOOGLE_CLIENT_ID;
+  const client_secret = process.env.GOOGLE_CLIENT_SECRET;
+  const refresh_token = process.env.GOOGLE_REFRESH_TOKEN;
+  if (!client_id || !client_secret || !refresh_token) {
+    throw new Error("No Google credentials found");
   }
+  return {
+    client_id,
+    client_secret,
+    refresh_token,
+    access_token: process.env.GOOGLE_ACCESS_TOKEN || "",
+    expiry_date: parseInt(process.env.GOOGLE_EXPIRY_DATE || "0", 10) || 0,
+  };
 }
 
 async function main() {
   const creds = loadCredentials();
-  if (!creds) {
-    console.error("❌ No Google credentials found");
-    process.exit(1);
-  }
-
   const oauth2 = new google.auth.OAuth2(
     creds.client_id,
     creds.client_secret,
-    "http://localhost:1"
+    process.env.GOOGLE_REDIRECT_URI || "http://localhost:1"
   );
   oauth2.setCredentials({
     refresh_token: creds.refresh_token,
@@ -42,125 +58,225 @@ async function main() {
 
   const sheets = google.sheets({ version: "v4", auth: oauth2 });
 
-  // Check if sheets exist, create if not
+  // ── Check existing sheets ──
   const ss = await sheets.spreadsheets.get({
     spreadsheetId: SPREADSHEET_ID,
     fields: "sheets.properties.title",
   });
+  const existingSheets = (ss.data.sheets || []).map(
+    (s: any) => s.properties?.title
+  );
 
-  const existingSheets = ss.data.sheets?.map((s) => s.properties?.title) || [];
+  console.log("Existing sheets:", existingSheets);
 
-  // Create Expense_Submissions if not exists
-  if (!existingSheets.includes("Expense_Submissions")) {
-    console.log("Creating Expense_Submissions sheet...");
+  // ── 1. Expense_Submissions ──
+  const submissionsSheet = "Expense_Submissions";
+  const submissionsHeaders = [
+    "Submission ID",
+    "Date",
+    "Submitter Name",
+    "Related Event",
+    "Category",
+    "Description",
+    "Amount",
+    "Proof URL",
+    "Status",
+    "Reviewed By",
+    "Reviewed Date",
+    "Notes",
+  ];
+
+  const today = new Date().toISOString().slice(0, 10);
+  const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+  const lastWeek = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
+  const twoWeeksAgo = new Date(Date.now() - 14 * 86400000)
+    .toISOString()
+    .slice(0, 10);
+
+  const sampleSubmissions = [
+    [
+      "EXP-001",
+      today,
+      "Beriman Juliano",
+      "Pekan Produk Lokal 2026",
+      "Sewa Booth",
+      "Sewa booth utama 3x2m di hall A",
+      3500000,
+      "",
+      "Pending",
+      "",
+      "",
+      "Menunggu approval direktur",
+    ],
+    [
+      "EXP-002",
+      yesterday,
+      "Siti Rahmawati",
+      "Pekan Produk Lokal 2026",
+      "Bahan Baku",
+      "Pembelian bahan baku parfum — essential oil rose",
+      1250000,
+      "",
+      "Approved",
+      "Beriman Juliano",
+      today,
+      "Approved — sesuai budget",
+    ],
+    [
+      "EXP-003",
+      lastWeek,
+      "Ahmad Fauzi",
+      "Expo UMKM Jawa Barat",
+      "Transport",
+      "Ongkos kirim booth + barang dari Bandung ke Jakarta",
+      750000,
+      "",
+      "Approved",
+      "Beriman Juliano",
+      yesterday,
+      "Approved — biaya wajar",
+    ],
+    [
+      "EXP-004",
+      lastWeek,
+      "Dewi Lestari",
+      "Expo UMKM Jawa Barat",
+      "Iklan",
+      "Biaya iklan Instagram promotion 2 minggu",
+      2000000,
+      "",
+      "Rejected",
+      "Beriman Juliano",
+      lastWeek,
+      "Rejected — melebihi budget iklan, perlu revisi",
+    ],
+    [
+      "EXP-005",
+      twoWeeksAgo,
+      "Rizky Pratama",
+      "Pekan Produk Lokal 2026",
+      "Packaging",
+      "Kemasan khusus edisi event — 500 pcs",
+      1800000,
+      "",
+      "Pending",
+      "",
+      "",
+      "Menunggu review",
+    ],
+  ];
+
+  if (!existingSheets.includes(submissionsSheet)) {
+    console.log(`Creating sheet: ${submissionsSheet}`);
     await sheets.spreadsheets.batchUpdate({
       spreadsheetId: SPREADSHEET_ID,
       requestBody: {
-        requests: [{ addSheet: { properties: { title: "Expense_Submissions" } } }],
+        requests: [
+          { addSheet: { properties: { title: submissionsSheet } } },
+        ],
+      },
+    });
+    // Write headers
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${submissionsSheet}!A1:L1`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: [submissionsHeaders] },
+    });
+    console.log("Headers written.");
+  } else {
+    console.log(`Sheet ${submissionsSheet} already exists.`);
+  }
+
+  // Check if data already exists
+  const { data: existingData } = await sheets.spreadsheets.values.get({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `${submissionsSheet}!A:L`,
+  });
+  const existingRows = existingData.values || [];
+
+  if (existingRows.length > 1) {
+    console.log(
+      `Expense_Submissions already has ${existingRows.length - 1} data rows. Skipping seed.`
+    );
+  } else {
+    // Append sample data
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${submissionsSheet}!A:L`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: sampleSubmissions },
+    });
+    console.log(`✅ Seeded ${sampleSubmissions.length} expense submissions.`);
+  }
+
+  // ── 2. Expense_Approvers ──
+  const approversSheet = "Expense_Approvers";
+  const approversHeaders = [
+    "Approver ID",
+    "Name",
+    "Role",
+    "Email",
+  ];
+  const sampleApprovers = [
+    [
+      "APR-001",
+      "Beriman Juliano",
+      "Direktur",
+      "beriman@swi.co.id",
+    ],
+  ];
+
+  if (!existingSheets.includes(approversSheet)) {
+    console.log(`Creating sheet: ${approversSheet}`);
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: SPREADSHEET_ID,
+      requestBody: {
+        requests: [
+          { addSheet: { properties: { title: approversSheet } } },
+        ],
       },
     });
     await sheets.spreadsheets.values.update({
       spreadsheetId: SPREADSHEET_ID,
-      range: "Expense_Submissions!A1:L1",
+      range: `${approversSheet}!A1:D1`,
       valueInputOption: "USER_ENTERED",
-      requestBody: {
-        values: [[
-          "Submission ID", "Date", "Submitter Name", "Related Event",
-          "Category", "Description", "Amount", "Proof URL",
-          "Status", "Reviewed By", "Reviewed Date", "Notes"
-        ]],
-      },
+      requestBody: { values: [approversHeaders] },
     });
-    console.log("✅ Expense_Submissions sheet created with headers");
+    console.log("Headers written.");
   } else {
-    console.log("ℹ️  Expense_Submissions sheet already exists");
+    console.log(`Sheet ${approversSheet} already exists.`);
   }
 
-  // Create Expense_Approvers if not exists
-  if (!existingSheets.includes("Expense_Approvers")) {
-    console.log("Creating Expense_Approvers sheet...");
-    await sheets.spreadsheets.batchUpdate({
-      spreadsheetId: SPREADSHEET_ID,
-      requestBody: {
-        requests: [{ addSheet: { properties: { title: "Expense_Approvers" } } }],
-      },
-    });
-    await sheets.spreadsheets.values.update({
-      spreadsheetId: SPREADSHEET_ID,
-      range: "Expense_Approvers!A1:D1",
-      valueInputOption: "USER_ENTERED",
-      requestBody: {
-        values: [["Approver ID", "Name", "Role", "Email"]],
-      },
-    });
-    console.log("✅ Expense_Approvers sheet created with headers");
-  } else {
-    console.log("ℹ️  Expense_Approvers sheet already exists");
-  }
-
-  // Check existing data
-  const { data: subData } = await sheets.spreadsheets.values.get({
+  // Check if approver data exists
+  const { data: existingApprovers } = await sheets.spreadsheets.values.get({
     spreadsheetId: SPREADSHEET_ID,
-    range: "Expense_Submissions!A:L",
+    range: `${approversSheet}!A:D`,
   });
-  const existingRows = subData.values || [];
-  const dataRowCount = existingRows.length > 1 ? existingRows.length - 1 : 0;
-  console.log(`ℹ️  Expense_Submissions has ${dataRowCount} data rows`);
+  const existingApproverRows = existingApprovers.values || [];
 
-  // Seed 5 sample submissions if less than 5 exist
-  if (dataRowCount < 5) {
-    console.log("Seeding 5 sample expense submissions...");
-    const today = new Date().toISOString().slice(0, 10);
-    const lastMonth = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
-    const twoMonthsAgo = new Date(Date.now() - 60 * 86400000).toISOString().slice(0, 10);
-
-    const submissions = [
-      ["EXP-001", twoMonthsAgo, "Beriman Juliano", "Pekan Parfum Indonesia 2026", "Sewa Booth", "Sewa booth utama hall A", 5000000, "", "Approved", "Beriman Juliano", twoMonthsAgo, "Approved - booth premium"],
-      ["EXP-002", lastMonth, "Siti Rahmawati", "Pekan Parfum Indonesia 2026", "Iklan", "Banner dan spanduk promosi", 1500000, "", "Approved", "Beriman Juliano", lastMonth, "Approved - materi promosi"],
-      ["EXP-003", lastMonth, "Ahmad Fauzi", "Launch Event Vanilla Oud", "Bahan Baku", "Pembelian bahan baku vanilla extract", 3200000, "", "Rejected", "Beriman Juliano", lastMonth, "Rejected - melebihi budget bahan baku"],
-      ["EXP-004", today, "Dewi Lestari", "Launch Event Vanilla Oud", "Transport", "Transportasi pengiriman sampel", 750000, "", "Pending", "", "", ""],
-      ["EXP-005", today, "Rudi Hartono", "Expo Parfum Jakarta", "Packaging", "Packaging khusus edisi expo", 2100000, "", "Pending", "", "", ""],
-    ];
-
+  if (existingApproverRows.length > 1) {
+    console.log(
+      `Expense_Approvers already has ${existingApproverRows.length - 1} data rows. Skipping seed.`
+    );
+  } else {
     await sheets.spreadsheets.values.append({
       spreadsheetId: SPREADSHEET_ID,
-      range: "Expense_Submissions!A:L",
+      range: `${approversSheet}!A:D`,
       valueInputOption: "USER_ENTERED",
-      requestBody: { values: submissions },
+      requestBody: { values: sampleApprovers },
     });
-    console.log("✅ 5 sample submissions seeded");
-  } else {
-    console.log("✅  Already have 5+ submissions, skipping seed");
+    console.log(
+      `✅ Seeded ${sampleApprovers.length} approver: Beriman Juliano (Direktur)`
+    );
   }
 
-  // Seed approver
-  const { data: apprData } = await sheets.spreadsheets.values.get({
-    spreadsheetId: SPREADSHEET_ID,
-    range: "Expense_Approvers!A:D",
-  });
-  const apprRows = apprData.values || [];
-  const apprCount = apprRows.length > 1 ? apprRows.length - 1 : 0;
-
-  if (apprCount < 1) {
-    console.log("Seeding approver data...");
-    await sheets.spreadsheets.values.append({
-      spreadsheetId: SPREADSHEET_ID,
-      range: "Expense_Approvers!A:D",
-      valueInputOption: "USER_ENTERED",
-      requestBody: {
-        values: [["APR-001", "Beriman Juliano", "Direktur", "beriman@swi.id"]],
-      },
-    });
-    console.log("✅ 1 approver seeded: Beriman Juliano (Direktur)");
-  } else {
-    console.log("✅  Approver already exists, skipping seed");
-  }
-
-  console.log("\n🎉 Expense seeding complete!");
-  console.log("📊 Sheets: https://docs.google.com/spreadsheets/d/" + SPREADSHEET_ID);
+  console.log("\n🎉 Expense Approval Flow seed complete!");
+  console.log(`   Submissions: ${submissionsSheet}`);
+  console.log(`   Approvers: ${approversSheet}`);
 }
 
 main().catch((err) => {
-  console.error("❌ Error:", err);
+  console.error("❌ Seed failed:", err);
   process.exit(1);
 });
