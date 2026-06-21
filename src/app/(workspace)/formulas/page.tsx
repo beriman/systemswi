@@ -7,7 +7,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Textarea } from "@/components/ui/textarea";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Skeleton } from "@/components/ui/skeleton";
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -72,8 +74,6 @@ const fmt = (n: number) =>
   n.toLocaleString("id-ID", { maximumFractionDigits: 0 });
 
 const fmtRp = (n: number) => `Rp ${fmt(n)}`;
-
-const today = () => new Date().toISOString().slice(0, 10);
 
 const emptyIngredientRow = (): IngredientRow => ({
   ingredientId: "",
@@ -444,52 +444,60 @@ export default function FormulasPage() {
             </CardHeader>
             <CardContent>
               {loading ? (
-                <div className="py-8 text-center text-muted-foreground">
-                  Memuat formulas...
+                <div className="space-y-3">
+                  <Skeleton className="h-8 w-full" />
+                  <Skeleton className="h-8 w-full" />
+                  <Skeleton className="h-8 w-full" />
                 </div>
               ) : filtered.length === 0 ? (
-                <div className="py-8 text-center text-muted-foreground">
-                  Belum ada formula. Klik &quot;+ New Formula&quot; untuk membuat.
-                </div>
+                <EmptyState
+                  title="Belum ada formula"
+                  description="Klik '+ New Formula' untuk membuat formula pertama."
+                  action={
+                    <Button onClick={() => { resetBuilder(); setSelectedId(null); }}>
+                      + New Formula
+                    </Button>
+                  }
+                />
               ) : (
                 <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b text-left text-muted-foreground">
-                        <th className="pb-2 pr-4">Formula ID</th>
-                        <th className="pb-2 pr-4">Brand</th>
-                        <th className="pb-2 pr-4">Product</th>
-                        <th className="pb-2 pr-4">SKU</th>
-                        <th className="pb-2 pr-4">Batch</th>
-                        <th className="pb-2 pr-4">HPP/Unit</th>
-                        <th className="pb-2 pr-4">Status</th>
-                        <th className="pb-2">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Formula ID</TableHead>
+                        <TableHead>Brand</TableHead>
+                        <TableHead>Product</TableHead>
+                        <TableHead>SKU</TableHead>
+                        <TableHead>Batch</TableHead>
+                        <TableHead className="text-right">HPP/Unit</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
                       {filtered.map((f) => {
                         const cs = costMap[f.formulaId];
                         return (
-                          <tr
+                          <TableRow
                             key={f.formulaId}
-                            className="border-b last:border-0 hover:bg-muted/40 cursor-pointer"
+                            className="cursor-pointer hover:bg-muted/60"
                             onClick={() => setSelectedId(f.formulaId)}
                           >
-                            <td className="py-3 pr-4 font-mono font-medium">
+                            <TableCell className="font-mono font-medium">
                               {f.formulaId}
-                            </td>
-                            <td className="py-3 pr-4">{f.brandName}</td>
-                            <td className="py-3 pr-4">{f.productName}</td>
-                            <td className="py-3 pr-4 text-muted-foreground">
+                            </TableCell>
+                            <TableCell>{f.brandName}</TableCell>
+                            <TableCell>{f.productName}</TableCell>
+                            <TableCell className="text-muted-foreground">
                               {f.sku}
-                            </td>
-                            <td className="py-3 pr-4">
+                            </TableCell>
+                            <TableCell>
                               {f.batchSize} {f.unit}
-                            </td>
-                            <td className="py-3 pr-4 font-medium">
+                            </TableCell>
+                            <TableCell className="text-right font-medium">
                               {cs ? fmtRp(cs.totalHppPerUnit) : "—"}
-                            </td>
-                            <td className="py-3 pr-4">
+                            </TableCell>
+                            <TableCell>
                               <Badge
                                 variant={
                                   f.status === "Active"
@@ -499,9 +507,9 @@ export default function FormulasPage() {
                               >
                                 {f.status}
                               </Badge>
-                            </td>
-                            <td className="py-3">
-                              <div className="flex gap-1">
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <div className="flex justify-end gap-1">
                                 <Button
                                   variant="ghost"
                                   size="sm"
@@ -531,7 +539,7 @@ export default function FormulasPage() {
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  className="text-destructive"
+                                  className="text-destructive hover:text-destructive"
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     deleteFormula(f.formulaId);
@@ -540,12 +548,12 @@ export default function FormulasPage() {
                                   Delete
                                 </Button>
                               </div>
-                            </td>
-                          </tr>
+                            </TableCell>
+                          </TableRow>
                         );
                       })}
-                    </tbody>
-                  </table>
+                    </TableBody>
+                  </Table>
                 </div>
               )}
             </CardContent>
@@ -556,14 +564,20 @@ export default function FormulasPage() {
         <TabsContent value="detail" className="space-y-4">
           {!selectedId ? (
             <Card>
-              <CardContent className="py-12 text-center text-muted-foreground">
-                Pilih formula dari tab &quot;Formulas&quot; untuk melihat detail.
+              <CardContent className="py-12">
+                <EmptyState
+                  title="Pilih Formula"
+                  description="Pilih formula dari tab 'Formulas' untuk melihat detail."
+                />
               </CardContent>
             </Card>
           ) : detailLoading ? (
             <Card>
-              <CardContent className="py-12 text-center text-muted-foreground">
-                Memuat detail formula...
+              <CardContent className="py-12 space-y-4">
+                <Skeleton className="h-10 w-1/2" />
+                <Skeleton className="h-6 w-1/3" />
+                <Skeleton className="h-32 w-full" />
+                <Skeleton className="h-48 w-full" />
               </CardContent>
             </Card>
           ) : detail ? (
@@ -619,46 +633,46 @@ export default function FormulasPage() {
                 </CardHeader>
                 <CardContent>
                   <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b text-left text-muted-foreground">
-                          <th className="pb-2 pr-3">Bahan</th>
-                          <th className="pb-2 pr-3">Kategori</th>
-                          <th className="pb-2 pr-3 text-right">Qty (ml)</th>
-                          <th className="pb-2 pr-3 text-right">%</th>
-                          <th className="pb-2 pr-3 text-right">Unit Cost</th>
-                          <th className="pb-2 pr-3 text-right">Total Cost</th>
-                          <th className="pb-2 pr-3">Supplier</th>
-                          <th className="pb-2">Notes</th>
-                        </tr>
-                      </thead>
-                      <tbody>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-[180px]">Bahan</TableHead>
+                          <TableHead>Kategori</TableHead>
+                          <TableHead className="text-right">Qty (ml)</TableHead>
+                          <TableHead className="text-right">%</TableHead>
+                          <TableHead className="text-right">Unit Cost</TableHead>
+                          <TableHead className="text-right">Total Cost</TableHead>
+                          <TableHead>Supplier</TableHead>
+                          <TableHead>Notes</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
                         {detail.ingredients.map((ing, i) => (
-                          <tr key={i} className="border-b last:border-0">
-                            <td className="py-2 pr-3 font-medium">
+                          <TableRow key={i}>
+                            <TableCell className="font-medium">
                               {ing.ingredientName}
-                            </td>
-                            <td className="py-2 pr-3">
+                            </TableCell>
+                            <TableCell>
                               <Badge variant="outline">{ing.category}</Badge>
-                            </td>
-                            <td className="py-2 pr-3 text-right">{ing.qty}</td>
-                            <td className="py-2 pr-3 text-right">
+                            </TableCell>
+                            <TableCell className="text-right">{ing.qty}</TableCell>
+                            <TableCell className="text-right">
                               {ing.percent}%
-                            </td>
-                            <td className="py-2 pr-3 text-right">
+                            </TableCell>
+                            <TableCell className="text-right">
                               {fmtRp(ing.unitCost)}
-                            </td>
-                            <td className="py-2 pr-3 text-right font-medium">
+                            </TableCell>
+                            <TableCell className="text-right font-medium">
                               {fmtRp(ing.totalCost)}
-                            </td>
-                            <td className="py-2 pr-3">{ing.supplier}</td>
-                            <td className="py-2 text-muted-foreground">
+                            </TableCell>
+                            <TableCell>{ing.supplier}</TableCell>
+                            <TableCell className="text-muted-foreground">
                               {ing.notes}
-                            </td>
-                          </tr>
+                            </TableCell>
+                          </TableRow>
                         ))}
-                      </tbody>
-                    </table>
+                      </TableBody>
+                    </Table>
                   </div>
                 </CardContent>
               </Card>
@@ -1156,16 +1170,6 @@ export default function FormulasPage() {
               <CardContent>
                 <div className="space-y-2">
                   {(() => {
-                    const ingCosts: Record<
-                      string,
-                      { totalCost: number; count: number }
-                    > = {};
-                    formulas.forEach((f) => {
-                      if (!selectedId) return;
-                      // We need to fetch ingredients for all formulas
-                      // For now, use costMap data
-                    });
-                    // Use costMap to show ingredient cost breakdown
                     const costEntries = Object.values(costMap);
                     const totalIngCost = costEntries.reduce(
                       (s, c) => s + c.ingredientCost,
@@ -1238,61 +1242,61 @@ export default function FormulasPage() {
             </CardHeader>
             <CardContent>
               <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b text-left text-muted-foreground">
-                      <th className="pb-2 pr-4">Formula</th>
-                      <th className="pb-2 pr-4">Product</th>
-                      <th className="pb-2 pr-4 text-right">Batch</th>
-                      <th className="pb-2 pr-4 text-right">Ingredient</th>
-                      <th className="pb-2 pr-4 text-right">Prod Cost</th>
-                      <th className="pb-2 pr-4 text-right">HPP/Unit</th>
-                      <th className="pb-2 pr-4 text-right">Margin</th>
-                      <th className="pb-2 text-right">Price</th>
-                    </tr>
-                  </thead>
-                  <tbody>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Formula</TableHead>
+                      <TableHead>Product</TableHead>
+                      <TableHead className="text-right">Batch</TableHead>
+                      <TableHead className="text-right">Ingredient</TableHead>
+                      <TableHead className="text-right">Prod Cost</TableHead>
+                      <TableHead className="text-right">HPP/Unit</TableHead>
+                      <TableHead className="text-right">Margin</TableHead>
+                      <TableHead className="text-right">Price</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
                     {formulas.map((f) => {
                       const cs = costMap[f.formulaId];
                       if (!cs) return null;
                       return (
-                        <tr
+                        <TableRow
                           key={f.formulaId}
-                          className="border-b last:border-0 hover:bg-muted/40 cursor-pointer"
+                          className="cursor-pointer hover:bg-muted/60"
                           onClick={() => setSelectedId(f.formulaId)}
                         >
-                          <td className="py-2 pr-4 font-mono font-medium">
+                          <TableCell className="font-mono font-medium">
                             {f.formulaId}
-                          </td>
-                          <td className="py-2 pr-4">{f.productName}</td>
-                          <td className="py-2 pr-4 text-right">
+                          </TableCell>
+                          <TableCell>{f.productName}</TableCell>
+                          <TableCell className="text-right">
                             {f.batchSize} {f.unit}
-                          </td>
-                          <td className="py-2 pr-4 text-right">
+                          </TableCell>
+                          <TableCell className="text-right">
                             {fmtRp(cs.ingredientCost)}
-                          </td>
-                          <td className="py-2 pr-4 text-right">
+                          </TableCell>
+                          <TableCell className="text-right">
                             {fmtRp(
                               cs.ingredientCost +
                                 cs.bottlingCost +
                                 cs.packagingCost +
                                 cs.otherCost
                             )}
-                          </td>
-                          <td className="py-2 pr-4 text-right font-bold text-primary">
+                          </TableCell>
+                          <TableCell className="text-right font-bold text-primary">
                             {fmtRp(cs.totalHppPerUnit)}
-                          </td>
-                          <td className="py-2 pr-4 text-right">
+                          </TableCell>
+                          <TableCell className="text-right">
                             {cs.marginPercent}%
-                          </td>
-                          <td className="py-2 pr-4 text-right font-bold text-emerald-600">
+                          </TableCell>
+                          <TableCell className="text-right font-bold text-emerald-600">
                             {fmtRp(cs.suggestedPrice)}
-                          </td>
-                        </tr>
+                          </TableCell>
+                        </TableRow>
                       );
                     })}
-                  </tbody>
-                </table>
+                  </TableBody>
+                </Table>
               </div>
             </CardContent>
           </Card>
