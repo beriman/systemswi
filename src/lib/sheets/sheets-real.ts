@@ -66,9 +66,9 @@ export const SHEETS: Record<string, { range: string; description: string }> = {
   EventBudget:       { range: "Event_Budget!A1:H1000",        description: "Event budget tracking" },
   EventTenants:      { range: "Event_Tenants!A1:J1000",       description: "Event tenant/brand participation" },
   EventSponsors:     { range: "Event_Sponsors!A1:J1000",      description: "Event sponsor management" },
-  FormulaMaster:     { range: "Formula_Master!A1:L1000",       description: "Master formula/resep parfum" },
-  FormulaIngredients:{ range: "Formula_Ingredients!A1:J1000",  description: "Komposisi bahan per formula" },
-  FormulaCostSummary:{ range: "Formula_Cost_Summary!A1:I1000",  description: "Ringkasan cost per formula" },
+  Formula_Master:      { range: "Formula_Master!A1:L1000",       description: "Master formula/resep parfum" },
+  Formula_Ingredients: { range: "Formula_Ingredients!A1:J1000",  description: "Komposisi bahan per formula" },
+  Formula_Cost_Summary:{ range: "Formula_Cost_Summary!A1:I1000",  description: "Ringkasan cost per formula" },
   ExpenseSubmissions:{ range: "Expense_Submissions!A1:L1000",    description: "Expense submissions dengan approval flow" },
   ExpenseApprovers:{ range: "Expense_Approvers!A1:D100",         description: "List approver expense" },
 };
