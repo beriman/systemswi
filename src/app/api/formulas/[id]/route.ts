@@ -153,22 +153,22 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       .sort((a, b) => b.rowNumber - a.rowNumber);
 
     for (const ing of toDelete) {
-      await deleteRow("FormulaIngredients", ing.rowNumber);
-    await deleteRow("Formula_Ingredients", ing.rowNumber);
+      await deleteRow("Formula_Ingredients", ing.rowNumber);
     }
+
     if (ingList.length > 0) {
-    const newIngRows = ingList.map((ing: Record<string, unknown>) => {
-      const qty = num(ing.qty);
-      const unitCost = num(ing.unitCost);
-      const bs = num(batchSize || existing.batchSize);
-      const pct = bs > 0 ? (qty / bs) * 100 : 0;
-      return [
-        formulaId, text(ing.ingredientId) || "", text(ing.ingredientName) || "",
-        text(ing.category) || "", qty, Math.round(pct * 100) / 100,
-        unitCost, qty * unitCost, text(ing.supplier) || "TBA", text(ing.notes) || "",
-      ];
-    });
-    await appendRows("Formula_Ingredients", newIngRows);
+      const newIngRows = ingList.map((ing: Record<string, unknown>) => {
+        const qty = num(ing.qty);
+        const unitCost = num(ing.unitCost);
+        const bs = num(batchSize || existing.batchSize);
+        const pct = bs > 0 ? (qty / bs) * 100 : 0;
+        return [
+          formulaId, text(ing.ingredientId) || "", text(ing.ingredientName) || "",
+          text(ing.category) || "", qty, Math.round(pct * 100) / 100,
+          unitCost, qty * unitCost, text(ing.supplier) || "TBA", text(ing.notes) || "",
+        ];
+      });
+      await appendRows("Formula_Ingredients", newIngRows);
     }
 
     // Update or append cost summary
@@ -177,40 +177,40 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     const existingCost = costSummaries.find((c) => c.formulaId.toLowerCase() === formulaId.toLowerCase());
 
     if (existingCost) {
-    await updateRow("Formula_Cost_Summary", existingCost.rowNumber, [
-      formulaId, Math.round(ingredientCost), num(bottlingCost), num(packagingCost),
-      num(otherCost), Math.round(hppPerUnit), margin, Math.round(suggestedPrice), existingCost.created,
-    ]);
+      await updateRow("Formula_Cost_Summary", existingCost.rowNumber, [
+        formulaId, Math.round(ingredientCost), num(bottlingCost), num(packagingCost),
+        num(otherCost), Math.round(hppPerUnit), margin, Math.round(suggestedPrice), existingCost.created,
+      ]);
     } else {
-    await appendRows("Formula_Cost_Summary", [[
-      formulaId, Math.round(ingredientCost), num(bottlingCost), num(packagingCost),
-      num(otherCost), Math.round(hppPerUnit), margin, Math.round(suggestedPrice), date,
-    ]]);
+      await appendRows("Formula_Cost_Summary", [[
+        formulaId, Math.round(ingredientCost), num(bottlingCost), num(packagingCost),
+        num(otherCost), Math.round(hppPerUnit), margin, Math.round(suggestedPrice), date,
+      ]]);
     }
 
     return NextResponse.json({
-    success: true, source: "Google Sheets",
-    formula: { formulaId, hppPerUnit: Math.round(hppPerUnit), suggestedPrice: Math.round(suggestedPrice), ingredientCost: Math.round(ingredientCost) },
-    syncedSheets: ["Formula_Master", "Formula_Ingredients", "Formula_Cost_Summary"],
+      success: true, source: "Google Sheets",
+      formula: { formulaId, hppPerUnit: Math.round(hppPerUnit), suggestedPrice: Math.round(suggestedPrice), ingredientCost: Math.round(ingredientCost) },
+      syncedSheets: ["Formula_Master", "Formula_Ingredients", "Formula_Cost_Summary"],
     });
-    } catch (error) {
+  } catch (error) {
     if (isGoogleWorkspaceAuthError(error)) {
-    return NextResponse.json({
-      ...googleWorkspaceWriteBlockedSource("Google Sheets: Formula sheets", error),
-      error: "Google OAuth perlu re-auth",
-    }, { status: 503 });
+      return NextResponse.json({
+        ...googleWorkspaceWriteBlockedSource("Google Sheets: Formula sheets", error),
+        error: "Google OAuth perlu re-auth",
+      }, { status: 503 });
     }
     return NextResponse.json(
-    { error: "Gagal update formula", details: String(error) },
-    { status: 500 }
+      { error: "Gagal update formula", details: String(error) },
+      { status: 500 }
     );
-    }
-    }
+  }
+}
 
-    // ── DELETE formula ──
+// ── DELETE formula ──
 
-    export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-    try {
+export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  try {
     const { id: formulaId } = await params;
 
     const masterRows = await readRange("Formula_Master!A1:L1000");
@@ -218,7 +218,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     const existing = formulas.find((f) => f.formulaId.toLowerCase() === formulaId.toLowerCase());
 
     if (!existing) {
-    return NextResponse.json({ error: `Formula ${formulaId} tidak ditemukan` }, { status: 404 });
+      return NextResponse.json({ error: `Formula ${formulaId} tidak ditemukan` }, { status: 404 });
     }
 
     await deleteRow("Formula_Master", existing.rowNumber);
@@ -227,11 +227,11 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     const ingRows = await readRange("Formula_Ingredients!A1:J1000");
     const allIngredients = parseIngredientRows(ingRows);
     const toDelete = allIngredients
-    .filter((ing) => ing.formulaId.toLowerCase() === formulaId.toLowerCase())
-    .sort((a, b) => b.rowNumber - a.rowNumber);
+      .filter((ing) => ing.formulaId.toLowerCase() === formulaId.toLowerCase())
+      .sort((a, b) => b.rowNumber - a.rowNumber);
 
     for (const ing of toDelete) {
-    await deleteRow("Formula_Ingredients", ing.rowNumber);
+      await deleteRow("Formula_Ingredients", ing.rowNumber);
     }
 
     // Delete cost summary
@@ -239,7 +239,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     const costSummaries = parseCostSummaryRows(costRows);
     const existingCost = costSummaries.find((c) => c.formulaId.toLowerCase() === formulaId.toLowerCase());
     if (existingCost) {
-    await deleteRow("Formula_Cost_Summary", existingCost.rowNumber);
+      await deleteRow("Formula_Cost_Summary", existingCost.rowNumber);
     }
 
     return NextResponse.json({

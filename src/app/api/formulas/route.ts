@@ -159,7 +159,7 @@ export async function POST(request: NextRequest) {
     );
 
     // 1. Append to Formula_Master
-    await appendRows("FormulaMaster", [[
+    await appendRows("Formula_Master", [[
       formulaId, brandId || "", brandName, productName, sku || "",
       productType || "Perfume", num(batchSize), unit || "ml",
       version || "v1.0", status || "Active", date, date,
@@ -177,11 +177,11 @@ export async function POST(request: NextRequest) {
           unitCost, qty * unitCost, text(ing.supplier) || "TBA", text(ing.notes) || "",
         ];
       });
-      await appendRows("FormulaIngredients", ingRows);
+      await appendRows("Formula_Ingredients", ingRows);
     }
 
     // 3. Append cost summary
-    await appendRows("FormulaCostSummary", [[
+    await appendRows("Formula_Cost_Summary", [[
       formulaId, Math.round(ingredientCost), num(bottlingCost), num(packagingCost),
       num(otherCost), Math.round(hppPerUnit), margin, Math.round(suggestedPrice), date,
     ]]);
