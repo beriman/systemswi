@@ -36,6 +36,7 @@ const NAV_ITEMS: NavItem[] = [
     { label: "Billing", href: "/billing", icon: "💳", feature: "dashboard:overview" },
     { label: "Brands", href: "/brands", icon: "🏷️", feature: "dashboard:overview" },
     { label: "Events", href: "/events", icon: "🎉", feature: "event-cde" },
+    { label: "Expenses", href: "/expenses", icon: "💰", feature: "dashboard:overview" },
     { label: "Email", href: "/email", icon: "📧", feature: "dashboard:overview" },
     { label: "BPJS Tracker", href: "/bpjs", icon: "🛡️", feature: "dashboard:overview" },
     { label: "Tax & Compliance", href: "/tax-compliance", icon: "🏛️", feature: "dashboard:overview" },
