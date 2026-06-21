@@ -1,36 +1,17 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { EmptyState } from "@/components/ui/empty-state";
-import { Skeleton } from "@/components/ui/skeleton";
-import {
-  X, Pencil, Trash2, Plus, FlaskConical, DollarSign,
-  Beaker, Percent, Package, Search, Save, Copy, Ban
-} from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
 
-/* ── Types ── */
+// ── Types ──────────────────────────────────────────────────────────
 
-type CostSummary = {
-  formulaId: string;
-  ingredientCost: number;
-  bottlingCost: number;
-  packagingCost: number;
-  otherCost: number;
-  totalHppPerUnit: number;
-  marginPercent: number;
-  suggestedPrice: number;
-  created: string;
-};
-
-type FormulaSummary = {
+type FormulaMaster = {
   formulaId: string;
   brandId: string;
   brandName: string;
@@ -43,7 +24,6 @@ type FormulaSummary = {
   status: string;
   created: string;
   updated: string;
-  costSummary: CostSummary | null;
 };
 
 type Ingredient = {
@@ -59,7 +39,19 @@ type Ingredient = {
   notes: string;
 };
 
-type FormulaDetail = FormulaSummary & {
+type CostSummary = {
+  formulaId: string;
+  ingredientCost: number;
+  bottlingCost: number;
+  packagingCost: number;
+  otherCost: number;
+  totalHppPerUnit: number;
+  marginPercent: number;
+  suggestedPrice: number;
+  created: string;
+};
+
+type FormulaDetail = FormulaMaster & {
   ingredients: Ingredient[];
   costSummary: CostSummary | null;
 };
@@ -68,39 +60,30 @@ type IngredientRow = {
   ingredientId: string;
   ingredientName: string;
   category: string;
-  qty: string;
-  unitCost: string;
+  qty: number;
+  unitCost: number;
   supplier: string;
   notes: string;
 };
 
-/* ── Helpers ── */
+// ── Helpers ────────────────────────────────────────────────────────
 
-const rupiah = (value: number) =>
-  new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(value || 0);
+const fmt = (n: number) =>
+  n.toLocaleString("id-ID", { maximumFractionDigits: 0 });
 
-const fmtNum = (value: number) =>
-  new Intl.NumberFormat("id-ID").format(value || 0);
+const fmtRp = (n: number) => `Rp ${fmt(n)}`;
 
-const statusColor: Record<string, string> = {
-  Active: "bg-green-100 text-green-700",
-  Inactive: "bg-gray-100 text-gray-700",
-  Draft: "bg-yellow-100 text-yellow-700",
-};
+const today = () => new Date().toISOString().slice(0, 10);
 
-function today() {
-  return new Date().toISOString().slice(0, 10);
-}
-
-const EMPTY_INGREDIENT: IngredientRow = {
+const emptyIngredientRow = (): IngredientRow => ({
   ingredientId: "",
   ingredientName: "",
-  category: "oil",
-  qty: "",
-  unitCost: "",
+  category: "solvent",
+  qty: 0,
+  unitCost: 0,
   supplier: "TBA",
   notes: "",
-};
+});
 
 const CATEGORIES = [
   { value: "solvent", label: "Solvent" },
@@ -110,69 +93,118 @@ const CATEGORIES = [
   { value: "other", label: "Other" },
 ];
 
-/* ── Main Component ── */
+const BRAND_OPTIONS = [
+  { id: "brand-larc", name: "L'Arc~en~Scent" },
+  { id: "brand-pixel", name: "Pixel Potion" },
+  { id: "brand-nuscentza", name: "Nuscentza" },
+];
+
+function calcCosts(
+  ingredients: IngredientRow[],
+  bottlingCost: number,
+  packagingCost: number,
+  otherCost: number,
+  batchSize: number,
+  marginPercent: number
+) {
+  const ingredientCost = ingredients.reduce(
+    (sum, ing) => sum + ing.qty * ing.unitCost,
+    0
+  );
+  const totalProductionCost =
+    ingredientCost + bottlingCost + packagingCost + otherCost;
+  const hppPerUnit = batchSize > 0 ? totalProductionCost / batchSize : 0;
+  const margin = marginPercent / 100;
+  const suggestedPrice =
+    margin < 1 ? hppPerUnit / (1 - margin) : hppPerUnit;
+  return {
+    ingredientCost,
+    totalProductionCost,
+    hppPerUnit,
+    suggestedPrice,
+  };
+}
+
+// ── Main Page ──────────────────────────────────────────────────────
 
 export default function FormulasPage() {
-  const [formulas, setFormulas] = useState<FormulaSummary[]>([]);
+  const [formulas, setFormulas] = useState<FormulaMaster[]>([]);
+  const [costMap, setCostMap] = useState<Record<string, CostSummary>>({});
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState("");
-  const [activeTab, setActiveTab] = useState("formulas");
-  const [searchQuery, setSearchQuery] = useState("");
-
-  // Detail view
-  const [selectedFormula, setSelectedFormula] = useState<FormulaDetail | null>(null);
+  const [search, setSearch] = useState("");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [detail, setDetail] = useState<FormulaDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
 
-  // Builder form
-  const [showBuilder, setShowBuilder] = useState(false);
+  // Builder state
+  const [builderMode, setBuilderMode] = useState<"create" | "edit">("create");
   const [editingFormulaId, setEditingFormulaId] = useState<string | null>(null);
+  const [brandId, setBrandId] = useState("");
+  const [brandName, setBrandName] = useState("");
+  const [productName, setProductName] = useState("");
+  const [sku, setSku] = useState("");
+  const [productType, setProductType] = useState("Perfume");
+  const [batchSize, setBatchSize] = useState(50);
+  const [unit, setUnit] = useState("ml");
+  const [version, setVersion] = useState("v1.0");
+  const [status, setStatus] = useState("Active");
+  const [ingredients, setIngredients] = useState<IngredientRow[]>([
+    emptyIngredientRow(),
+  ]);
+  const [bottlingCost, setBottlingCost] = useState(150000);
+  const [packagingCost, setPackagingCost] = useState(200000);
+  const [otherCost, setOtherCost] = useState(50000);
+  const [marginPercent, setMarginPercent] = useState(60);
+  const [saving, setSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState("");
 
-  // Form fields
-  const [formBrandId, setFormBrandId] = useState("");
-  const [formBrandName, setFormBrandName] = useState("");
-  const [formProductName, setFormProductName] = useState("");
-  const [formSku, setFormSku] = useState("");
-  const [formProductType, setFormProductType] = useState("Perfume");
-  const [formBatchSize, setFormBatchSize] = useState("50");
-  const [formUnit, setFormUnit] = useState("ml");
-  const [formVersion, setFormVersion] = useState("v1.0");
-  const [formStatus, setFormStatus] = useState("Active");
-  const [formBottlingCost, setFormBottlingCost] = useState("150000");
-  const [formPackagingCost, setFormPackagingCost] = useState("200000");
-  const [formOtherCost, setFormOtherCost] = useState("50000");
-  const [formMargin, setFormMargin] = useState("60");
-  const [formIngredients, setFormIngredients] = useState<IngredientRow[]>([{ ...EMPTY_INGREDIENT }]);
+  // ── Fetch formulas list ──
 
-  // Delete confirm
-  const [deleting, setDeleting] = useState<string | null>(null);
-
-  // ── Data loading ──
-
-  async function loadFormulas() {
-    setLoading(true);
+  const fetchFormulas = useCallback(async () => {
     try {
-      const res = await fetch("/api/formulas", { cache: "no-store" });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Gagal load formulas");
-      setFormulas(json.formulas || []);
-    } catch (error) {
-      setMessage(`❌ ${String(error)}`);
+      const res = await fetch("/api/formulas");
+      const data = await res.json();
+      if (data.formulas) {
+        setFormulas(data.formulas);
+        const cmap: Record<string, CostSummary> = {};
+        for (const f of data.formulas) {
+          if (f.costSummary) cmap[f.formulaId] = f.costSummary;
+        }
+        setCostMap(cmap);
+      }
+    } catch (err) {
+      console.error("Failed to fetch formulas:", err);
     } finally {
       setLoading(false);
     }
-  }
-
-  useEffect(() => {
-    loadFormulas().catch((e) => {
-      setMessage(`❌ ${String(e)}`);
-      setLoading(false);
-    });
   }, []);
 
-  const filteredFormulas = useMemo(() => {
-    if (!searchQuery) return formulas;
-    const q = searchQuery.toLowerCase();
+  useEffect(() => {
+    fetchFormulas();
+  }, [fetchFormulas]);
+
+  // ── Fetch detail ──
+
+  useEffect(() => {
+    if (!selectedId) {
+      setDetail(null);
+      return;
+    }
+    setDetailLoading(true);
+    fetch(`/api/formulas/${selectedId}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.formula) setDetail(data.formula);
+      })
+      .catch(console.error)
+      .finally(() => setDetailLoading(false));
+  }, [selectedId]);
+
+  // ── Filtered list ──
+
+  const filtered = useMemo(() => {
+    if (!search.trim()) return formulas;
+    const q = search.toLowerCase();
     return formulas.filter(
       (f) =>
         f.formulaId.toLowerCase().includes(q) ||
@@ -180,201 +212,154 @@ export default function FormulasPage() {
         f.productName.toLowerCase().includes(q) ||
         f.sku.toLowerCase().includes(q)
     );
-  }, [formulas, searchQuery]);
+  }, [formulas, search]);
 
   // ── Real-time cost calculation ──
 
-  const liveCalc = useMemo(() => {
-    const batchSize = parseFloat(formBatchSize) || 0;
-    const bottling = parseFloat(formBottlingCost) || 0;
-    const packaging = parseFloat(formPackagingCost) || 0;
-    const other = parseFloat(formOtherCost) || 0;
-    const margin = parseFloat(formMargin) || 0;
+  const liveCosts = useMemo(
+    () =>
+      calcCosts(
+        ingredients,
+        bottlingCost,
+        packagingCost,
+        otherCost,
+        batchSize,
+        marginPercent
+      ),
+    [ingredients, bottlingCost, packagingCost, otherCost, batchSize, marginPercent]
+  );
 
-    const ingredientCost = formIngredients.reduce((sum, ing) => {
-      const qty = parseFloat(ing.qty) || 0;
-      const unitCost = parseFloat(ing.unitCost) || 0;
-      return sum + qty * unitCost;
-    }, 0);
+  // ── Ingredient row helpers ──
 
-    const totalProduction = ingredientCost + bottling + packaging + other;
-    const hppPerUnit = batchSize > 0 ? totalProduction / batchSize : 0;
-    const marginFrac = margin / 100;
-    const suggestedPrice = marginFrac < 1 ? hppPerUnit / (1 - marginFrac) : hppPerUnit;
-
-    const totalQty = formIngredients.reduce((sum, ing) => sum + (parseFloat(ing.qty) || 0), 0);
-
-    return {
-      ingredientCost,
-      totalProduction,
-      hppPerUnit,
-      suggestedPrice,
-      totalQty,
-      ingredientPcts: formIngredients.map((ing) => {
-        const qty = parseFloat(ing.qty) || 0;
-        return batchSize > 0 ? (qty / batchSize) * 100 : 0;
-      }),
-    };
-  }, [formIngredients, formBatchSize, formBottlingCost, formPackagingCost, formOtherCost, formMargin]);
-
-  // ── Ingredient row management ──
+  function updateIngredient(index: number, field: keyof IngredientRow, value: string | number) {
+    setIngredients((prev) => {
+      const next = [...prev];
+      next[index] = { ...next[index], [field]: value };
+      return next;
+    });
+  }
 
   function addIngredientRow() {
-    setFormIngredients((prev) => [...prev, { ...EMPTY_INGREDIENT }]);
+    setIngredients((prev) => [...prev, emptyIngredientRow()]);
   }
 
   function removeIngredientRow(index: number) {
-    setFormIngredients((prev) => prev.filter((_, i) => i !== index));
+    setIngredients((prev) => prev.filter((_, i) => i !== index));
   }
 
-  function updateIngredientRow(index: number, field: keyof IngredientRow, value: string) {
-    setFormIngredients((prev) =>
-      prev.map((row, i) => (i === index ? { ...row, [field]: value } : row))
-    );
-  }
+  // ── Reset builder ──
 
-  // ── Open builder for new/edit ──
-
-  function openNewBuilder() {
+  function resetBuilder() {
+    setBuilderMode("create");
     setEditingFormulaId(null);
-    setFormBrandId("");
-    setFormBrandName("");
-    setFormProductName("");
-    setFormSku("");
-    setFormProductType("Perfume");
-    setFormBatchSize("50");
-    setFormUnit("ml");
-    setFormVersion("v1.0");
-    setFormStatus("Active");
-    setFormBottlingCost("150000");
-    setFormPackagingCost("200000");
-    setFormOtherCost("50000");
-    setFormMargin("60");
-    setFormIngredients([{ ...EMPTY_INGREDIENT }]);
-    setShowBuilder(true);
-    setMessage("");
+    setBrandId("");
+    setBrandName("");
+    setProductName("");
+    setSku("");
+    setProductType("Perfume");
+    setBatchSize(50);
+    setUnit("ml");
+    setVersion("v1.0");
+    setStatus("Active");
+    setIngredients([emptyIngredientRow()]);
+    setBottlingCost(150000);
+    setPackagingCost(200000);
+    setOtherCost(50000);
+    setMarginPercent(60);
+    setSaveMessage("");
   }
 
-  function openEditBuilder(formula: FormulaSummary | FormulaDetail) {
+  // ── Load formula into builder for edit ──
+
+  function loadFormulaForEdit(formula: FormulaDetail) {
+    setBuilderMode("edit");
     setEditingFormulaId(formula.formulaId);
-    setFormBrandId(formula.brandId);
-    setFormBrandName(formula.brandName);
-    setFormProductName(formula.productName);
-    setFormSku(formula.sku);
-    setFormProductType(formula.productType);
-    setFormBatchSize(String(formula.batchSize));
-    setFormUnit(formula.unit);
-    setFormVersion(formula.version);
-    setFormStatus(formula.status);
-
-    const detail = "ingredients" in formula ? (formula as FormulaDetail) : null;
-    if (detail?.costSummary) {
-      setFormBottlingCost(String(detail.costSummary.bottlingCost));
-      setFormPackagingCost(String(detail.costSummary.packagingCost));
-      setFormOtherCost(String(detail.costSummary.otherCost));
-      setFormMargin(String(detail.costSummary.marginPercent));
-    } else {
-      setFormBottlingCost("150000");
-      setFormPackagingCost("200000");
-      setFormOtherCost("50000");
-      setFormMargin("60");
-    }
-
-    if (detail?.ingredients && detail.ingredients.length > 0) {
-      setFormIngredients(
-        detail.ingredients.map((ing) => ({
+    setBrandId(formula.brandId);
+    setBrandName(formula.brandName);
+    setProductName(formula.productName);
+    setSku(formula.sku);
+    setProductType(formula.productType);
+    setBatchSize(formula.batchSize);
+    setUnit(formula.unit);
+    setVersion(formula.version);
+    setStatus(formula.status);
+    if (formula.ingredients.length > 0) {
+      setIngredients(
+        formula.ingredients.map((ing) => ({
           ingredientId: ing.ingredientId,
           ingredientName: ing.ingredientName,
           category: ing.category,
-          qty: String(ing.qty),
-          unitCost: String(ing.unitCost),
+          qty: ing.qty,
+          unitCost: ing.unitCost,
           supplier: ing.supplier,
           notes: ing.notes,
         }))
       );
     } else {
-      setFormIngredients([{ ...EMPTY_INGREDIENT }]);
+      setIngredients([emptyIngredientRow()]);
     }
-
-    setShowBuilder(true);
-    setMessage("");
+    if (formula.costSummary) {
+      setBottlingCost(formula.costSummary.bottlingCost);
+      setPackagingCost(formula.costSummary.packagingCost);
+      setOtherCost(formula.costSummary.otherCost);
+      setMarginPercent(formula.costSummary.marginPercent);
+    }
+    setSaveMessage("");
   }
 
-  // ── View formula detail ──
+  // ── Save formula ──
 
-  async function viewFormula(formulaId: string) {
-    setDetailLoading(true);
-    setMessage("");
-    try {
-      const res = await fetch(`/api/formulas/${formulaId}`, { cache: "no-store" });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Gagal load detail");
-      setSelectedFormula(json.formula);
-      setActiveTab("detail");
-    } catch (error) {
-      setMessage(`❌ ${String(error)}`);
-    } finally {
-      setDetailLoading(false);
+  async function saveFormula() {
+    if (!brandName || !productName || batchSize <= 0) {
+      setSaveMessage("⚠️ Brand, Product Name, dan Batch Size wajib diisi.");
+      return;
     }
-  }
-
-  // ── Save formula (create or update) ──
-
-  async function saveFormula(e: FormEvent) {
-    e.preventDefault();
     setSaving(true);
-    setMessage("");
-
-    const ingredients = formIngredients
-      .filter((ing) => ing.ingredientName && parseFloat(ing.qty) > 0)
-      .map((ing) => ({
-        ingredientId: ing.ingredientId || `INV-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-        ingredientName: ing.ingredientName,
-        category: ing.category,
-        qty: parseFloat(ing.qty) || 0,
-        unitCost: parseFloat(ing.unitCost) || 0,
-        supplier: ing.supplier || "TBA",
-        notes: ing.notes || "",
-      }));
-
-    const payload = {
-      formulaId: editingFormulaId || `F-${formBrandName.substring(0, 3).toUpperCase()}-${Date.now().toString(36).slice(-4).toUpperCase()}`,
-      brandId: formBrandId,
-      brandName: formBrandName,
-      productName: formProductName,
-      sku: formSku,
-      productType: formProductType,
-      batchSize: parseFloat(formBatchSize) || 50,
-      unit: formUnit,
-      version: formVersion,
-      status: formStatus,
-      ingredients,
-      bottlingCost: parseFloat(formBottlingCost) || 0,
-      packagingCost: parseFloat(formPackagingCost) || 0,
-      otherCost: parseFloat(formOtherCost) || 0,
-      marginPercent: parseFloat(formMargin) || 60,
-    };
-
+    setSaveMessage("Menyimpan formula...");
     try {
-      const method = editingFormulaId ? "PUT" : "POST";
-      const url = editingFormulaId
-        ? `/api/formulas/${editingFormulaId}`
-        : "/api/formulas";
-
+      const validIngredients = ingredients.filter(
+        (ing) => ing.ingredientName.trim() && ing.qty > 0
+      );
+      const payload: Record<string, unknown> = {
+        formulaId: editingFormulaId || `F-${Date.now()}`,
+        brandId,
+        brandName,
+        productName,
+        sku,
+        productType,
+        batchSize,
+        unit,
+        version,
+        status,
+        ingredients: validIngredients,
+        bottlingCost,
+        packagingCost,
+        otherCost,
+        marginPercent,
+      };
+      const method = builderMode === "edit" ? "PUT" : "POST";
+      const url =
+        builderMode === "edit"
+          ? `/api/formulas/${editingFormulaId}`
+          : "/api/formulas";
       const res = await fetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Gagal simpan formula");
-
-      setMessage(`✅ Formula ${editingFormulaId ? "diupdate" : "dibuat"}: ${formProductName}`);
-      setShowBuilder(false);
-      setEditingFormulaId(null);
-      await loadFormulas();
-    } catch (error) {
-      setMessage(`❌ ${String(error)}`);
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Gagal menyimpan formula");
+      }
+      setSaveMessage(
+        `✅ Formula ${data.formula?.formulaId || editingFormulaId} berhasil disimpan! HPP: ${fmtRp(Math.round(data.formula?.hppPerUnit || liveCosts.hppPerUnit))}`
+      );
+      resetBuilder();
+      fetchFormulas();
+    } catch (err) {
+      setSaveMessage(
+        `❌ ${err instanceof Error ? err.message : "Gagal menyimpan formula"}`
+      );
     } finally {
       setSaving(false);
     }
@@ -383,669 +368,990 @@ export default function FormulasPage() {
   // ── Delete formula ──
 
   async function deleteFormula(formulaId: string) {
-    if (!confirm(`Hapus formula ${formulaId}? Semua ingredients & cost summary juga akan dihapus.`)) return;
-    setDeleting(formulaId);
-    setMessage("");
+    if (!confirm(`Hapus formula ${formulaId}? Tindakan ini tidak bisa dibatalkan.`)) return;
     try {
       const res = await fetch(`/api/formulas/${formulaId}`, { method: "DELETE" });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Gagal hapus");
-      setMessage(`✅ Formula ${formulaId} dihapus`);
-      if (selectedFormula?.formulaId === formulaId) {
-        setSelectedFormula(null);
-        setActiveTab("formulas");
-      }
-      await loadFormulas();
-    } catch (error) {
-      setMessage(`❌ ${String(error)}`);
-    } finally {
-      setDeleting(null);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Gagal hapus formula");
+      if (selectedId === formulaId) setSelectedId(null);
+      fetchFormulas();
+    } catch (err) {
+      alert(`Gagal hapus: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
-  // ── Cost Analysis data ──
+  // ── Brand select handler ──
 
-  const costAnalysis = useMemo(() => {
-    const brandCosts: Record<string, { name: string; totalHpp: number; count: number }> = {};
-    const ingredientCosts: Record<string, { name: string; totalCost: number; count: number }> = {};
+  function handleBrandSelect(e: React.ChangeEvent<HTMLSelectElement>) {
+    const val = e.target.value;
+    setBrandId(val);
+    const brand = BRAND_OPTIONS.find((b) => b.id === val);
+    setBrandName(brand?.name || "");
+  }
 
-    formulas.forEach((f) => {
-      if (f.costSummary) {
-        const bn = f.brandName || "Unknown";
-        if (!brandCosts[bn]) brandCosts[bn] = { name: bn, totalHpp: 0, count: 0 };
-        brandCosts[bn].totalHpp += f.costSummary.totalHppPerUnit;
-        brandCosts[bn].count += 1;
-      }
-    });
-
-    const brandList = Object.values(brandCosts).sort((a, b) => b.totalHpp - a.totalHpp);
-    const avgHpp = formulas.length > 0
-      ? formulas.reduce((s, f) => s + (f.costSummary?.totalHppPerUnit || 0), 0) / formulas.length
-      : 0;
-
-    return { brandList, avgHpp, totalFormulas: formulas.length };
-  }, [formulas]);
+  // ── Render ──
 
   return (
     <div className="space-y-6">
-      {/* Builder Modal */}
-      {showBuilder && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <Card className="w-full max-w-3xl max-h-[90vh] overflow-y-auto">
-            <CardHeader className="flex flex-row items-center justify-between">
-              <div>
-                <CardTitle className="flex items-center gap-2">
-                  <FlaskConical className="h-5 w-5" />
-                  {editingFormulaId ? "Edit Formula" : "Formula Builder"}
-                </CardTitle>
-                <CardDescription>
-                  {editingFormulaId ? `Editing ${editingFormulaId}` : "Buat formula baru — HPP dihitung otomatis"}
-                </CardDescription>
-              </div>
-              <Button variant="ghost" size="sm" onClick={() => { setShowBuilder(false); setEditingFormulaId(null); }}>
-                <X className="h-4 w-4" />
-              </Button>
-            </CardHeader>
-            <CardContent>
-              <form onSubmit={saveFormula} className="space-y-5">
-                {/* Basic Info */}
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div>
-                    <Label className="mb-1 block text-xs text-muted-foreground">Brand ID *</Label>
-                    <Input value={formBrandId} onChange={(e) => setFormBrandId(e.target.value)} placeholder="brand-larc" required />
-                  </div>
-                  <div>
-                    <Label className="mb-1 block text-xs text-muted-foreground">Brand Name *</Label>
-                    <Input value={formBrandName} onChange={(e) => setFormBrandName(e.target.value)} placeholder="L'Arc~en~Scent" required />
-                  </div>
-                </div>
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div>
-                    <Label className="mb-1 block text-xs text-muted-foreground">Product Name *</Label>
-                    <Input value={formProductName} onChange={(e) => setFormProductName(e.target.value)} placeholder="EDP 30ml Rose" required />
-                  </div>
-                  <div>
-                    <Label className="mb-1 block text-xs text-muted-foreground">SKU</Label>
-                    <Input value={formSku} onChange={(e) => setFormSku(e.target.value)} placeholder="ARC-EDP-30" />
-                  </div>
-                </div>
-                <div className="grid gap-4 md:grid-cols-4">
-                  <div>
-                    <Label className="mb-1 block text-xs text-muted-foreground">Batch Size</Label>
-                    <Input type="number" value={formBatchSize} onChange={(e) => setFormBatchSize(e.target.value)} min={1} step="1" />
-                  </div>
-                  <div>
-                    <Label className="mb-1 block text-xs text-muted-foreground">Unit</Label>
-                    <Input value={formUnit} onChange={(e) => setFormUnit(e.target.value)} />
-                  </div>
-                  <div>
-                    <Label className="mb-1 block text-xs text-muted-foreground">Version</Label>
-                    <Input value={formVersion} onChange={(e) => setFormVersion(e.target.value)} />
-                  </div>
-                  <div>
-                    <Label className="mb-1 block text-xs text-muted-foreground">Status</Label>
-                    <select value={formStatus} onChange={(e) => setFormStatus(e.target.value)} className="h-9 w-full rounded-md border bg-background px-3 text-sm">
-                      <option value="Active">Active</option>
-                      <option value="Draft">Draft</option>
-                      <option value="Inactive">Inactive</option>
-                    </select>
-                  </div>
-                </div>
-
-                {/* Ingredients */}
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <Label className="text-sm font-medium flex items-center gap-1">
-                      <Beaker className="h-4 w-4" /> Komposisi Bahan
-                    </Label>
-                    <Button type="button" variant="outline" size="sm" onClick={addIngredientRow}>
-                      <Plus className="h-3 w-3 mr-1" /> Add Ingredient
-                    </Button>
-                  </div>
-                  <div className="border rounded-md overflow-hidden">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead className="w-[180px]">Ingredient</TableHead>
-                          <TableHead>Category</TableHead>
-                          <TableHead className="w-[80px]">Qty</TableHead>
-                          <TableHead className="w-[100px]">%</TableHead>
-                          <TableHead className="w-[120px]">Unit Cost</TableHead>
-                          <TableHead className="w-[120px]">Total</TableHead>
-                          <TableHead className="w-[100px]">Supplier</TableHead>
-                          <TableHead className="w-[40px]" />
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {formIngredients.map((ing, idx) => {
-                          const qty = parseFloat(ing.qty) || 0;
-                          const unitCost = parseFloat(ing.unitCost) || 0;
-                          const total = qty * unitCost;
-                          const pct = liveCalc.ingredientPcts[idx] || 0;
-                          return (
-                            <TableRow key={idx}>
-                              <TableCell>
-                                <Input
-                                  value={ing.ingredientName}
-                                  onChange={(e) => updateIngredientRow(idx, "ingredientName", e.target.value)}
-                                  placeholder="Alcohol 96%"
-                                  className="h-8 text-sm"
-                                />
-                              </TableCell>
-                              <TableCell>
-                                <select
-                                  value={ing.category}
-                                  onChange={(e) => updateIngredientRow(idx, "category", e.target.value)}
-                                  className="h-8 w-full rounded-md border bg-background px-2 text-sm"
-                                >
-                                  {CATEGORIES.map((c) => (
-                                    <option key={c.value} value={c.value}>{c.label}</option>
-                                  ))}
-                                </select>
-                              </TableCell>
-                              <TableCell>
-                                <Input
-                                  type="number"
-                                  value={ing.qty}
-                                  onChange={(e) => updateIngredientRow(idx, "qty", e.target.value)}
-                                  min={0}
-                                  step="0.1"
-                                  className="h-8 text-sm"
-                                />
-                              </TableCell>
-                              <TableCell className="text-sm text-muted-foreground">
-                                {pct.toFixed(1)}%
-                              </TableCell>
-                              <TableCell>
-                                <Input
-                                  type="number"
-                                  value={ing.unitCost}
-                                  onChange={(e) => updateIngredientRow(idx, "unitCost", e.target.value)}
-                                  min={0}
-                                  className="h-8 text-sm"
-                                />
-                              </TableCell>
-                              <TableCell className="text-sm font-medium">
-                                {rupiah(total)}
-                              </TableCell>
-                              <TableCell>
-                                <Input
-                                  value={ing.supplier}
-                                  onChange={(e) => updateIngredientRow(idx, "supplier", e.target.value)}
-                                  className="h-8 text-sm"
-                                />
-                              </TableCell>
-                              <TableCell>
-                                {formIngredients.length > 1 && (
-                                  <button
-                                    type="button"
-                                    onClick={() => removeIngredientRow(idx)}
-                                    className="text-red-400 hover:text-red-600"
-                                  >
-                                    <X className="h-3 w-3" />
-                                  </button>
-                                )}
-                              </TableCell>
-                            </TableRow>
-                          );
-                        })}
-                      </TableBody>
-                    </Table>
-                  </div>
-                </div>
-
-                {/* Production Costs */}
-                <div>
-                  <Label className="text-sm font-medium flex items-center gap-1 mb-2">
-                    <Package className="h-4 w-4" /> Biaya Produksi
-                  </Label>
-                  <div className="grid gap-4 md:grid-cols-3">
-                    <div>
-                      <Label className="mb-1 block text-xs text-muted-foreground">Bottling (Rp)</Label>
-                      <Input type="number" value={formBottlingCost} onChange={(e) => setFormBottlingCost(e.target.value)} min={0} />
-                    </div>
-                    <div>
-                      <Label className="mb-1 block text-xs text-muted-foreground">Packaging (Rp)</Label>
-                      <Input type="number" value={formPackagingCost} onChange={(e) => setFormPackagingCost(e.target.value)} min={0} />
-                    </div>
-                    <div>
-                      <Label className="mb-1 block text-xs text-muted-foreground">Other (Rp)</Label>
-                      <Input type="number" value={formOtherCost} onChange={(e) => setFormOtherCost(e.target.value)} min={0} />
-                    </div>
-                  </div>
-                  <div className="mt-3">
-                    <Label className="mb-1 block text-xs text-muted-foreground">Margin (%)</Label>
-                    <Input type="number" value={formMargin} onChange={(e) => setFormMargin(e.target.value)} min={0} max={99} className="w-[200px]" />
-                  </div>
-                </div>
-
-                {/* Live Calculation Result */}
-                <Card className="bg-blue-50 border-blue-200">
-                  <CardContent className="py-4">
-                    <h4 className="text-sm font-semibold text-blue-800 mb-3 flex items-center gap-1">
-                      <DollarSign className="h-4 w-4" /> Hasil Kalkulasi (Real-time)
-                    </h4>
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
-                      <div>
-                        <p className="text-muted-foreground">Ingredient Cost</p>
-                        <p className="font-semibold">{rupiah(liveCalc.ingredientCost)}</p>
-                      </div>
-                      <div>
-                        <p className="text-muted-foreground">Total Production</p>
-                        <p className="font-semibold">{rupiah(liveCalc.totalProduction)}</p>
-                      </div>
-                      <div>
-                        <p className="text-muted-foreground">HPP / Unit</p>
-                        <p className="font-bold text-blue-700 text-lg">{rupiah(liveCalc.hppPerUnit)}</p>
-                      </div>
-                      <div>
-                        <p className="text-muted-foreground">Margin</p>
-                        <p className="font-semibold">{formMargin}%</p>
-                      </div>
-                      <div>
-                        <p className="text-muted-foreground">Suggested Price</p>
-                        <p className="font-bold text-green-700 text-lg">{rupiah(liveCalc.suggestedPrice)}</p>
-                      </div>
-                      <div>
-                        <p className="text-muted-foreground">Total Qty</p>
-                        <p className="font-semibold">{liveCalc.totalQty} {formUnit}</p>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                {/* Actions */}
-                <div className="flex gap-2 justify-end">
-                  <Button type="button" variant="outline" onClick={() => { setShowBuilder(false); setEditingFormulaId(null); }}>
-                    Batal
-                  </Button>
-                  <Button type="submit" disabled={saving}>
-                    {saving ? "Menyimpan..." : <><Save className="h-4 w-4 mr-1" /> Simpan Formula</>}
-                  </Button>
-                </div>
-              </form>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
       {/* Header */}
-      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+      <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
-          <h2 className="text-2xl font-bold flex items-center gap-2">
-            <FlaskConical className="h-6 w-6" />
-            Formula / Recipe Management
-          </h2>
+          <p className="text-sm uppercase tracking-[0.3em] text-muted-foreground">
+            Production / Recipe
+          </p>
+          <h1 className="text-3xl font-bold">🧪 Formula / Recipe Management</h1>
           <p className="text-muted-foreground">
-            Komposisi bahan & HPP calculator per produk — real-time dari Google Sheets.
+            Komposisi bahan &amp; HPP calculator per produk parfum SWI
           </p>
         </div>
-        <div className="flex gap-2">
-          <Button onClick={openNewBuilder} size="sm">
-            <Plus className="h-4 w-4 mr-1" /> New Formula
-          </Button>
-          <Button onClick={loadFormulas} disabled={loading} variant="outline" size="sm">
-            <Beaker className={`h-4 w-4 mr-1 ${loading ? "animate-spin" : ""}`} /> Refresh
-          </Button>
-        </div>
-      </div>
-
-      {message && (
-        <Card className={message.startsWith("✅") ? "border-green-200 bg-green-50" : "border-red-200 bg-red-50"}>
-          <CardContent className="py-3 text-sm">{message}</CardContent>
-        </Card>
-      )}
-
-      {/* KPI Cards */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription className="flex items-center gap-1"><FlaskConical className="h-3 w-3" /> Total Formulas</CardDescription>
-            <CardTitle className="text-2xl">{loading ? "..." : fmtNum(formulas.length)}</CardTitle>
-          </CardHeader>
-          <CardContent><p className="text-xs text-muted-foreground">formula aktif & draft</p></CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription className="flex items-center gap-1"><Percent className="h-3 w-3" /> Avg HPP/Unit</CardDescription>
-            <CardTitle className="text-2xl">{loading ? "..." : rupiah(costAnalysis.avgHpp)}</CardTitle>
-          </CardHeader>
-          <CardContent><p className="text-xs text-muted-foreground">rata-rata per unit</p></CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription className="flex items-center gap-1"><Package className="h-3 w-3" /> Brands</CardDescription>
-            <CardTitle className="text-2xl">{loading ? "..." : fmtNum(costAnalysis.brandList.length)}</CardTitle>
-          </CardHeader>
-          <CardContent><p className="text-xs text-muted-foreground">brand dengan formula</p></CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription className="flex items-center gap-1"><DollarSign className="h-3 w-3" /> Active</CardDescription>
-            <CardTitle className="text-2xl">
-              {loading ? "..." : fmtNum(formulas.filter((f) => f.status === "Active").length)}
-            </CardTitle>
-          </CardHeader>
-          <CardContent><p className="text-xs text-muted-foreground">formula aktif</p></CardContent>
-        </Card>
+        <Button
+          onClick={() => {
+            resetBuilder();
+            setSelectedId(null);
+          }}
+        >
+          + New Formula
+        </Button>
       </div>
 
       {/* Tabs */}
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
+      <Tabs defaultValue="formulas" className="space-y-4">
         <TabsList>
-          <TabsTrigger value="formulas">Formulas ({filteredFormulas.length})</TabsTrigger>
-          <TabsTrigger value="detail" disabled={!selectedFormula}>
-            Formula Detail {selectedFormula ? `(${selectedFormula.formulaId})` : ""}
-          </TabsTrigger>
+          <TabsTrigger value="formulas">Formulas</TabsTrigger>
+          <TabsTrigger value="detail">Formula Detail</TabsTrigger>
+          <TabsTrigger value="builder">Formula Builder</TabsTrigger>
           <TabsTrigger value="analysis">Cost Analysis</TabsTrigger>
         </TabsList>
 
         {/* ── Tab: Formulas List ── */}
         <TabsContent value="formulas" className="space-y-4">
-          <div className="flex gap-2">
-            <div className="relative flex-1 max-w-sm">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Cari formula, brand, SKU..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9"
-              />
-            </div>
-          </div>
-
-          {loading ? (
-            <div className="space-y-2">
-              {[1, 2, 3].map((i) => <Skeleton key={i} className="h-12 w-full" />)}
-            </div>
-          ) : filteredFormulas.length === 0 ? (
-            <EmptyState
-              icon={<FlaskConical className="h-12 w-12" />}
-              title="Belum ada formula"
-              description="Buat formula pertama dengan klik 'New Formula'"
-            />
-          ) : (
-            <Card>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Formula ID</TableHead>
-                    <TableHead>Brand</TableHead>
-                    <TableHead>Product</TableHead>
-                    <TableHead>SKU</TableHead>
-                    <TableHead>Batch</TableHead>
-                    <TableHead>HPP/Unit</TableHead>
-                    <TableHead>Price</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="w-[120px]">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredFormulas.map((f) => (
-                    <TableRow
-                      key={f.formulaId}
-                      className="cursor-pointer hover:bg-muted/50"
-                      onClick={() => viewFormula(f.formulaId)}
-                    >
-                      <TableCell className="font-mono text-sm">{f.formulaId}</TableCell>
-                      <TableCell>{f.brandName}</TableCell>
-                      <TableCell>{f.productName}</TableCell>
-                      <TableCell className="text-sm text-muted-foreground">{f.sku}</TableCell>
-                      <TableCell>{f.batchSize} {f.unit}</TableCell>
-                      <TableCell className="font-semibold">
-                        {f.costSummary ? rupiah(f.costSummary.totalHppPerUnit) : "—"}
-                      </TableCell>
-                      <TableCell className="text-green-700">
-                        {f.costSummary ? rupiah(f.costSummary.suggestedPrice) : "—"}
-                      </TableCell>
-                      <TableCell>
-                        <Badge className={statusColor[f.status] || "bg-gray-100 text-gray-700"}>
-                          {f.status}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
-                          <Button variant="ghost" size="sm" onClick={() => openEditBuilder(f)} title="Edit">
-                            <Pencil className="h-3 w-3" />
-                          </Button>
-                          <Button variant="ghost" size="sm" onClick={() => viewFormula(f.formulaId)} title="View">
-                            <Search className="h-3 w-3" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => deleteFormula(f.formulaId)}
-                            disabled={deleting === f.formulaId}
-                            title="Delete"
-                            className="text-red-400 hover:text-red-600"
+          <Card>
+            <CardHeader>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <CardTitle>Daftar Formula</CardTitle>
+                  <CardDescription>
+                    {filtered.length} formula ditemukan
+                  </CardDescription>
+                </div>
+                <Input
+                  placeholder="Cari formula, brand, produk..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="w-full sm:w-72"
+                />
+              </div>
+            </CardHeader>
+            <CardContent>
+              {loading ? (
+                <div className="py-8 text-center text-muted-foreground">
+                  Memuat formulas...
+                </div>
+              ) : filtered.length === 0 ? (
+                <div className="py-8 text-center text-muted-foreground">
+                  Belum ada formula. Klik &quot;+ New Formula&quot; untuk membuat.
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b text-left text-muted-foreground">
+                        <th className="pb-2 pr-4">Formula ID</th>
+                        <th className="pb-2 pr-4">Brand</th>
+                        <th className="pb-2 pr-4">Product</th>
+                        <th className="pb-2 pr-4">SKU</th>
+                        <th className="pb-2 pr-4">Batch</th>
+                        <th className="pb-2 pr-4">HPP/Unit</th>
+                        <th className="pb-2 pr-4">Status</th>
+                        <th className="pb-2">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filtered.map((f) => {
+                        const cs = costMap[f.formulaId];
+                        return (
+                          <tr
+                            key={f.formulaId}
+                            className="border-b last:border-0 hover:bg-muted/40 cursor-pointer"
+                            onClick={() => setSelectedId(f.formulaId)}
                           >
-                            <Trash2 className="h-3 w-3" />
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </Card>
-          )}
+                            <td className="py-3 pr-4 font-mono font-medium">
+                              {f.formulaId}
+                            </td>
+                            <td className="py-3 pr-4">{f.brandName}</td>
+                            <td className="py-3 pr-4">{f.productName}</td>
+                            <td className="py-3 pr-4 text-muted-foreground">
+                              {f.sku}
+                            </td>
+                            <td className="py-3 pr-4">
+                              {f.batchSize} {f.unit}
+                            </td>
+                            <td className="py-3 pr-4 font-medium">
+                              {cs ? fmtRp(cs.totalHppPerUnit) : "—"}
+                            </td>
+                            <td className="py-3 pr-4">
+                              <Badge
+                                variant={
+                                  f.status === "Active"
+                                    ? "default"
+                                    : "secondary"
+                                }
+                              >
+                                {f.status}
+                              </Badge>
+                            </td>
+                            <td className="py-3">
+                              <div className="flex gap-1">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedId(f.formulaId);
+                                  }}
+                                >
+                                  Detail
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    fetch(`/api/formulas/${f.formulaId}`)
+                                      .then((r) => r.json())
+                                      .then((data) => {
+                                        if (data.formula)
+                                          loadFormulaForEdit(data.formula);
+                                      })
+                                      .catch(console.error);
+                                  }}
+                                >
+                                  Edit
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="text-destructive"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    deleteFormula(f.formulaId);
+                                  }}
+                                >
+                                  Delete
+                                </Button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
 
         {/* ── Tab: Formula Detail ── */}
         <TabsContent value="detail" className="space-y-4">
-          {detailLoading ? (
-            <div className="space-y-2">
-              {[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-20 w-full" />)}
-            </div>
-          ) : selectedFormula ? (
-            <>
-              {/* Header */}
-              <Card>
+          {!selectedId ? (
+            <Card>
+              <CardContent className="py-12 text-center text-muted-foreground">
+                Pilih formula dari tab &quot;Formulas&quot; untuk melihat detail.
+              </CardContent>
+            </Card>
+          ) : detailLoading ? (
+            <Card>
+              <CardContent className="py-12 text-center text-muted-foreground">
+                Memuat detail formula...
+              </CardContent>
+            </Card>
+          ) : detail ? (
+            <div className="space-y-4">
+              {/* Formula header */}
+              <Card className="border-primary/40 bg-primary/5">
                 <CardHeader>
-                  <div className="flex items-start justify-between">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
-                      <CardTitle className="text-xl flex items-center gap-2">
-                        <FlaskConical className="h-5 w-5" />
-                        {selectedFormula.formulaId}: {selectedFormula.productName}
+                      <CardTitle className="text-2xl">
+                        🧪 {detail.formulaId}: {detail.productName}
                       </CardTitle>
-                      <CardDescription className="mt-1">
-                        {selectedFormula.brandName} • {selectedFormula.productType} • {selectedFormula.sku}
+                      <CardDescription className="text-base">
+                        {detail.brandName} &middot; {detail.sku}
                       </CardDescription>
                     </div>
-                    <Badge className={statusColor[selectedFormula.status] || "bg-gray-100 text-gray-700"}>
-                      {selectedFormula.status}
+                    <Badge variant={detail.status === "Active" ? "default" : "secondary"}>
+                      {detail.status}
                     </Badge>
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                  <div className="grid gap-4 sm:grid-cols-4">
                     <div>
-                      <p className="text-muted-foreground">Batch Size</p>
-                      <p className="font-semibold">{selectedFormula.batchSize} {selectedFormula.unit}</p>
+                      <div className="text-xs text-muted-foreground">Batch Size</div>
+                      <div className="text-lg font-semibold">
+                        {detail.batchSize} {detail.unit}
+                      </div>
                     </div>
                     <div>
-                      <p className="text-muted-foreground">Version</p>
-                      <p className="font-semibold">{selectedFormula.version}</p>
+                      <div className="text-xs text-muted-foreground">Version</div>
+                      <div className="text-lg font-semibold">{detail.version}</div>
                     </div>
                     <div>
-                      <p className="text-muted-foreground">Created</p>
-                      <p className="font-semibold">{selectedFormula.created}</p>
+                      <div className="text-xs text-muted-foreground">Created</div>
+                      <div className="text-sm">{detail.created}</div>
                     </div>
                     <div>
-                      <p className="text-muted-foreground">Updated</p>
-                      <p className="font-semibold">{selectedFormula.updated}</p>
+                      <div className="text-xs text-muted-foreground">Updated</div>
+                      <div className="text-sm">{detail.updated}</div>
                     </div>
                   </div>
                 </CardContent>
               </Card>
 
-              {/* Ingredients */}
+              {/* Ingredients table */}
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-lg flex items-center gap-2">
-                    <Beaker className="h-5 w-5" /> Komposisi Bahan
-                  </CardTitle>
+                  <CardTitle>Komposisi Bahan</CardTitle>
+                  <CardDescription>
+                    {detail.ingredients.length} bahan dalam formula ini
+                  </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  {selectedFormula.ingredients.length === 0 ? (
-                    <p className="text-muted-foreground text-sm">Belum ada data ingredients.</p>
-                  ) : (
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Ingredient</TableHead>
-                          <TableHead>Category</TableHead>
-                          <TableHead>Qty</TableHead>
-                          <TableHead>%</TableHead>
-                          <TableHead>Unit Cost</TableHead>
-                          <TableHead>Total Cost</TableHead>
-                          <TableHead>Supplier</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {selectedFormula.ingredients.map((ing, idx) => (
-                          <TableRow key={idx}>
-                            <TableCell className="font-medium">{ing.ingredientName}</TableCell>
-                            <TableCell>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b text-left text-muted-foreground">
+                          <th className="pb-2 pr-3">Bahan</th>
+                          <th className="pb-2 pr-3">Kategori</th>
+                          <th className="pb-2 pr-3 text-right">Qty (ml)</th>
+                          <th className="pb-2 pr-3 text-right">%</th>
+                          <th className="pb-2 pr-3 text-right">Unit Cost</th>
+                          <th className="pb-2 pr-3 text-right">Total Cost</th>
+                          <th className="pb-2 pr-3">Supplier</th>
+                          <th className="pb-2">Notes</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {detail.ingredients.map((ing, i) => (
+                          <tr key={i} className="border-b last:border-0">
+                            <td className="py-2 pr-3 font-medium">
+                              {ing.ingredientName}
+                            </td>
+                            <td className="py-2 pr-3">
                               <Badge variant="outline">{ing.category}</Badge>
-                            </TableCell>
-                            <TableCell>{ing.qty} ml</TableCell>
-                            <TableCell>{ing.percent.toFixed(1)}%</TableCell>
-                            <TableCell>{rupiah(ing.unitCost)}</TableCell>
-                            <TableCell className="font-semibold">{rupiah(ing.totalCost)}</TableCell>
-                            <TableCell className="text-sm text-muted-foreground">{ing.supplier}</TableCell>
-                          </TableRow>
+                            </td>
+                            <td className="py-2 pr-3 text-right">{ing.qty}</td>
+                            <td className="py-2 pr-3 text-right">
+                              {ing.percent}%
+                            </td>
+                            <td className="py-2 pr-3 text-right">
+                              {fmtRp(ing.unitCost)}
+                            </td>
+                            <td className="py-2 pr-3 text-right font-medium">
+                              {fmtRp(ing.totalCost)}
+                            </td>
+                            <td className="py-2 pr-3">{ing.supplier}</td>
+                            <td className="py-2 text-muted-foreground">
+                              {ing.notes}
+                            </td>
+                          </tr>
                         ))}
-                      </TableBody>
-                    </Table>
-                  )}
+                      </tbody>
+                    </table>
+                  </div>
                 </CardContent>
               </Card>
 
-              {/* Cost Breakdown */}
-              {selectedFormula.costSummary && (
+              {/* Cost breakdown */}
+              {detail.costSummary && (
                 <Card>
                   <CardHeader>
-                    <CardTitle className="text-lg flex items-center gap-2">
-                      <DollarSign className="h-5 w-5" /> Cost Breakdown
-                    </CardTitle>
+                    <CardTitle>💰 Cost Breakdown</CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                      <Card className="bg-gray-50">
-                        <CardContent className="py-3">
-                          <p className="text-xs text-muted-foreground">Ingredient Cost</p>
-                          <p className="font-bold">{rupiah(selectedFormula.costSummary.ingredientCost)}</p>
-                        </CardContent>
-                      </Card>
-                      <Card className="bg-gray-50">
-                        <CardContent className="py-3">
-                          <p className="text-xs text-muted-foreground">Bottling</p>
-                          <p className="font-bold">{rupiah(selectedFormula.costSummary.bottlingCost)}</p>
-                        </CardContent>
-                      </Card>
-                      <Card className="bg-gray-50">
-                        <CardContent className="py-3">
-                          <p className="text-xs text-muted-foreground">Packaging</p>
-                          <p className="font-bold">{rupiah(selectedFormula.costSummary.packagingCost)}</p>
-                        </CardContent>
-                      </Card>
-                      <Card className="bg-gray-50">
-                        <CardContent className="py-3">
-                          <p className="text-xs text-muted-foreground">Other</p>
-                          <p className="font-bold">{rupiah(selectedFormula.costSummary.otherCost)}</p>
-                        </CardContent>
-                      </Card>
-                      <Card className="bg-blue-50 border-blue-200">
-                        <CardContent className="py-3">
-                          <p className="text-xs text-blue-600">Total HPP/Unit</p>
-                          <p className="font-bold text-blue-700 text-lg">{rupiah(selectedFormula.costSummary.totalHppPerUnit)}</p>
-                        </CardContent>
-                      </Card>
-                      <Card className="bg-gray-50">
-                        <CardContent className="py-3">
-                          <p className="text-xs text-muted-foreground">Margin</p>
-                          <p className="font-bold">{selectedFormula.costSummary.marginPercent}%</p>
-                        </CardContent>
-                      </Card>
-                      <Card className="bg-green-50 border-green-200">
-                        <CardContent className="py-3">
-                          <p className="text-xs text-green-600">Suggested Price</p>
-                          <p className="font-bold text-green-700 text-lg">{rupiah(selectedFormula.costSummary.suggestedPrice)}</p>
-                        </CardContent>
-                      </Card>
+                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                      <CostBox
+                        label="Ingredient Cost"
+                        value={fmtRp(detail.costSummary.ingredientCost)}
+                        color="blue"
+                      />
+                      <CostBox
+                        label="Bottling"
+                        value={fmtRp(detail.costSummary.bottlingCost)}
+                        color="green"
+                      />
+                      <CostBox
+                        label="Packaging"
+                        value={fmtRp(detail.costSummary.packagingCost)}
+                        color="amber"
+                      />
+                      <CostBox
+                        label="Other"
+                        value={fmtRp(detail.costSummary.otherCost)}
+                        color="purple"
+                      />
+                    </div>
+                    <div className="mt-4 grid gap-4 sm:grid-cols-3">
+                      <div className="rounded-lg border-2 border-primary bg-primary/5 p-4 text-center">
+                        <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                          Total HPP/Unit
+                        </div>
+                        <div className="mt-1 text-2xl font-bold text-primary">
+                          {fmtRp(detail.costSummary.totalHppPerUnit)}
+                        </div>
+                      </div>
+                      <div className="rounded-lg border p-4 text-center">
+                        <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                          Margin
+                        </div>
+                        <div className="mt-1 text-2xl font-bold">
+                          {detail.costSummary.marginPercent}%
+                        </div>
+                      </div>
+                      <div className="rounded-lg border-2 border-emerald-500 bg-emerald-50 p-4 text-center">
+                        <div className="text-xs uppercase tracking-wide text-emerald-700">
+                          Suggested Price
+                        </div>
+                        <div className="mt-1 text-2xl font-bold text-emerald-700">
+                          {fmtRp(detail.costSummary.suggestedPrice)}
+                        </div>
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
               )}
 
               {/* Actions */}
-              <div className="flex gap-2">
-                <Button onClick={() => openEditBuilder(selectedFormula)} variant="outline">
-                  <Pencil className="h-4 w-4 mr-1" /> Edit
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() =>
+                    fetch(`/api/formulas/${detail.formulaId}`)
+                      .then((r) => r.json())
+                      .then((data) => {
+                        if (data.formula) loadFormulaForEdit(data.formula);
+                      })
+                      .catch(console.error)
+                  }
+                >
+                  ✏️ Edit Formula
                 </Button>
-                <Button onClick={() => deleteFormula(selectedFormula.formulaId)} variant="outline" className="text-red-500">
-                  <Trash2 className="h-4 w-4 mr-1" /> Delete
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    navigator.clipboard.writeText(
+                      JSON.stringify(detail, null, 2)
+                    );
+                    alert("Detail formula disalin ke clipboard.");
+                  }}
+                >
+                  📋 Export JSON
+                </Button>
+                <Button
+                  variant="outline"
+                  className="text-destructive"
+                  onClick={() => deleteFormula(detail.formulaId)}
+                >
+                  🗑️ Deactivate
                 </Button>
               </div>
-            </>
-          ) : (
-            <EmptyState
-              icon={<FlaskConical className="h-12 w-12" />}
-              title="Pilih formula"
-              description="Klik formula di tab Formulas untuk melihat detail"
-            />
-          )}
+            </div>
+          ) : null}
+        </TabsContent>
+
+        {/* ── Tab: Formula Builder ── */}
+        <TabsContent value="builder" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>
+                🧪 Formula Builder —{" "}
+                {builderMode === "edit"
+                  ? `Edit ${editingFormulaId}`
+                  : "New Formula"}
+              </CardTitle>
+              <CardDescription>
+                Isi komposisi bahan dan biaya produksi. HPP dihitung
+                otomatis secara real-time.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {/* Basic info */}
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label>Brand *</Label>
+                  <select
+                    className="w-full rounded-md border bg-background px-3 py-2"
+                    value={brandId}
+                    onChange={handleBrandSelect}
+                  >
+                    <option value="">Pilih Brand...</option>
+                    {BRAND_OPTIONS.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Product Name *</Label>
+                  <Input
+                    value={productName}
+                    onChange={(e) => setProductName(e.target.value)}
+                    placeholder="Contoh: EDP 30ml Rose"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>SKU</Label>
+                  <Input
+                    value={sku}
+                    onChange={(e) => setSku(e.target.value)}
+                    placeholder="Contoh: ARC-EDP-30"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Product Type</Label>
+                  <Input
+                    value={productType}
+                    onChange={(e) => setProductType(e.target.value)}
+                    placeholder="Perfume"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Batch Size *</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      type="number"
+                      value={batchSize}
+                      onChange={(e) =>
+                        setBatchSize(Number(e.target.value))
+                      }
+                      min={1}
+                    />
+                    <select
+                      className="w-24 rounded-md border bg-background px-2"
+                      value={unit}
+                      onChange={(e) => setUnit(e.target.value)}
+                    >
+                      <option value="ml">ml</option>
+                      <option value="liter">liter</option>
+                      <option value="pcs">pcs</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label>Version</Label>
+                  <Input
+                    value={version}
+                    onChange={(e) => setVersion(e.target.value)}
+                    placeholder="v1.0"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Status</Label>
+                  <select
+                    className="w-full rounded-md border bg-background px-3 py-2"
+                    value={status}
+                    onChange={(e) => setStatus(e.target.value)}
+                  >
+                    <option value="Active">Active</option>
+                    <option value="Draft">Draft</option>
+                    <option value="Archived">Archived</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* ── Ingredients section ── */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-lg font-semibold">
+                    🧪 Komposisi Bahan
+                  </h3>
+                  <Button variant="outline" size="sm" onClick={addIngredientRow}>
+                    + Add Ingredient
+                  </Button>
+                </div>
+
+                <div className="space-y-2">
+                  {ingredients.map((ing, idx) => {
+                    const pct =
+                      batchSize > 0
+                        ? Math.round((ing.qty / batchSize) * 10000) / 100
+                        : 0;
+                    const total = ing.qty * ing.unitCost;
+                    return (
+                      <div
+                        key={idx}
+                        className="grid gap-2 rounded-lg border p-3 sm:grid-cols-[1fr_1fr_80px_80px_100px_100px_auto] items-end"
+                      >
+                        <div className="space-y-1">
+                          <Label className="text-xs">Bahan</Label>
+                          <Input
+                            value={ing.ingredientName}
+                            onChange={(e) =>
+                              updateIngredient(idx, "ingredientName", e.target.value)
+                            }
+                            placeholder="Nama bahan"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs">Kategori</Label>
+                          <select
+                            className="w-full rounded-md border bg-background px-2 py-2 text-sm"
+                            value={ing.category}
+                            onChange={(e) =>
+                              updateIngredient(idx, "category", e.target.value)
+                            }
+                          >
+                            {CATEGORIES.map((c) => (
+                              <option key={c.value} value={c.value}>
+                                {c.label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs">Qty</Label>
+                          <Input
+                            type="number"
+                            value={ing.qty || ""}
+                            onChange={(e) =>
+                              updateIngredient(idx, "qty", Number(e.target.value))
+                            }
+                            min={0}
+                            step={0.5}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs">%</Label>
+                          <div className="rounded-md border bg-muted px-2 py-2 text-sm text-muted-foreground">
+                            {pct}%
+                          </div>
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs">Unit Cost</Label>
+                          <Input
+                            type="number"
+                            value={ing.unitCost || ""}
+                            onChange={(e) =>
+                              updateIngredient(idx, "unitCost", Number(e.target.value))
+                            }
+                            min={0}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs">Total</Label>
+                          <div className="rounded-md border bg-muted px-2 py-2 text-sm font-medium">
+                            {fmtRp(total)}
+                          </div>
+                        </div>
+                        <div className="flex items-end">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-destructive"
+                            onClick={() => removeIngredientRow(idx)}
+                            disabled={ingredients.length <= 1}
+                          >
+                            ✕
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* ── Production costs ── */}
+              <div className="space-y-3">
+                <h3 className="text-lg font-semibold">
+                  🏭 Biaya Produksi
+                </h3>
+                <div className="grid gap-4 sm:grid-cols-4">
+                  <div className="space-y-2">
+                    <Label>Bottling</Label>
+                    <Input
+                      type="number"
+                      value={bottlingCost || ""}
+                      onChange={(e) =>
+                        setBottlingCost(Number(e.target.value))
+                      }
+                      min={0}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Packaging</Label>
+                    <Input
+                      type="number"
+                      value={packagingCost || ""}
+                      onChange={(e) =>
+                        setPackagingCost(Number(e.target.value))
+                      }
+                      min={0}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Other</Label>
+                    <Input
+                      type="number"
+                      value={otherCost || ""}
+                      onChange={(e) => setOtherCost(Number(e.target.value))}
+                      min={0}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Margin %</Label>
+                    <Input
+                      type="number"
+                      value={marginPercent || ""}
+                      onChange={(e) =>
+                        setMarginPercent(Number(e.target.value))
+                      }
+                      min={0}
+                      max={100}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* ── Live calculation result ── */}
+              <div className="rounded-xl border-2 border-primary bg-primary/5 p-5">
+                <h3 className="mb-3 text-lg font-semibold">
+                  📊 Hasil Kalkulasi (Real-time)
+                </h3>
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+                  <CalcBox
+                    label="Ingredient Cost"
+                    value={fmtRp(Math.round(liveCosts.ingredientCost))}
+                  />
+                  <CalcBox
+                    label="Total Production"
+                    value={fmtRp(Math.round(liveCosts.totalProductionCost))}
+                  />
+                  <CalcBox
+                    label="HPP per Unit"
+                    value={fmtRp(Math.round(liveCosts.hppPerUnit))}
+                    highlight
+                  />
+                  <CalcBox label="Margin" value={`${marginPercent}%`} />
+                  <CalcBox
+                    label="Suggested Price"
+                    value={fmtRp(Math.round(liveCosts.suggestedPrice))}
+                    highlight
+                  />
+                </div>
+              </div>
+
+              {/* Save message */}
+              {saveMessage && (
+                <div
+                  className={`rounded-lg p-3 text-sm ${
+                    saveMessage.startsWith("✅")
+                      ? "bg-emerald-50 text-emerald-900"
+                      : saveMessage.startsWith("❌") || saveMessage.startsWith("⚠️")
+                      ? "bg-red-50 text-red-900"
+                      : "bg-blue-50 text-blue-900"
+                  }`}
+                >
+                  {saveMessage}
+                </div>
+              )}
+
+              {/* Actions */}
+              <div className="flex justify-end gap-3">
+                <Button variant="outline" onClick={resetBuilder}>
+                  Cancel
+                </Button>
+                <Button
+                  onClick={saveFormula}
+                  disabled={saving}
+                  className="min-w-[160px]"
+                >
+                  {saving ? "Menyimpan..." : "💾 Save Formula"}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
 
         {/* ── Tab: Cost Analysis ── */}
         <TabsContent value="analysis" className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid gap-4 lg:grid-cols-2">
+            {/* Cost per brand */}
             <Card>
               <CardHeader>
-                <CardTitle className="text-lg">HPP per Brand</CardTitle>
-                <CardDescription>Total HPP per unit by brand</CardDescription>
-              </CardHeader>
-              <CardContent>
-                {costAnalysis.brandList.length === 0 ? (
-                  <p className="text-muted-foreground text-sm">Belum ada data cost summary.</p>
-                ) : (
-                  <div className="space-y-3">
-                    {costAnalysis.brandList.map((b) => (
-                      <div key={b.name} className="flex items-center justify-between">
-                        <span className="text-sm font-medium">{b.name}</span>
-                        <span className="text-sm font-bold">{rupiah(b.totalHpp)}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">Summary</CardTitle>
-                <CardDescription>Ringkasan cost analysis</CardDescription>
+                <CardTitle>Cost per Brand</CardTitle>
+                <CardDescription>
+                  Total HPP per unit per brand
+                </CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
-                  <div className="flex justify-between">
-                    <span className="text-sm text-muted-foreground">Total Formulas</span>
-                    <span className="font-semibold">{fmtNum(costAnalysis.totalFormulas)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-sm text-muted-foreground">Avg HPP/Unit</span>
-                    <span className="font-semibold">{rupiah(costAnalysis.avgHpp)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-sm text-muted-foreground">Brands</span>
-                    <span className="font-semibold">{fmtNum(costAnalysis.brandList.length)}</span>
-                  </div>
+                  {(() => {
+                    const brandCosts: Record<
+                      string,
+                      { totalHpp: number; count: number; totalCost: number }
+                    > = {};
+                    formulas.forEach((f) => {
+                      const cs = costMap[f.formulaId];
+                      if (!cs) return;
+                      if (!brandCosts[f.brandName]) {
+                        brandCosts[f.brandName] = {
+                          totalHpp: 0,
+                          count: 0,
+                          totalCost: 0,
+                        };
+                      }
+                      brandCosts[f.brandName].totalHpp += cs.totalHppPerUnit;
+                      brandCosts[f.brandName].count += 1;
+                      brandCosts[f.brandName].totalCost +=
+                        cs.ingredientCost +
+                        cs.bottlingCost +
+                        cs.packagingCost +
+                        cs.otherCost;
+                    });
+                    const entries = Object.entries(brandCosts);
+                    const maxHpp = Math.max(
+                      ...entries.map(([, v]) => v.totalHpp),
+                      1
+                    );
+                    return entries.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">
+                        Belum ada data cost.
+                      </p>
+                    ) : (
+                      entries.map(([brand, data]) => (
+                        <div key={brand} className="space-y-1">
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="font-medium">{brand}</span>
+                            <span className="text-muted-foreground">
+                              {data.count} formula &middot; avg{" "}
+                              {fmtRp(Math.round(data.totalHpp / data.count))}/unit
+                            </span>
+                          </div>
+                          <div className="h-3 overflow-hidden rounded-full bg-muted">
+                            <div
+                              className="h-full rounded-full bg-primary transition-all"
+                              style={{
+                                width: `${(data.totalHpp / maxHpp) * 100}%`,
+                              }}
+                            />
+                          </div>
+                        </div>
+                      ))
+                    );
+                  })()}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Top ingredients by cost */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Top Ingredients by Cost</CardTitle>
+                <CardDescription>
+                  Bahan baku dengan total cost tertinggi
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  {(() => {
+                    const ingCosts: Record<
+                      string,
+                      { totalCost: number; count: number }
+                    > = {};
+                    formulas.forEach((f) => {
+                      if (!selectedId) return;
+                      // We need to fetch ingredients for all formulas
+                      // For now, use costMap data
+                    });
+                    // Use costMap to show ingredient cost breakdown
+                    const costEntries = Object.values(costMap);
+                    const totalIngCost = costEntries.reduce(
+                      (s, c) => s + c.ingredientCost,
+                      0
+                    );
+                    const totalBottling = costEntries.reduce(
+                      (s, c) => s + c.bottlingCost,
+                      0
+                    );
+                    const totalPackaging = costEntries.reduce(
+                      (s, c) => s + c.packagingCost,
+                      0
+                    );
+                    const totalOther = costEntries.reduce(
+                      (s, c) => s + c.otherCost,
+                      0
+                    );
+                    const allCosts = [
+                      {
+                        name: "Ingredients",
+                        cost: totalIngCost,
+                        color: "bg-blue-500",
+                      },
+                      {
+                        name: "Bottling",
+                        cost: totalBottling,
+                        color: "bg-emerald-500",
+                      },
+                      {
+                        name: "Packaging",
+                        cost: totalPackaging,
+                        color: "bg-amber-500",
+                      },
+                      { name: "Other", cost: totalOther, color: "bg-purple-500" },
+                    ].sort((a, b) => b.cost - a.cost);
+                    const maxCost = Math.max(...allCosts.map((c) => c.cost), 1);
+                    return allCosts.map((item) => (
+                      <div key={item.name} className="flex items-center gap-3">
+                        <div className="w-24 text-sm font-medium">
+                          {item.name}
+                        </div>
+                        <div className="flex-1">
+                          <div className="h-6 overflow-hidden rounded bg-muted">
+                            <div
+                              className={`h-full rounded ${item.color} transition-all`}
+                              style={{
+                                width: `${(item.cost / maxCost) * 100}%`,
+                              }}
+                            />
+                          </div>
+                        </div>
+                        <div className="w-28 text-right text-sm font-medium">
+                          {fmtRp(item.cost)}
+                        </div>
+                      </div>
+                    ));
+                  })()}
                 </div>
               </CardContent>
             </Card>
           </div>
+
+          {/* HPP comparison table */}
+          <Card>
+            <CardHeader>
+              <CardTitle>HPP Comparison</CardTitle>
+              <CardDescription>
+                Perbandingan HPP per unit semua formula
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b text-left text-muted-foreground">
+                      <th className="pb-2 pr-4">Formula</th>
+                      <th className="pb-2 pr-4">Product</th>
+                      <th className="pb-2 pr-4 text-right">Batch</th>
+                      <th className="pb-2 pr-4 text-right">Ingredient</th>
+                      <th className="pb-2 pr-4 text-right">Prod Cost</th>
+                      <th className="pb-2 pr-4 text-right">HPP/Unit</th>
+                      <th className="pb-2 pr-4 text-right">Margin</th>
+                      <th className="pb-2 text-right">Price</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {formulas.map((f) => {
+                      const cs = costMap[f.formulaId];
+                      if (!cs) return null;
+                      return (
+                        <tr
+                          key={f.formulaId}
+                          className="border-b last:border-0 hover:bg-muted/40 cursor-pointer"
+                          onClick={() => setSelectedId(f.formulaId)}
+                        >
+                          <td className="py-2 pr-4 font-mono font-medium">
+                            {f.formulaId}
+                          </td>
+                          <td className="py-2 pr-4">{f.productName}</td>
+                          <td className="py-2 pr-4 text-right">
+                            {f.batchSize} {f.unit}
+                          </td>
+                          <td className="py-2 pr-4 text-right">
+                            {fmtRp(cs.ingredientCost)}
+                          </td>
+                          <td className="py-2 pr-4 text-right">
+                            {fmtRp(
+                              cs.ingredientCost +
+                                cs.bottlingCost +
+                                cs.packagingCost +
+                                cs.otherCost
+                            )}
+                          </td>
+                          <td className="py-2 pr-4 text-right font-bold text-primary">
+                            {fmtRp(cs.totalHppPerUnit)}
+                          </td>
+                          <td className="py-2 pr-4 text-right">
+                            {cs.marginPercent}%
+                          </td>
+                          <td className="py-2 pr-4 text-right font-bold text-emerald-600">
+                            {fmtRp(cs.suggestedPrice)}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
+    </div>
+  );
+}
+
+// ── Sub-components ─────────────────────────────────────────────────
+
+function CostBox({
+  label,
+  value,
+  color,
+}: {
+  label: string;
+  value: string;
+  color: "blue" | "green" | "amber" | "purple";
+}) {
+  const colors = {
+    blue: "border-blue-200 bg-blue-50",
+    green: "border-emerald-200 bg-emerald-50",
+    amber: "border-amber-200 bg-amber-50",
+    purple: "border-purple-200 bg-purple-50",
+  };
+  return (
+    <div className={`rounded-lg border p-3 ${colors[color]}`}>
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className="mt-1 text-lg font-bold">{value}</div>
+    </div>
+  );
+}
+
+function CalcBox({
+  label,
+  value,
+  highlight = false,
+}: {
+  label: string;
+  value: string;
+  highlight?: boolean;
+}) {
+  return (
+    <div
+      className={`rounded-lg border p-3 ${
+        highlight
+          ? "border-primary bg-primary/10"
+          : "border-border bg-card"
+      }`}
+    >
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div
+        className={`mt-1 text-lg font-bold ${
+          highlight ? "text-primary" : ""
+        }`}
+      >
+        {value}
+      </div>
     </div>
   );
 }
