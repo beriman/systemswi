@@ -1,11 +1,5 @@
-/**
- * Seed script for Expense Approval Flow
- * - Creates Expense_Submissions sheet with 5 sample submissions (mix status)
- * - Creates Expense_Approvers sheet with 1 approver: Beriman Juliano (Direktur)
- *
- * Run: npx tsx scripts/seed-expenses.ts
- */
-
+// Seed expense data into Google Sheets
+// Run with: npx tsx scripts/seed-expenses.ts
 import { google } from "googleapis";
 import fs from "fs";
 
@@ -13,7 +7,6 @@ const SPREADSHEET_ID = process.env.GOOGLE_SHEETS_ID || "1lQ_FX6v-aX0XNwkRO6TyYLU
 const TOKEN_PATH = "/home/ubuntu/.hermes/google_token.json";
 
 function loadCredentials() {
-  // Try file first
   try {
     const content = JSON.parse(fs.readFileSync(TOKEN_PATH, "utf-8"));
     return {
@@ -24,29 +17,21 @@ function loadCredentials() {
       expiry_date: content.expiry_date || content.expiry || 0,
     };
   } catch {
-    // Fall back to env
-    const client_id = process.env.GOOGLE_CLIENT_ID;
-    const client_secret = process.env.GOOGLE_CLIENT_SECRET;
-    const refresh_token = process.env.GOOGLE_REFRESH_TOKEN;
-    if (!client_id || !client_secret || !refresh_token) {
-      throw new Error("No Google credentials found");
-    }
-    return {
-      client_id,
-      client_secret,
-      refresh_token,
-      access_token: process.env.GOOGLE_ACCESS_TOKEN || "",
-      expiry_date: parseInt(process.env.GOOGLE_EXPIRY_DATE || "0", 10) || 0,
-    };
+    return null;
   }
 }
 
 async function main() {
   const creds = loadCredentials();
+  if (!creds) {
+    console.error("❌ No Google credentials found");
+    process.exit(1);
+  }
+
   const oauth2 = new google.auth.OAuth2(
     creds.client_id,
     creds.client_secret,
-    process.env.GOOGLE_REDIRECT_URI || "http://localhost:1"
+    "http://localhost:1"
   );
   oauth2.setCredentials({
     refresh_token: creds.refresh_token,
@@ -57,14 +42,13 @@ async function main() {
 
   const sheets = google.sheets({ version: "v4", auth: oauth2 });
 
-  // Check existing sheets
+  // Check if sheets exist, create if not
   const ss = await sheets.spreadsheets.get({
     spreadsheetId: SPREADSHEET_ID,
     fields: "sheets.properties.title",
   });
 
   const existingSheets = ss.data.sheets?.map((s) => s.properties?.title) || [];
-  console.log("Existing sheets:", existingSheets);
 
   // Create Expense_Submissions if not exists
   if (!existingSheets.includes("Expense_Submissions")) {
@@ -75,8 +59,6 @@ async function main() {
         requests: [{ addSheet: { properties: { title: "Expense_Submissions" } } }],
       },
     });
-
-    // Write headers
     await sheets.spreadsheets.values.update({
       spreadsheetId: SPREADSHEET_ID,
       range: "Expense_Submissions!A1:L1",
@@ -85,68 +67,13 @@ async function main() {
         values: [[
           "Submission ID", "Date", "Submitter Name", "Related Event",
           "Category", "Description", "Amount", "Proof URL",
-          "Status", "Reviewed By", "Reviewed Date", "Notes",
+          "Status", "Reviewed By", "Reviewed Date", "Notes"
         ]],
       },
     });
-    console.log("  Headers written.");
+    console.log("✅ Expense_Submissions sheet created with headers");
   } else {
-    console.log("Expense_Submissions already exists, checking data...");
-  }
-
-  // Check if data already exists
-  const { data: existingData } = await sheets.spreadsheets.values.get({
-    spreadsheetId: SPREADSHEET_ID,
-    range: "Expense_Submissions!A:L",
-  });
-
-  const existingRows = existingData.values || [];
-  const dataRowCount = existingRows.length > 1 ? existingRows.length - 1 : 0;
-  console.log(`  Current data rows: ${dataRowCount}`);
-
-  if (dataRowCount >= 5) {
-    console.log("  Seed data already present, skipping submissions seed.");
-  } else {
-    // Seed 5 sample submissions
-    const today = new Date().toISOString().slice(0, 10);
-    const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
-    const lastWeek = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
-
-    const submissions = [
-      [
-        "EXP-001", lastWeek, "Beriman Juliano", "Pekan Parfum Indonesia 2026",
-        "Sewa Booth", "Sewa booth utama hall A", 3500000, "",
-        "Approved", "Beriman Juliano", lastWeek, "Approved — booth premium",
-      ],
-      [
-        "EXP-002", lastWeek, "Siti Rahmawati", "Pekan Parfum Indonesia 2026",
-        "Bahan Baku", "Pembelian bahan baku parfum 50 unit", 1250000, "",
-        "Approved", "Beriman Juliano", yesterday, "Approved — bulk purchase",
-      ],
-      [
-        "EXP-003", yesterday, "Ahmad Fauzi", "Launch Event Wangi Collection",
-        "Iklan", "Iklan Instagram 2 minggu", 2000000, "",
-        "Pending", "", "", "",
-      ],
-      [
-        "EXP-004", yesterday, "Dewi Lestari", "Launch Event Wangi Collection",
-        "Transport", "Transportasi peralatan event", 750000, "",
-        "Pending", "", "", "",
-      ],
-      [
-        "EXP-005", today, "Rizky Pratama", "Pekan Parfum Indonesia 2026",
-        "Packaging", "Custom packaging 200 pcs", 1800000, "",
-        "Rejected", "Beriman Juliano", today, "Rejected — melebihi budget packaging",
-      ],
-    ];
-
-    await sheets.spreadsheets.values.append({
-      spreadsheetId: SPREADSHEET_ID,
-      range: "Expense_Submissions!A:L",
-      valueInputOption: "USER_ENTERED",
-      requestBody: { values: submissions },
-    });
-    console.log(`  Seeded ${submissions.length} expense submissions.`);
+    console.log("ℹ️  Expense_Submissions sheet already exists");
   }
 
   // Create Expense_Approvers if not exists
@@ -158,7 +85,6 @@ async function main() {
         requests: [{ addSheet: { properties: { title: "Expense_Approvers" } } }],
       },
     });
-
     await sheets.spreadsheets.values.update({
       spreadsheetId: SPREADSHEET_ID,
       range: "Expense_Approvers!A1:D1",
@@ -167,43 +93,74 @@ async function main() {
         values: [["Approver ID", "Name", "Role", "Email"]],
       },
     });
-    console.log("  Headers written.");
+    console.log("✅ Expense_Approvers sheet created with headers");
   } else {
-    console.log("Expense_Approvers already exists, checking data...");
+    console.log("ℹ️  Expense_Approvers sheet already exists");
   }
 
-  // Check approvers data
-  const { data: approversData } = await sheets.spreadsheets.values.get({
+  // Check existing data
+  const { data: subData } = await sheets.spreadsheets.values.get({
     spreadsheetId: SPREADSHEET_ID,
-    range: "Expense_Approvers!A:D",
+    range: "Expense_Submissions!A:L",
   });
+  const existingRows = subData.values || [];
+  const dataRowCount = existingRows.length > 1 ? existingRows.length - 1 : 0;
+  console.log(`ℹ️  Expense_Submissions has ${dataRowCount} data rows`);
 
-  const approversRows = approversData.values || [];
-  const approversCount = approversRows.length > 1 ? approversRows.length - 1 : 0;
-  console.log(`  Current approvers: ${approversCount}`);
+  // Seed 5 sample submissions if less than 5 exist
+  if (dataRowCount < 5) {
+    console.log("Seeding 5 sample expense submissions...");
+    const today = new Date().toISOString().slice(0, 10);
+    const lastMonth = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
+    const twoMonthsAgo = new Date(Date.now() - 60 * 86400000).toISOString().slice(0, 10);
 
-  if (approversCount >= 1) {
-    console.log("  Approver seed data already present, skipping.");
-  } else {
-    const approvers = [
-      ["APR-001", "Beriman Juliano", "Direktur", "beriman@systemswi.com"],
+    const submissions = [
+      ["EXP-001", twoMonthsAgo, "Beriman Juliano", "Pekan Parfum Indonesia 2026", "Sewa Booth", "Sewa booth utama hall A", 5000000, "", "Approved", "Beriman Juliano", twoMonthsAgo, "Approved - booth premium"],
+      ["EXP-002", lastMonth, "Siti Rahmawati", "Pekan Parfum Indonesia 2026", "Iklan", "Banner dan spanduk promosi", 1500000, "", "Approved", "Beriman Juliano", lastMonth, "Approved - materi promosi"],
+      ["EXP-003", lastMonth, "Ahmad Fauzi", "Launch Event Vanilla Oud", "Bahan Baku", "Pembelian bahan baku vanilla extract", 3200000, "", "Rejected", "Beriman Juliano", lastMonth, "Rejected - melebihi budget bahan baku"],
+      ["EXP-004", today, "Dewi Lestari", "Launch Event Vanilla Oud", "Transport", "Transportasi pengiriman sampel", 750000, "", "Pending", "", "", ""],
+      ["EXP-005", today, "Rudi Hartono", "Expo Parfum Jakarta", "Packaging", "Packaging khusus edisi expo", 2100000, "", "Pending", "", "", ""],
     ];
 
     await sheets.spreadsheets.values.append({
       spreadsheetId: SPREADSHEET_ID,
-      range: "Expense_Approvers!A:D",
+      range: "Expense_Submissions!A:L",
       valueInputOption: "USER_ENTERED",
-      requestBody: { values: approvers },
+      requestBody: { values: submissions },
     });
-    console.log(`  Seeded ${approvers.length} approver.`);
+    console.log("✅ 5 sample submissions seeded");
+  } else {
+    console.log("✅  Already have 5+ submissions, skipping seed");
   }
 
-  console.log("\n✅ Expense seed complete!");
-  console.log("   Submissions: 5 (2 Approved, 2 Pending, 1 Rejected)");
-  console.log("   Approvers: 1 (Beriman Juliano — Direktur)");
+  // Seed approver
+  const { data: apprData } = await sheets.spreadsheets.values.get({
+    spreadsheetId: SPREADSHEET_ID,
+    range: "Expense_Approvers!A:D",
+  });
+  const apprRows = apprData.values || [];
+  const apprCount = apprRows.length > 1 ? apprRows.length - 1 : 0;
+
+  if (apprCount < 1) {
+    console.log("Seeding approver data...");
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SPREADSHEET_ID,
+      range: "Expense_Approvers!A:D",
+      valueInputOption: "USER_ENTERED",
+      requestBody: {
+        values: [["APR-001", "Beriman Juliano", "Direktur", "beriman@swi.id"]],
+      },
+    });
+    console.log("✅ 1 approver seeded: Beriman Juliano (Direktur)");
+  } else {
+    console.log("✅  Approver already exists, skipping seed");
+  }
+
+  console.log("\n🎉 Expense seeding complete!");
+  console.log("📊 Sheets: https://docs.google.com/spreadsheets/d/" + SPREADSHEET_ID);
 }
 
 main().catch((err) => {
-  console.error("❌ Seed failed:", err);
+  console.error("❌ Error:", err);
   process.exit(1);
 });
