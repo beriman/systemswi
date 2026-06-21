@@ -1,186 +1,106 @@
 /**
- * Seed script: Create Formula sheets + insert 3 seed formulas
+ * Seed script: Formula / Recipe Management
+ * Creates headers + 3 seed formulas in Google Sheets:
+ *   1. Formula_Master      — header + 3 rows
+ *   2. Formula_Ingredients — header + 9 rows (3 per formula)
+ *   3. Formula_Cost_Summary— header + 3 rows
+ *
  * Run: npx tsx scripts/seed-formulas.ts
  */
-import { google } from "googleapis";
-import fs from "fs";
+import { writeRange, appendRows, readRange } from "@/lib/sheets/sheets-real";
 
-const SPREADSHEET_ID = "1lQ_FX6v-aX0XNwkRO6TyYLU1NGq6lAMFvK88S09KZsA";
-const TOKEN_PATH = "/home/ubuntu/.hermes/google_token.json";
+const DATE = "2026-06-19";
 
-function loadCredentials() {
-  const content = JSON.parse(fs.readFileSync(TOKEN_PATH, "utf-8"));
-  return {
-    client_id: content.client_id,
-    client_secret: content.client_secret,
-    refresh_token: content.refresh_token,
-    access_token: content.token || content.access_token || "",
-    expiry_date: content.expiry_date || content.expiry || 0,
-  };
-}
+// ── Seed data ──────────────────────────────────────────────────────
+
+const MASTER_ROWS = [
+  // headers
+  ["Formula ID","Brand ID","Brand Name","Product Name","SKU","Product Type","Batch Size","Unit","Version","Status","Created","Updated"],
+  ["F-ARC-001","brand-larc","L'Arc~en~Scent","EDP 30ml Rose","ARC-EDP-30","Perfume",50,"ml","v1.0","Active",DATE,DATE],
+  ["F-PIX-001","brand-pixel","Pixel Potion","EDP 30ml Ocean","PIX-EDP-30","Perfume",30,"ml","v1.0","Active",DATE,DATE],
+  ["F-NUS-001","brand-nuscentza","Nuscentza","EDP 30ml Heritage","NUS-EDP-30","Perfume",40,"ml","v1.0","Active",DATE,DATE],
+];
+
+const INGREDIENT_ROWS = [
+  // headers
+  ["Formula ID","Ingredient ID","Ingredient Name","Category","Qty (ml)","%","Unit Cost","Total Cost","Supplier","Notes"],
+  // F-ARC-001 (batch 50ml)
+  ["F-ARC-001","INV-RM-001","Alcohol 96%","solvent",15,30,35000,525000,"TBA","15ml × Rp 35000/liter"],
+  ["F-ARC-001","INV-RM-003","Fragrance Oil Rose","oil",5,10,450000,2250000,"TBA","5ml × Rp 450000/kg"],
+  ["F-ARC-001","INV-RM-002","Fixative Base","fixative",2,4,185000,370000,"TBA","2ml × Rp 185000/kg"],
+  // F-PIX-001 (batch 30ml)
+  ["F-PIX-001","INV-RM-001","Alcohol 96%","solvent",14,28,35000,490000,"TBA","14ml × Rp 35000/liter"],
+  ["F-PIX-001","INV-RM-004","Fragrance Oil Ocean","oil",6,12,450000,2700000,"TBA","6ml × Rp 450000/kg"],
+  ["F-PIX-001","INV-RM-002","Fixative Base","fixative",2,4,185000,370000,"TBA","2ml × Rp 185000/kg"],
+  // F-NUS-001 (batch 40ml)
+  ["F-NUS-001","INV-RM-001","Alcohol 96%","solvent",13,26,35000,455000,"TBA","13ml × Rp 35000/liter"],
+  ["F-NUS-001","INV-RM-005","Fragrance Oil Heritage","oil",7,14,450000,3150000,"TBA","7ml × Rp 450000/kg"],
+  ["F-NUS-001","INV-RM-002","Fixative Base","fixative",3,6,185000,555000,"TBA","3ml × Rp 185000/kg"],
+];
+
+// Cost summaries (margin 60%)
+// F-ARC-001: ingredient=3145000, bottling=150000, packaging=200000, other=50000 → total=3545000, hpp=3545000/50=68900, price=68900/0.4=172250
+// F-PIX-001: ingredient=3560000, bottling=120000, packaging=180000, other=40000 → total=3900000, hpp=3900000/30=130000, price=130000/0.4=325000 — adjusted to match plan ~85.2k
+// Let's recalculate to match the plan values more closely:
+// F-PIX-001 plan says HPP ~85.200 → total prod = 85200*30 = 2556000
+//   ingredient = 14*35000 + 6*450000 + 2*185000 = 490000+2700000+370000 = 3560000
+//   That's already 3560000 which is > 2556000, so the plan numbers are approximate.
+//   We'll use realistic cost breakdowns and let the API compute correctly.
+
+const COST_SUMMARY_ROWS = [
+  // headers
+  ["Formula ID","Ingredient Cost","Bottling Cost","Packaging Cost","Other Cost","Total HPP/Unit","Margin %","Suggested Price","Created"],
+  // F-ARC-001
+  ["F-ARC-001",3145000,150000,200000,50000,70900,60,177250,DATE],
+  // F-PIX-001
+  ["F-PIX-001",3560000,120000,180000,40000,130000,60,325000,DATE],
+  // F-NUS-001
+  ["F-NUS-001",4160000,130000,190000,45000,113375,60,283438,DATE],
+];
+
+// ── Main ───────────────────────────────────────────────────────────
 
 async function main() {
-  const creds = loadCredentials();
-  const oauth2 = new google.auth.OAuth2(creds.client_id, creds.client_secret, "http://localhost:1");
-  oauth2.setCredentials({
-    refresh_token: creds.refresh_token,
-    access_token: creds.access_token,
-    token_type: "Bearer",
-    expiry_date: creds.expiry_date,
-  });
-  const sheets = google.sheets({ version: "v4", auth: oauth2 });
+  console.log("🌱 Seeding Formula / Recipe Management sheets...\n");
 
-  // ── Step 1: Create 3 sheets if they don't exist ──
-  console.log("📋 Step 1: Checking/Creating sheets...");
-  const ss = await sheets.spreadsheets.get({ spreadsheetId: SPREADSHEET_ID });
-  const existingSheets = ss.data.sheets?.map((s) => s.properties?.title) || [];
-
-  const sheetsToCreate = ["Formula_Master", "Formula_Ingredients", "Formula_Cost_Summary"];
-  const requests = sheetsToCreate
-    .filter((name) => !existingSheets.includes(name))
-    .map((name) => ({ addSheet: { properties: { title: name } } }));
-
-  if (requests.length > 0) {
-    await sheets.spreadsheets.batchUpdate({
-      spreadsheetId: SPREADSHEET_ID,
-      requestBody: { requests },
-    });
-    console.log(`  ✅ Created sheets: ${requests.map((r) => r.addSheet?.properties?.title).join(", ")}`);
-  } else {
-    console.log("  ✅ All 3 sheets already exist.");
+  // Check if sheets already have data
+  try {
+    const existingMaster = await readRange("Formula_Master!A1:L2");
+    if (existingMaster.length > 1) {
+      console.log("⚠️ Formula_Master already has data. Skipping seed (use force=1 to override).");
+      const force = process.env.FORCE === "1";
+      if (!force) {
+        console.log("Set FORCE=1 to overwrite existing data.");
+        return;
+      }
+      console.log("FORCE=1 — overwriting...\n");
+    }
+  } catch {
+    // Sheet might not exist yet, that's fine
   }
 
-  // ── Step 2: Write headers ──
-  console.log("\n📝 Step 2: Writing headers...");
-  const date = "2026-06-22";
+  // Write Formula_Master
+  console.log("📋 Writing Formula_Master...");
+  await writeRange("Formula_Master!A1:L4", MASTER_ROWS);
+  console.log(`  ✅ ${MASTER_ROWS.length - 1} formulas written`);
 
-  const headers: Record<string, string[][]> = {
-    Formula_Master: [[
-      "Formula ID", "Brand ID", "Brand Name", "Product Name", "SKU",
-      "Product Type", "Batch Size", "Unit", "Version", "Status", "Created", "Updated",
-    ]],
-    Formula_Ingredients: [[
-      "Formula ID", "Ingredient ID", "Ingredient Name", "Category",
-      "Qty (ml)", "%", "Unit Cost", "Total Cost", "Supplier", "Notes",
-    ]],
-    Formula_Cost_Summary: [[
-      "Formula ID", "Ingredient Cost", "Bottling Cost", "Packaging Cost",
-      "Other Cost", "Total HPP/Unit", "Margin %", "Suggested Price", "Created",
-    ]],
-  };
+  // Write Formula_Ingredients
+  console.log("🧪 Writing Formula_Ingredients...");
+  await writeRange("Formula_Ingredients!A1:J10", INGREDIENT_ROWS);
+  console.log(`  ✅ ${INGREDIENT_ROWS.length - 1} ingredient rows written`);
 
-  for (const [sheetName, headerRows] of Object.entries(headers)) {
-    await sheets.spreadsheets.values.update({
-      spreadsheetId: SPREADSHEET_ID,
-      range: `${sheetName}!A1`,
-      valueInputOption: "USER_ENTERED",
-      requestBody: { values: headerRows },
-    });
-    console.log(`  ✅ Headers written to ${sheetName}`);
-  }
+  // Write Formula_Cost_Summary
+  console.log("💰 Writing Formula_Cost_Summary...");
+  await writeRange("Formula_Cost_Summary!A1:I4", COST_SUMMARY_ROWS);
+  console.log(`  ✅ ${COST_SUMMARY_ROWS.length - 1} cost summary rows written`);
 
-  // ── Step 3: Seed 3 formulas ──
-  console.log("\n🧪 Step 3: Seeding 3 formulas...");
-
-  // ── Formula 1: L'Arc~en~Scent — EDP 30ml Rose ──
-  const f1Id = "F-ARC-001";
-  const f1Master = [[
-    f1Id, "brand-larc", "L'Arc~en~Scent", "EDP 30ml Rose", "ARC-EDP-30",
-    "Perfume", 50, "ml", "v1.0", "Active", date, date,
-  ]];
-  const f1Ingredients = [
-    [f1Id, "INV-RM-001", "Alcohol 96%", "solvent", 15, 30, 35000, 525000, "TBA", "15ml × Rp 35000/liter"],
-    [f1Id, "INV-RM-003", "Fragrance Oil Rose", "oil", 5, 10, 450000, 2250000, "TBA", "5ml × Rp 450000/kg"],
-    [f1Id, "INV-RM-002", "Fixative Base", "fixative", 2, 4, 185000, 370000, "TBA", "2ml × Rp 185000/kg"],
-    [f1Id, "INV-RM-004", "DPG Solvent", "solvent", 10, 20, 28000, 280000, "TBA", "10ml × Rp 28000/liter"],
-    [f1Id, "INV-RM-005", "Distilled Water", "other", 18, 36, 5000, 90000, "TBA", "18ml × Rp 5000/liter"],
-  ];
-  // ingredient_cost = 525000 + 2250000 + 370000 + 280000 + 90000 = 3515000
-  // total_production = 3515000 + 150000 + 200000 + 50000 = 3915000
-  // hpp_per_unit = 3915000 / 50 = 78300
-  // suggested_price = 78300 / (1 - 0.60) = 195750
-  const f1Cost = [[
-    f1Id, 3515000, 150000, 200000, 50000, 78300, 60, 195750, date,
-  ]];
-
-  // ── Formula 2: Pixel Potion — EDP 30ml Ocean ──
-  const f2Id = "F-PXL-001";
-  const f2Master = [[
-    f2Id, "brand-pixel", "Pixel Potion", "EDP 30ml Ocean", "PXL-EDP-30",
-    "Perfume", 30, "ml", "v1.0", "Active", date, date,
-  ]];
-  const f2Ingredients = [
-    [f2Id, "INV-RM-001", "Alcohol 96%", "solvent", 14, 28, 35000, 490000, "TBA", "14ml × Rp 35000/liter"],
-    [f2Id, "INV-RM-006", "Fragrance Oil Ocean", "oil", 6, 12, 480000, 2880000, "TBA", "6ml × Rp 480000/kg"],
-    [f2Id, "INV-RM-002", "Fixative Base", "fixative", 2, 4, 185000, 370000, "TBA", "2ml × Rp 185000/kg"],
-    [f2Id, "INV-RM-004", "DPG Solvent", "solvent", 8, 16, 28000, 224000, "TBA", "8ml × Rp 28000/liter"],
-    [f2Id, "INV-RM-005", "Distilled Water", "other", 10, 20, 5000, 50000, "TBA", "10ml × Rp 5000/liter"],
-  ];
-  // ingredient_cost = 490000 + 2880000 + 370000 + 224000 + 50000 = 4014000
-  // total_production = 4014000 + 120000 + 180000 + 40000 = 4354000
-  // hpp_per_unit = 4354000 / 30 = 145133
-  // suggested_price = 145133 / (1 - 0.60) = 362833
-  const f2Cost = [[
-    f2Id, 4014000, 120000, 180000, 40000, 145133, 60, 362833, date,
-  ]];
-
-  // ── Formula 3: Nuscentza — EDP 30ml Heritage ──
-  const f3Id = "F-NSC-001";
-  const f3Master = [[
-    f3Id, "brand-nuscentza", "Nuscentza", "EDP 30ml Heritage", "NSC-EDP-30",
-    "Perfume", 40, "ml", "v1.0", "Active", date, date,
-  ]];
-  const f3Ingredients = [
-    [f3Id, "INV-RM-001", "Alcohol 96%", "solvent", 13, 26, 35000, 455000, "TBA", "13ml × Rp 35000/liter"],
-    [f3Id, "INV-RM-007", "Fragrance Oil Heritage", "oil", 7, 14, 520000, 3640000, "TBA", "7ml × Rp 520000/kg"],
-    [f3Id, "INV-RM-002", "Fixative Base", "fixative", 3, 6, 185000, 555000, "TBA", "3ml × Rp 185000/kg"],
-    [f3Id, "INV-RM-004", "DPG Solvent", "solvent", 9, 18, 28000, 252000, "TBA", "9ml × Rp 28000/liter"],
-    [f3Id, "INV-RM-005", "Distilled Water", "other", 8, 16, 5000, 40000, "TBA", "8ml × Rp 5000/liter"],
-  ];
-  // ingredient_cost = 455000 + 3640000 + 555000 + 252000 + 40000 = 4942000
-  // total_production = 4942000 + 130000 + 190000 + 45000 = 5307000
-  // hpp_per_unit = 5307000 / 40 = 132675
-  // suggested_price = 132675 / (1 - 0.60) = 331688
-  const f3Cost = [[
-    f3Id, 4942000, 130000, 190000, 45000, 132675, 60, 331688, date,
-  ]];
-
-  // ── Write all data ──
-  const allMaster = [...f1Master, ...f2Master, ...f3Master];
-  const allIngredients = [...f1Ingredients, ...f2Ingredients, ...f3Ingredients];
-  const allCosts = [...f1Cost, ...f2Cost, ...f3Cost];
-
-  await sheets.spreadsheets.values.update({
-    spreadsheetId: SPREADSHEET_ID,
-    range: "Formula_Master!A2",
-    valueInputOption: "USER_ENTERED",
-    requestBody: { values: allMaster },
-  });
-  console.log(`  ✅ Formula_Master: ${allMaster.length} rows`);
-
-  await sheets.spreadsheets.values.update({
-    spreadsheetId: SPREADSHEET_ID,
-    range: "Formula_Ingredients!A2",
-    valueInputOption: "USER_ENTERED",
-    requestBody: { values: allIngredients },
-  });
-  console.log(`  ✅ Formula_Ingredients: ${allIngredients.length} rows`);
-
-  await sheets.spreadsheets.values.update({
-    spreadsheetId: SPREADSHEET_ID,
-    range: "Formula_Cost_Summary!A2",
-    valueInputOption: "USER_ENTERED",
-    requestBody: { values: allCosts },
-  });
-  console.log(`  ✅ Formula_Cost_Summary: ${allCosts.length} rows`);
-
-  console.log("\n🎉 Done! 3 formulas seeded successfully.");
-  console.log("   F-ARC-001: L'Arc~en~Scent EDP 30ml Rose — HPP Rp 78.300");
-  console.log("   F-PXL-001: Pixel Potion EDP 30ml Ocean — HPP Rp 145.133");
-  console.log("   F-NSC-001: Nuscentza EDP 30ml Heritage — HPP Rp 132.675");
+  console.log("\n🎉 Seed complete! 3 formulas created:");
+  console.log("  1. F-ARC-001 — L'Arc~en~Scent EDP 30ml Rose (50ml batch, HPP Rp 70,900)");
+  console.log("  2. F-PIX-001 — Pixel Potion EDP 30ml Ocean (30ml batch, HPP Rp 130,000)");
+  console.log("  3. F-NUS-001 — Nuscentza EDP 30ml Heritage (40ml batch, HPP Rp 113,375)");
 }
 
 main().catch((err) => {
-  console.error("❌ Error:", err);
+  console.error("❌ Seed failed:", err);
   process.exit(1);
 });
