@@ -30,6 +30,7 @@ const NAV_ITEMS: NavItem[] = [
     { label: "CRM Hub", href: "/crm", icon: "🤝", feature: "dashboard:overview" },
     { label: "Customers", href: "/customers", icon: "👥", feature: "dashboard:overview" },
     { label: "Scent Profile", href: "/scent-profile", icon: "🧪", feature: "dashboard:overview" },
+    { label: "Formula", href: "/formulas", icon: "🧪", feature: "dashboard:overview" },
     { label: "Documents", href: "/documents", icon: "📄", feature: "ai-features" },
     { label: "Invoice", href: "/invoice", icon: "🧾", feature: "dashboard:overview" },
     { label: "Billing", href: "/billing", icon: "💳", feature: "dashboard:overview" },
