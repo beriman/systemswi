@@ -82,7 +82,7 @@ async function main() {
         ]],
       },
     });
-    console.log("  ✅ Headers written");
+    console.log("  ✅ Expense_Submissions sheet created with headers");
   } else {
     console.log("Expense_Submissions already exists, checking for data...");
     const { data } = await sheets.spreadsheets.values.get({
@@ -167,7 +167,7 @@ async function main() {
         values: [["Approver ID", "Name", "Role", "Email"]],
       },
     });
-    console.log("  ✅ Headers written");
+    console.log("  ✅ Expense_Approvers sheet created with headers");
   } else {
     console.log("Expense_Approvers already exists, checking for data...");
   }

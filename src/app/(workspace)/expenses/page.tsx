@@ -142,7 +142,8 @@ export default function ExpensesPage() {
     setFormMessage(null);
     const form = new FormData(event.currentTarget);
 
-    const payload = {
+    const proofFile = form.get("proofFile") as File | null;
+    const payload: any = {
       date: String(form.get("date") || ""),
       submitterName: String(form.get("submitterName") || ""),
       relatedEvent: String(form.get("relatedEvent") || ""),
@@ -159,6 +160,26 @@ export default function ExpensesPage() {
     }
 
     try {
+      // Step 1: Upload proof file if provided
+      if (proofFile && proofFile.size > 0) {
+        setFormMessage("Mengupload bukti...");
+        const uploadForm = new FormData();
+        uploadForm.append("file", proofFile);
+        const uploadRes = await fetch("/api/expenses/upload", {
+          method: "POST",
+          body: uploadForm,
+        });
+        if (uploadRes.ok) {
+          const uploadJson = await uploadRes.json();
+          if (uploadJson.file?.id) {
+            payload.proofUrl = uploadJson.file.id;
+          }
+        }
+        // If upload fails, continue without proof — don't block submission
+      }
+
+      // Step 2: Submit expense
+      setFormMessage("Mengirim submission...");
       const res = await fetch("/api/expenses", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -286,6 +307,17 @@ export default function ExpensesPage() {
                 <div>
                   <Label htmlFor="amount">Amount (Rp) *</Label>
                   <Input id="amount" name="amount" type="number" placeholder="0" required min="0" />
+                </div>
+                <div>
+                  <Label htmlFor="proofFile">Bukti (Foto/PDF)</Label>
+                  <input
+                    id="proofFile"
+                    name="proofFile"
+                    type="file"
+                    accept="image/*,application/pdf"
+                    className="w-full border rounded-md px-3 py-2 text-sm"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">Upload foto struk atau invoice (maks 10MB)</p>
                 </div>
               </div>
               <div>
