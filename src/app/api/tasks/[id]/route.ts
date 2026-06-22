@@ -1,22 +1,39 @@
-// GET /api/tasks/[id] — Get task detail
-// PUT /api/tasks/[id] — Update task status/assignee/due date
 import { NextRequest, NextResponse } from "next/server";
-import {
-  readTaskSheet,
-  updateTaskRow,
-  initializeTaskSheets,
-  TASK_SHEETS,
-} from "@/lib/tasks/sheets";
-import { googleWorkspaceDegradedSource, isGoogleWorkspaceAuthError } from "@/lib/api/google-workspace-error";
+import { readRange, writeRange, SHEETS } from "@/lib/sheets/sheets-real";
 
-const TASKS_SOURCE = "Google Sheets: Tasks";
+// Tasks sheet columns (13 cols, A:M):
+// 0: Task ID, 1: Title, 2: Description, 3: Assignee, 4: PIC Name,
+// 5: Due Date, 6: Priority, 7: Status, 8: Related Event/Project,
+// 9: Created By, 10: Created Date, 11: Completed Date, 12: Notes
 
-function s(row: string[], idx: number): string {
-  return row[idx] || "";
+function rowToTask(row: string[]) {
+  return {
+    id: row[0] || "",
+    title: row[1] || "",
+    description: row[2] || "",
+    assignee: row[3] || "",
+    picName: row[4] || "",
+    dueDate: row[5] || "",
+    priority: row[6] || "",
+    status: row[7] || "",
+    relatedEvent: row[8] || "",
+    createdBy: row[9] || "",
+    createdDate: row[10] || "",
+    completedDate: row[11] || "",
+    notes: row[12] || "",
+  };
 }
 
-function today(): string {
-  return new Date().toISOString().slice(0, 10);
+async function findTaskRowIndex(taskId: string): Promise<number> {
+  const range = SHEETS["Tasks"]?.range || "Tasks!A1:M1000";
+  const rows = await readRange(range);
+  // rows[0] is header, data starts at row 2 (index 1 in array = row 2 in sheet)
+  for (let i = 1; i < rows.length; i++) {
+    if (rows[i]?.[0] === taskId) {
+      return i + 1; // 1-based row number in sheet
+    }
+  }
+  return -1;
 }
 
 export async function GET(
@@ -24,41 +41,28 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await initializeTaskSheets();
     const { id } = await params;
-    const rows = await readTaskSheet(TASK_SHEETS.Tasks);
+    const rowIndex = await findTaskRowIndex(id);
 
-    const rowIndex = rows.findIndex((row, i) => i > 0 && s(row, 0) === id);
     if (rowIndex === -1) {
       return NextResponse.json({ error: "Task not found" }, { status: 404 });
     }
 
-    const row = rows[rowIndex];
-    const task = {
-      id: s(row, 0),
-      title: s(row, 1),
-      description: s(row, 2),
-      assignee: s(row, 3),
-      picName: s(row, 4),
-      dueDate: s(row, 5),
-      priority: s(row, 6),
-      status: s(row, 7),
-      relatedEvent: s(row, 8),
-      createdBy: s(row, 9),
-      createdDate: s(row, 10),
-      completedDate: s(row, 11),
-      notes: s(row, 12),
-    };
+    const range = SHEETS["Tasks"]?.range || "Tasks!A1:M1000";
+    const match = range.match(/^(?:([^!]+)!)?([A-Z]+)(\d+):([A-Z]+)(\d+)$/);
+    const colStart = match ? match[2] : "A";
+    const colEnd = match ? match[4] : "M";
+    const sheetName = match?.[1] || "Tasks";
 
-    return NextResponse.json({ source: TASKS_SOURCE, sourceStatus: "live", task });
-  } catch (error) {
-    if (isGoogleWorkspaceAuthError(error)) {
-      return NextResponse.json({
-        ...googleWorkspaceDegradedSource(TASKS_SOURCE, error),
-        task: null,
-      });
-    }
-    return NextResponse.json({ error: "Failed to fetch task detail", details: String(error) }, { status: 500 });
+    const rowData = await readRange(`${sheetName}!${colStart}${rowIndex}:${colEnd}${rowIndex}`);
+    const task = rowToTask(rowData[0] || []);
+
+    return NextResponse.json({ task });
+  } catch (error: any) {
+    return NextResponse.json(
+      { error: error.message || "Failed to fetch task" },
+      { status: 500 }
+    );
   }
 }
 
@@ -67,62 +71,51 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await initializeTaskSheets();
     const { id } = await params;
     const body = await req.json();
-    const { status, assignee, dueDate, priority, notes, title, description, relatedEvent, picName } = body;
+    const rowIndex = await findTaskRowIndex(id);
 
-    const rows = await readTaskSheet(TASK_SHEETS.Tasks);
-    const rowIndex = rows.findIndex((row, i) => i > 0 && s(row, 0) === id);
     if (rowIndex === -1) {
       return NextResponse.json({ error: "Task not found" }, { status: 404 });
     }
 
-    const rowNum = rowIndex + 1; // 1-indexed
-    const existing = rows[rowIndex];
-    const now = today();
+    const range = SHEETS["Tasks"]?.range || "Tasks!A1:M1000";
+    const match = range.match(/^(?:([^!]+)!)?([A-Z]+)(\d+):([A-Z]+)(\d+)$/);
+    const colStart = match ? match[2] : "A";
+    const colEnd = match ? match[4] : "M";
+    const sheetName = match?.[1] || "Tasks";
 
-    const validStatuses = ["To Do", "In Progress", "Review", "Done", "Overdue"];
-    const validPriorities = ["High", "Medium", "Low"];
+    // Read current row
+    const rowData = await readRange(`${sheetName}!${colStart}${rowIndex}:${colEnd}${rowIndex}`);
+    const current = rowData[0] || [];
 
-    const newStatus = status && validStatuses.includes(status) ? status : s(existing, 7);
-    const completedDate = newStatus === "Done"
-      ? (s(existing, 11) || now)
-      : (s(existing, 11) || "");
-
-    const updatedRow = [
-      s(existing, 0),                              // Task ID
-      title || s(existing, 1),                     // Title
-      description || s(existing, 2),               // Description
-      assignee || s(existing, 3),                  // Assignee
-      picName || assignee || s(existing, 4),       // PIC Name
-      dueDate || s(existing, 5),                   // Due Date
-      priority && validPriorities.includes(priority) ? priority : s(existing, 6), // Priority
-      newStatus,                                   // Status
-      relatedEvent || s(existing, 8),              // Related Event/Project
-      s(existing, 9),                              // Created By
-      s(existing, 10),                             // Created Date
-      completedDate,                               // Completed Date
-      notes !== undefined ? notes : s(existing, 12), // Notes
-    ];
-
-    await updateTaskRow(TASK_SHEETS.Tasks, rowNum, updatedRow);
-
-    return NextResponse.json({
-      success: true,
-      id,
-      status: newStatus,
-      message: "Task updated successfully.",
-    });
-  } catch (error) {
-    if (isGoogleWorkspaceAuthError(error)) {
-      return NextResponse.json({
-        sourceStatus: "blocked",
-        source: TASKS_SOURCE,
-        error: "Google Workspace OAuth perlu re-auth sebelum bisa update task",
-        details: String(error),
-      }, { status: 503 });
+    // Update only provided fields
+    const updated = [...current];
+    if (body.title !== undefined) updated[1] = body.title;
+    if (body.description !== undefined) updated[2] = body.description;
+    if (body.assignee !== undefined) updated[3] = body.assignee;
+    if (body.picName !== undefined) updated[4] = body.picName;
+    if (body.dueDate !== undefined) updated[5] = body.dueDate;
+    if (body.priority !== undefined) updated[6] = body.priority;
+    if (body.status !== undefined) {
+      updated[7] = body.status;
+      // Auto-set completed date when status changes to Done
+      if (body.status === "Done") {
+        updated[11] = new Date().toISOString().split("T")[0];
+      } else {
+        updated[11] = "";
+      }
     }
-    return NextResponse.json({ error: "Failed to update task", details: String(error) }, { status: 500 });
+    if (body.relatedEvent !== undefined) updated[8] = body.relatedEvent;
+    if (body.notes !== undefined) updated[12] = body.notes;
+
+    await writeRange(`${sheetName}!${colStart}${rowIndex}:${colEnd}${rowIndex}`, [updated]);
+
+    return NextResponse.json({ task: rowToTask(updated), success: true });
+  } catch (error: any) {
+    return NextResponse.json(
+      { error: error.message || "Failed to update task" },
+      { status: 500 }
+    );
   }
 }

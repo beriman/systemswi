@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { readRanges } from "@/lib/sheets/sheets-real";
 
+// Brand_Production column indices (actual schema):
+// 0: Production ID, 1: Date, 2: Brand ID, 3: Brand Name, 4: SKU,
+// 5: Product Name, 6: Product Type, 7: Batch Code, 8: Qty Produced,
+// 9: Unit, 10: Raw Material Cost, 11: Bottling Cost, 12: Packaging Cost,
+// 13: Other Cost, 14: HPP/Unit, 15: Total Production Cost, 16: Status,
+// 17: QC Status, 18: Stock Location, 19: Notes
+
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
@@ -22,7 +29,7 @@ export async function GET(req: NextRequest) {
     > = {};
 
     for (const row of dataRows) {
-      const rowBrand = row[2] || "";
+      const rowBrand = row[3] || "";
       const date = row[1] || "";
       const rowMonth = date.substring(0, 7);
 
@@ -30,9 +37,9 @@ export async function GET(req: NextRequest) {
       if (month && rowMonth !== month) continue;
 
       const key = `${rowBrand}|${rowMonth}`;
-      const qty = parseFloat(row[6]) || 0;
-      const hpp = parseFloat(row[12]) || 0;
-      const cost = parseFloat(row[13]) || 0;
+      const qty = parseFloat(row[8]) || 0;
+      const hpp = parseFloat(row[14]) || 0;
+      const cost = parseFloat(row[15]) || 0;
 
       if (!timelineMap[key]) {
         timelineMap[key] = {

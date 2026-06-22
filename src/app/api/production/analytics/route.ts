@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { readRanges } from "@/lib/sheets/sheets-real";
 
+// Brand_Production column indices (actual schema):
+// 0: Production ID, 1: Date, 2: Brand ID, 3: Brand Name, 4: SKU,
+// 5: Product Name, 6: Product Type, 7: Batch Code, 8: Qty Produced,
+// 9: Unit, 10: Raw Material Cost, 11: Bottling Cost, 12: Packaging Cost,
+// 13: Other Cost, 14: HPP/Unit, 15: Total Production Cost, 16: Status,
+// 17: QC Status, 18: Stock Location, 19: Notes
+
 export async function GET() {
   try {
     const data = await readRanges(["Brand_Production!A1:T1000"]);
@@ -14,14 +21,7 @@ export async function GET() {
       });
     }
 
-    const headers = rows[0];
     const dataRows = rows.slice(1);
-
-    // Column indices based on Brand_Production schema:
-    // A: Production ID, B: Date, C: Brand, D: SKU, E: Product,
-    // F: Batch Code, G: Qty, H: Unit, I: Raw Material Cost, J: Bottling Cost,
-    // K: Packaging Cost, L: Other Cost, M: HPP/Unit, N: Total Production Cost,
-    // O: Status, P: QC Status, Q: Stock Location, R: Notes, S: ?, T: ?
 
     const totalBatches = dataRows.length;
     let totalUnits = 0;
@@ -30,9 +30,9 @@ export async function GET() {
     let qtySum = 0;
 
     for (const row of dataRows) {
-      const qty = parseFloat(row[6]) || 0;
-      const hpp = parseFloat(row[12]) || 0;
-      const cost = parseFloat(row[13]) || 0;
+      const qty = parseFloat(row[8]) || 0;
+      const hpp = parseFloat(row[14]) || 0;
+      const cost = parseFloat(row[15]) || 0;
 
       totalUnits += qty;
       totalCost += cost;

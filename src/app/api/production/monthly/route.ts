@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { readRanges } from "@/lib/sheets/sheets-real";
 
+// Brand_Production column indices (actual schema):
+// 0: Production ID, 1: Date, 2: Brand ID, 3: Brand Name, 4: SKU,
+// 5: Product Name, 6: Product Type, 7: Batch Code, 8: Qty Produced,
+// 9: Unit, 10: Raw Material Cost, 11: Bottling Cost, 12: Packaging Cost,
+// 13: Other Cost, 14: HPP/Unit, 15: Total Production Cost, 16: Status,
+// 17: QC Status, 18: Stock Location, 19: Notes
+
 export async function GET() {
   try {
     const data = await readRanges(["Brand_Production!A1:T1000"]);
@@ -26,12 +33,12 @@ export async function GET() {
     > = {};
 
     for (const row of dataRows) {
-      const brand = row[2] || "";
+      const brand = row[3] || "";
       const date = row[1] || "";
       const month = date.substring(0, 7);
-      const qty = parseFloat(row[6]) || 0;
-      const hpp = parseFloat(row[12]) || 0;
-      const cost = parseFloat(row[13]) || 0;
+      const qty = parseFloat(row[8]) || 0;
+      const hpp = parseFloat(row[14]) || 0;
+      const cost = parseFloat(row[15]) || 0;
 
       const key = `${month}|${brand}`;
       if (!summaryMap[key]) {

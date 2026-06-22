@@ -1,61 +1,175 @@
-// POST /api/tasks/seed — Seed sample tasks & comments
 import { NextRequest, NextResponse } from "next/server";
-import {
-  initializeTaskSheets,
-  readTaskSheet,
-  appendTaskRows,
-  TASK_SHEETS,
-} from "@/lib/tasks/sheets";
+import { appendRows, readRange } from "@/lib/sheets/sheets-real";
 
-function daysFromNow(offset: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() + offset);
-  return d.toISOString().slice(0, 10);
+// Seed data: 8 sample tasks + 3 sample comments
+// Status mix: 2 Done, 2 In Progress, 2 To Do, 1 Review, 1 Overdue
+
+const TASK_HEADERS = [
+  "Task ID", "Title", "Description", "Assignee", "PIC Name",
+  "Due Date", "Priority", "Status", "Related Event/Project",
+  "Created By", "Created Date", "Completed Date", "Notes",
+];
+
+const COMMENT_HEADERS = ["Comment ID", "Task ID", "Author", "Date", "Comment"];
+
+const SEED_TASKS = [
+  // 1. Done — completed task
+  [
+    "TSK-001", "Finalisasi Laporan Q1 2026",
+    "Menyusun laporan keuangan kuartal pertama untuk semua divisi",
+    "Beriman", "Beriman", "2026-04-15", "High", "Done",
+    "Laporan Keuangan Q1", "System", "2026-03-20", "2026-04-14",
+    "Laporan sudah direvisi dan disetujui oleh direksi",
+  ],
+  // 2. Done — completed task
+  [
+    "TSK-002", "Update Data Customer CRM",
+    "Migrasi data customer lama ke sistem CRM baru",
+    "Siti Aminah", "Siti Aminah", "2026-03-30", "Medium", "Done",
+    "CRM Migration", "System", "2026-03-01", "2026-03-28",
+    "12.500 records berhasil dimigrasi",
+  ],
+  // 3. In Progress
+  [
+    "TSK-003", "Desain Kemasan Velvet Cloud",
+    "Membuat desain kemasan baru untuk line Velvet Cloud EDP 100ml",
+    "Dewi Lestari", "Dewi Lestari", "2026-07-15", "High", "In Progress",
+    "Velvet Cloud Launch", "System", "2026-06-10", "",
+    "Menunggu approval dari brand manager",
+  ],
+  // 4. In Progress
+  [
+    "TSK-004", "RAB Proyeksi Q3 2026",
+    "Penyusunan RAB untuk proyeksi sukuk kuartal ketiga",
+    "Ahmad Rizki", "Ahmad Rizki", "2026-07-30", "High", "In Progress",
+    "Sukuk Planning", "System", "2026-06-15", "",
+    "Perlu koordinasi dengan tim finance",
+  ],
+  // 5. To Do
+  [
+    "TSK-005", "Audit Stok Gudang B",
+    "Melakukan audit stok bahan baku dan packaging di Gudang B",
+    "Rudi Hartono", "Rudi Hartono", "2026-07-20", "Medium", "To Do",
+    "Inventory Audit", "System", "2026-06-20", "",
+    "Jadwalkan dengan tim gudang",
+  ],
+  // 6. To Do
+  [
+    "TSK-006", "Training BPOM Compliance",
+    "Pelatihan tim produksi tentang regulasi BPOM terbaru",
+    "Siti Aminah", "Siti Aminah", "2026-08-01", "Medium", "To Do",
+    "BPOM Compliance", "System", "2026-06-22", "",
+    "Narasumber dari konsultan BPOM",
+  ],
+  // 7. Review
+  [
+    "TSK-007", "Review Formula Aura Bloom 2.0",
+    "Review dan validasi formula baru Aura Bloom versi 2.0",
+    "Beriman", "Beriman", "2026-06-30", "High", "Review",
+    "Product Development", "System", "2026-06-01", "",
+    "Menunggu hasil lab test dari supplier",
+  ],
+  // 8. Overdue — due date in the past
+  [
+    "TSK-008", "Pembayaran Vendor Packaging",
+    "Proses pembayaran vendor packaging untuk bulan Mei 2026",
+    "Ahmad Rizki", "Ahmad Rizki", "2026-06-15", "High", "To Do",
+    "Procurement", "System", "2026-05-25", "",
+    "Invoice sudah diterima, menunggu approval finance",
+  ],
+];
+
+const SEED_COMMENTS = [
+  ["CMT-001", "TSK-003", "Beriman", "2026-06-18", "Desain sudah bagus, tolong tambahkan logo SWI di bagian belakang"],
+  ["CMT-002", "TSK-003", "Dewi Lestari", "2026-06-19", "Siap, akan saya revisi hari ini"],
+  ["CMT-003", "TSK-007", "Siti Aminah", "2026-06-22", "Lab test sudah keluar, semua parameter passed"],
+];
+
+async function ensureHeaders() {
+  try {
+    const existing = await readRange("Tasks!A1:M1");
+    if (!existing || existing.length === 0 || !existing[0]?.[0]) {
+      await appendRows("Tasks", [TASK_HEADERS]);
+    }
+  } catch {
+    // ignore
+  }
+
+  try {
+    const existing = await readRange("Task_Comments!A1:E1");
+    if (!existing || existing.length === 0 || !existing[0]?.[0]) {
+      await appendRows("Task_Comments", [COMMENT_HEADERS]);
+    }
+  } catch {
+    // ignore
+  }
 }
 
 export async function POST() {
   try {
-    await initializeTaskSheets();
-    const existing = await readTaskSheet(TASK_SHEETS.Tasks);
-    if (existing.length > 1) {
-      return NextResponse.json({ message: "Seed data already exists", taskCount: existing.length - 1 });
+    await ensureHeaders();
+
+    let tasksAppended = 0;
+    let commentsAppended = 0;
+
+    // Check existing tasks to avoid duplicates
+    const existingRange = await readRange("Tasks!A1:M1000");
+    const existingIds = new Set<string>();
+    for (let i = 1; i < existingRange.length; i++) {
+      if (existingRange[i]?.[0]) existingIds.add(existingRange[i][0]);
     }
 
-    const today = daysFromNow(0);
-    const d3 = daysFromNow(3);
-    const d7 = daysFromNow(7);
-    const d14 = daysFromNow(14);
-    const dPast15 = daysFromNow(-15);
-    const dPast7 = daysFromNow(-7);
-    const dPast3 = daysFromNow(-3);
+    const newTasks = SEED_TASKS.filter((t) => !existingIds.has(t[0]));
+    if (newTasks.length > 0) {
+      await appendRows("Tasks", newTasks);
+      tasksAppended = newTasks.length;
+    }
 
-    const tasks = [
-      ["TSK-001", "Laporan Keuangan Q1", "Siapkan laporan keuangan kuartal 1 2026", "Beriman", "Beriman", dPast15, "High", "Done", "Laporan Berunan", "System", daysFromNow(-60), daysFromNow(-10), "Selesai tepat waktu"],
-      ["TSK-002", "Event Monitoring Jakarta", "Pantau persiapan event monitoring di Jakarta", "Siti Aminah", "Siti Aminah", dPast7, "High", "Done", "Event Monitoring", "System", daysFromNow(-30), daysFromNow(-5), "Event berjalan lancar"],
-      ["TSK-003", "Update SOP Produksi", "Revisi SOP produksi sesuai standar terbaru", "Ahmad Rizki", "Ahmad Rizki", d3, "High", "In Progress", "SOP Revisi", "System", daysFromNow(-20), "", "Progress 60%"],
-      ["TSK-004", "Supplier Evaluation", "Evaluasi performa supplier bahan baku Q1", "Dewi Lestari", "Dewi Lestari", d7, "Medium", "In Progress", "Supplier Review", "System", daysFromNow(-10), "", "3 supplier sudah dievaluasi"],
-      ["TSK-005", "QC Checklist Review", "Review dan update QC checklist untuk produk baru", "Beriman", "Beriman", today, "Medium", "Review", "QC Audit", "System", daysFromNow(-5), "", "Menunggu approval manager"],
-      ["TSK-006", "Inventory Audit", "Audit stok gudang akhir bulan", "Rudi Hartono", "Rudi Hartono", d14, "Medium", "Todo", "Stock Opname", "System", daysFromNow(-3), "", "Belum dimulai"],
-      ["TSK-007", "Pembaruan Data Customer", "Update database customer CRM divisi Bandung", "Siti Aminah", "Siti Aminah", dPast15, "High", "Todo", "CRM Update", "System", daysFromNow(-45), "", "Terlambat - perlu tindak lanjut"],
-      ["TSK-008", "Training Karyawan Baru", "Onboarding dan training untuk karyawan baru produksi", "Ahmad Rizki", "Ahmad Rizki", dPast7, "Medium", "Todo", "HRD Training", "System", daysFromNow(-30), "", "Terlambat - reschedule"],
-    ];
+    // Check existing comments to avoid duplicates
+    const existingComments = await readRange("Task_Comments!A1:E1000");
+    const existingCommentIds = new Set<string>();
+    for (let i = 1; i < existingComments.length; i++) {
+      if (existingComments[i]?.[0]) existingCommentIds.add(existingComments[i][0]);
+    }
 
-    await appendTaskRows(TASK_SHEETS.Tasks, tasks);
-
-    const comments = [
-      ["CMT-001", "TSK-001", "Beriman", daysFromNow(-10), "Laporan sudah selesai dan direview oleh manajemen"],
-      ["CMT-002", "TSK-003", "Ahmad Rizki", daysFromNow(-5), "Draft SOP sudah selesai, sedang proses review internal"],
-      ["CMT-003", "TSK-007", "Dewi Lestari", daysFromNow(-2), "Perlu follow up dengan tim CRM Bandung untuk data yang belum update"],
-    ];
-    await appendTaskRows(TASK_SHEETS.TaskComments, comments);
+    const newComments = SEED_COMMENTS.filter((c) => !existingCommentIds.has(c[0]));
+    if (newComments.length > 0) {
+      await appendRows("Task_Comments", newComments);
+      commentsAppended = newComments.length;
+    }
 
     return NextResponse.json({
       success: true,
-      message: "Seed data created",
-      tasksSeeded: tasks.length,
-      commentsSeeded: comments.length,
-    }, { status: 201 });
-  } catch (error) {
-    return NextResponse.json({ error: "Failed to seed data", details: String(error) }, { status: 500 });
+      seeded: {
+        tasks: tasksAppended,
+        comments: commentsAppended,
+        skipped: {
+          tasks: SEED_TASKS.length - tasksAppended,
+          comments: SEED_COMMENTS.length - commentsAppended,
+        },
+      },
+      totalSeeded: tasksAppended + commentsAppended,
+    });
+  } catch (error: any) {
+    return NextResponse.json(
+      { error: error.message || "Failed to seed task data" },
+      { status: 500 }
+    );
   }
+}
+
+export async function GET() {
+  return NextResponse.json({
+    message: "Task Management Seed Endpoint",
+    usage: "POST to seed 8 sample tasks and 3 sample comments",
+    taskBreakdown: {
+      total: 8,
+      done: 2,
+      inProgress: 2,
+      toDo: 2,
+      review: 1,
+      overdue: 1,
+    },
+    assignees: ["Beriman", "Siti Aminah", "Ahmad Rizki", "Dewi Lestari", "Rudi Hartono"],
+  });
 }

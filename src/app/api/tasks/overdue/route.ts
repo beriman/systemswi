@@ -1,86 +1,47 @@
-// GET /api/tasks/overdue — Get all overdue tasks
 import { NextRequest, NextResponse } from "next/server";
-import {
-  readTaskSheet,
-  initializeTaskSheets,
-  TASK_SHEETS,
-} from "@/lib/tasks/sheets";
-import { googleWorkspaceDegradedSource, isGoogleWorkspaceAuthError } from "@/lib/api/google-workspace-error";
+import { readRange, SHEETS } from "@/lib/sheets/sheets-real";
 
-const TASKS_SOURCE = "Google Sheets: Tasks";
+// GET /api/tasks/overdue — returns all tasks where dueDate < today and status != Done
 
-function s(row: string[], idx: number): string {
-  return row[idx] || "";
+function rowToTask(row: string[]) {
+  return {
+    id: row[0] || "",
+    title: row[1] || "",
+    description: row[2] || "",
+    assignee: row[3] || "",
+    picName: row[4] || "",
+    dueDate: row[5] || "",
+    priority: row[6] || "",
+    status: row[7] || "",
+    relatedEvent: row[8] || "",
+    createdBy: row[9] || "",
+    createdDate: row[10] || "",
+    completedDate: row[11] || "",
+    notes: row[12] || "",
+  };
 }
 
-function today(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
-interface Task {
-  id: string;
-  title: string;
-  description: string;
-  assignee: string;
-  picName: string;
-  dueDate: string;
-  priority: string;
-  status: string;
-  relatedEvent: string;
-  createdBy: string;
-  createdDate: string;
-  completedDate: string;
-  notes: string;
-}
-
-function parseTaskRows(rows: string[][]): Task[] {
-  if (rows.length <= 1) return [];
-  return rows.slice(1).filter((row) => s(row, 0)).map((row) => ({
-    id: s(row, 0),
-    title: s(row, 1),
-    description: s(row, 2),
-    assignee: s(row, 3),
-    picName: s(row, 4),
-    dueDate: s(row, 5),
-    priority: s(row, 6),
-    status: s(row, 7),
-    relatedEvent: s(row, 8),
-    createdBy: s(row, 9),
-    createdDate: s(row, 10),
-    completedDate: s(row, 11),
-    notes: s(row, 12),
-  }));
-}
-
-export async function GET(req: NextRequest) {
+export async function GET() {
   try {
-    await initializeTaskSheets();
+    const range = SHEETS["Tasks"]?.range || "Tasks!A1:M1000";
+    const rows = await readRange(range);
 
-    const rows = await readTaskSheet(TASK_SHEETS.Tasks);
-    const tasks = parseTaskRows(rows);
-    const now = today();
-
-    const overdue = tasks.filter(
-      (t) => t.dueDate && t.dueDate < now && t.status !== "Done"
-    );
-
-    // Sort by due date ascending (oldest first)
-    overdue.sort((a, b) => (a.dueDate || "").localeCompare(b.dueDate || ""));
-
-    return NextResponse.json({
-      source: TASKS_SOURCE,
-      sourceStatus: "live",
-      tasks: overdue,
-      count: overdue.length,
-    });
-  } catch (error) {
-    if (isGoogleWorkspaceAuthError(error)) {
-      return NextResponse.json({
-        ...googleWorkspaceDegradedSource(TASKS_SOURCE, error),
-        tasks: [],
-        count: 0,
-      });
+    if (rows.length < 2) {
+      return NextResponse.json({ tasks: [] });
     }
-    return NextResponse.json({ error: "Failed to fetch overdue tasks", details: String(error) }, { status: 500 });
+
+    const today = new Date().toISOString().split("T")[0];
+
+    const overdue = rows
+      .slice(1)
+      .map(rowToTask)
+      .filter((t) => t.id && t.dueDate && t.dueDate < today && t.status !== "Done");
+
+    return NextResponse.json({ tasks: overdue, count: overdue.length });
+  } catch (error: any) {
+    return NextResponse.json(
+      { error: error.message || "Failed to fetch overdue tasks" },
+      { status: 500 }
+    );
   }
 }
