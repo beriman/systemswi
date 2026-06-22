@@ -1,10 +1,38 @@
 // Seed script for Auto-Reorder System
 // Run with: npx tsx src/lib/sheets/seed-reorder.ts
 
-import { readRange, writeRange, appendRows } from "./sheets-real";
+import { readRange, writeRange, appendRows, getAuth } from "./sheets-real";
+import { google } from "googleapis";
+
+const SPREADSHEET_ID = process.env.GOOGLE_SHEETS_ID || "1lQ_FX6v-aX0XNwkRO6TyYLU1NGq6lAMFvK88S09KZsA";
+
+async function ensureSheetExists(sheetName: string): Promise<void> {
+  const auth = getAuth();
+  const sheets = google.sheets({ version: "v4", auth });
+  const ss = await sheets.spreadsheets.get({
+    spreadsheetId: SPREADSHEET_ID,
+    fields: "sheets.properties.title",
+  });
+  const exists = ss.data.sheets?.some((s) => s.properties?.title === sheetName);
+  if (!exists) {
+    console.log(`  Creating sheet tab "${sheetName}"...`);
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: SPREADSHEET_ID,
+      requestBody: {
+        requests: [{ addSheet: { properties: { title: sheetName } } }],
+      },
+    });
+    console.log(`  ✅ Sheet "${sheetName}" created`);
+  }
+}
 
 async function seed() {
   console.log("🌱 Seeding Auto-Reorder System data...\n");
+
+  // 0. Ensure sheet tabs exist (create if missing)
+  console.log("📋 Step 0: Ensuring sheet tabs exist...");
+  await ensureSheetExists("Reorder_Alerts");
+  await ensureSheetExists("Goods_Receipts");
 
   // 1. Check/create Reorder_Alerts sheet headers
   try {
