@@ -3,6 +3,9 @@
 
 import { readRange, appendRows, writeRange } from "./sheets-real";
 
+// Re-export for use in API routes
+export { readRange, writeRange };
+
 // ── Types ──────────────────────────────────────────────────────────
 
 export interface SalesTarget {

@@ -1,5 +1,7 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import {
+  readRange,
+  writeRange,
   ensureSalesSheetsInitialized,
   getSalesTargets,
   getSalesActuals,
@@ -66,9 +68,31 @@ const ACTUAL_DATA: {
   { date: "2026-05-30", brandId: "brand-nuscentza", brandName: "Nuscentza", productSku: "NUS-EDT-002", qtySold: 14, unitPrice: 250_000, channel: "Instagram", notes: "" },
 ];
 
-export async function POST() {
+export async function POST(request: NextRequest) {
   try {
     await ensureSalesSheetsInitialized();
+
+    // Check for force=true query param — clears existing data before seeding
+    const { searchParams } = new URL(request.url);
+    const force = searchParams.get("force") === "true";
+
+    if (force) {
+      // Clear all data rows (keep headers)
+      const targetRows = await readRange("Sales_Targets!A2:K1000");
+      if (targetRows.length > 0) {
+        await writeRange(
+          `Sales_Targets!A2:K${targetRows.length + 1}`,
+          Array(targetRows.length).fill(Array(11).fill(""))
+        );
+      }
+      const actualRows = await readRange("Sales_Actuals!A2:J1000");
+      if (actualRows.length > 0) {
+        await writeRange(
+          `Sales_Actuals!A2:J${actualRows.length + 1}`,
+          Array(actualRows.length).fill(Array(10).fill(""))
+        );
+      }
+    }
 
     // Check if data already exists
     const existingTargets = await getSalesTargets(2026);
@@ -77,8 +101,8 @@ export async function POST() {
     let targetsCreated = 0;
     let actualsCreated = 0;
 
-    // Seed targets if none exist for 2026
-    if (existingTargets.length === 0) {
+    // Seed targets if none exist for 2026 (or forced)
+    if (existingTargets.length === 0 || force) {
       for (const t of TARGET_DATA) {
         await createTarget({
           brandId: t.brandId,
@@ -92,8 +116,8 @@ export async function POST() {
       }
     }
 
-    // Seed actuals if none exist for 2026
-    if (existingActuals.length === 0) {
+    // Seed actuals if none exist for 2026 (or forced)
+    if (existingActuals.length === 0 || force) {
       for (const a of ACTUAL_DATA) {
         await createActual({
           date: a.date,
@@ -110,11 +134,10 @@ export async function POST() {
     }
 
     return NextResponse.json({
-      message: `Seed selesai: ${targetsCreated} targets, ${actualsCreated} actuals ditambahkan. ${existingTargets.length > 0 ? "(Targets sudah ada, diskip)" : ""} ${existingActuals.length > 0 ? "(Actuals sudah ada, diskip)" : ""}`,
+      message: `Seed selesai: ${targetsCreated} targets, ${actualsCreated} actuals.${force ? " (force: data lama dihapus)" : ""} ${!force && existingTargets.length > 0 ? " (Targets sudah ada, diskip)" : ""} ${!force && existingActuals.length > 0 ? " (Actuals sudah ada, diskip)" : ""}`,
       targetsCreated,
       actualsCreated,
-      targetsSkipped: existingTargets.length > 0,
-      actualsSkipped: existingActuals.length > 0,
+      force,
     });
   } catch (error: any) {
     return NextResponse.json(
