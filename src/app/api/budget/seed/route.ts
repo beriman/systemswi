@@ -1,7 +1,6 @@
 // POST /api/budget/seed — Seed budget vs actual data
 import { NextRequest, NextResponse } from "next/server";
-import { readRange, writeRange, appendRows, getAuth, SPREADSHEET_ID } from "@/lib/sheets/sheets-real";
-import { google } from "googleapis";
+import { readRange, writeRange, appendRows } from "@/lib/sheets/sheets-real";
 
 export const runtime = "nodejs";
 
@@ -56,39 +55,12 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // Clear sheet if forced — delete all rows then rewrite from scratch
+    // Clear sheet if forced — overwrite entire range with empty values then rewrite
     if (hasData && force) {
       try {
-        const auth = getAuth();
-        const sheets = google.sheets({ version: "v4", auth });
-
-        // Get sheet ID
-        const ss = await sheets.spreadsheets.get({
-          spreadsheetId: SPREADSHEET_ID,
-          fields: "sheets.properties",
-        });
-        const sheetId = ss.data.sheets?.find(
-          (s: any) => s.properties?.title === "Budget_vs_Actual"
-        )?.properties?.sheetId;
-
-        if (sheetId !== undefined) {
-          // Delete all rows (row 1 onwards) to clear old data completely
-          await sheets.spreadsheets.batchUpdate({
-            spreadsheetId: SPREADSHEET_ID,
-            requestBody: {
-              requests: [{
-                deleteDimension: {
-                  range: {
-                    sheetId,
-                    dimension: "ROWS",
-                    startIndex: 0, // row 1 (0-indexed)
-                    endIndex: 1000, // delete up to row 1000
-                  },
-                },
-              }],
-            },
-          });
-        }
+        // Write empty values to the full range to clear old data
+        const emptyRows = Array(100).fill(null).map(() => Array(12).fill(""));
+        await writeRange("Budget_vs_Actual!A1:L100", emptyRows);
       } catch (clearErr) {
         console.error("Clear failed, proceeding with overwrite:", clearErr);
       }
