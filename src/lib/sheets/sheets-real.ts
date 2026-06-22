@@ -75,6 +75,8 @@ export const SHEETS: Record<string, { range: string; description: string }> = {
   ExpenseApprovers:{ range: "Expense_Approvers!A1:D100",         description: "List approver expense" },
   SalesTargets:      { range: "Sales_Targets!A1:K1000",            description: "Sales targets per brand per month" },
   SalesActuals:      { range: "Sales_Actuals!A1:J1000",            description: "Actual sales transactions" },
+  Tasks:             { range: "Tasks!A1:M1000",                   description: "Task management — master task tracker" },
+  TaskComments:      { range: "Task_Comments!A1:E1000",            description: "Task comments" },
 };
 
 // ── Auth ──────────────────────────────────────────────────────────
