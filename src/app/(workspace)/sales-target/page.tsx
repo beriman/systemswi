@@ -1,15 +1,16 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { useState, useEffect, useCallback, type FormEvent } from "react";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 // ── Types ──────────────────────────────────────────────────────────
 
-type Target = {
+interface SalesTarget {
   targetId: string;
   brandId: string;
   brandName: string;
@@ -21,9 +22,9 @@ type Target = {
   notes: string;
   createdDate: string;
   updatedDate: string;
-};
+}
 
-type Actual = {
+interface SalesActual {
   actualId: string;
   date: string;
   brandId: string;
@@ -34,24 +35,28 @@ type Actual = {
   totalRevenue: number;
   channel: string;
   notes: string;
-};
+}
 
-type AchievementBrand = {
-  brandId: string;
-  brandName: string;
-  totalTarget: number;
-  totalActual: number;
-  achievementPct: number;
-  months: { month: number; target: number; actual: number; achievementPct: number }[];
-};
-
-type AchievementData = {
+interface AchievementSummary {
   year: number;
-  brands: AchievementBrand[];
+  brands: {
+    brandId: string;
+    brandName: string;
+    totalTarget: number;
+    totalActual: number;
+    achievementPct: number;
+    months: {
+      month: number;
+      monthName: string;
+      target: number;
+      actual: number;
+      achievementPct: number;
+    }[];
+  }[];
   grandTotal: { target: number; actual: number; achievementPct: number };
-};
+}
 
-type TrendBrand = {
+interface TrendData {
   brandId: string;
   brandName: string;
   monthly: {
@@ -65,116 +70,148 @@ type TrendBrand = {
   totalTarget: number;
   totalActual: number;
   overallAchievementPct: number;
-};
+}
 
 // ── Helpers ────────────────────────────────────────────────────────
 
-const fmt = (v: number) =>
-  new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(v || 0);
+const MONTH_NAMES = [
+  "", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
 
-const fmtNum = (v: number) => new Intl.NumberFormat("id-ID").format(v || 0);
+function formatRp(n: number): string {
+  if (n >= 1_000_000_000) return `Rp ${(n / 1_000_000_000).toFixed(1)}M`;
+  if (n >= 1_000_000) return `Rp ${(n / 1_000_000).toFixed(1)}jt`;
+  if (n >= 1_000) return `Rp ${(n / 1_000).toFixed(0)}rb`;
+  return `Rp ${n.toLocaleString("id-ID")}`;
+}
 
-const MONTH_NAMES = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+function formatRpFull(n: number): string {
+  return `Rp ${n.toLocaleString("id-ID")}`;
+}
 
-function ProgressBar({ pct, size = "md" }: { pct: number; size?: "sm" | "md" }) {
-  const clamped = Math.min(Math.max(pct, 0), 100);
-  const color =
-    pct >= 100 ? "bg-emerald-500" :
-    pct >= 75 ? "bg-blue-500" :
-    pct >= 50 ? "bg-yellow-500" : "bg-red-500";
-  const h = size === "sm" ? "h-1.5" : "h-3";
+function todayStr(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+const BRANDS = [
+  { id: "brand-larc-en-scent", name: "L'Arc~en~Scent" },
+  { id: "brand-pixel-potion", name: "Pixel Potion" },
+  { id: "brand-nuscentza", name: "Nuscentza" },
+];
+
+const CHANNELS = ["Direct", "Shopee", "Tokopedia", "TikTok", "Instagram", "Event", "Lazada"];
+
+// ── Progress Bar ──────────────────────────────────────────────────
+
+function ProgressBar({ pct, color }: { pct: number; color?: string }) {
+  const clamped = Math.min(Math.max(pct, 0), 120);
+  const barColor = color || (pct >= 100 ? "bg-emerald-500" : pct >= 75 ? "bg-blue-500" : pct >= 50 ? "bg-amber-500" : "bg-red-500");
   return (
-    <div className={`w-full bg-gray-200 rounded-full ${h}`}>
-      <div className={`${color} ${h} rounded-full transition-all`} style={{ width: `${clamped}%` }} />
+    <div className="w-full h-2.5 rounded-full bg-white/[0.06] overflow-hidden">
+      <div
+        className={`h-full rounded-full transition-all duration-500 ${barColor}`}
+        style={{ width: `${Math.min(clamped, 100)}%` }}
+      />
     </div>
   );
 }
 
-// ── Main component ─────────────────────────────────────────────────
+// ── Stat Card ─────────────────────────────────────────────────────
+
+function StatCard({ label, value, sub, color }: { label: string; value: string; sub?: string; color: string }) {
+  return (
+    <div className={`rounded-2xl p-5 ring-1 ${color}`}>
+      <p className="text-sm opacity-70">{label}</p>
+      <p className="mt-2 text-2xl font-bold">{value}</p>
+      {sub && <p className="mt-1 text-xs opacity-50">{sub}</p>}
+    </div>
+  );
+}
+
+// ── Main Page ──────────────────────────────────────────────────────
 
 export default function SalesTargetPage() {
-  const [targets, setTargets] = useState<Target[]>([]);
-  const [actuals, setActuals] = useState<Actual[]>([]);
-  const [achievement, setAchievement] = useState<AchievementData | null>(null);
-  const [trends, setTrends] = useState<TrendBrand[]>([]);
+  const [targets, setTargets] = useState<SalesTarget[]>([]);
+  const [actuals, setActuals] = useState<SalesActual[]>([]);
+  const [achievement, setAchievement] = useState<AchievementSummary | null>(null);
+  const [trend, setTrend] = useState<TrendData[]>([]);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<"dashboard" | "targets" | "actuals" | "trend">("dashboard");
-  const [status, setStatus] = useState("Memuat...");
-  const [year] = useState(2026);
+  const [message, setMessage] = useState("");
+  const [year, setYear] = useState(2026);
+  const [refreshKey, setRefreshKey] = useState(0);
 
-  // Target form
+  // Form states
   const [targetForm, setTargetForm] = useState({
-    brandId: "", brandName: "", year: "2026", month: "1",
-    targetAmount: "", notes: "",
+    brandId: "", brandName: "", year: 2026, month: 1, targetAmount: "", notes: "",
   });
-
-  // Actual form
   const [actualForm, setActualForm] = useState({
-    date: new Date().toISOString().slice(0, 10),
-    brandId: "", brandName: "", productSku: "",
-    qtySold: "1", unitPrice: "", channel: "Direct", notes: "",
+    date: todayStr(), brandId: "", brandName: "", productSku: "", qtySold: "", unitPrice: "", channel: "Direct", notes: "",
   });
 
-  // Brand options
-  const brandOptions = [
-    { id: "brand-larc-en-scent", name: "L'Arc~en~Scent" },
-    { id: "brand-pixel-potion", name: "Pixel Potion" },
-    { id: "brand-nuscentza", name: "Nuscentza" },
-  ];
+  const refresh = useCallback(() => setRefreshKey((k) => k + 1), []);
 
-  const loadData = useCallback(async () => {
+  // ── Fetch all data ──────────────────────────────────────────────
+  async function loadData() {
     setLoading(true);
+    setMessage("");
     try {
-      const [tRes, aRes, achRes, trRes] = await Promise.all([
+      const [targetsRes, actualsRes, achievementRes, trendRes] = await Promise.all([
         fetch(`/api/sales/targets?year=${year}`, { cache: "no-store" }),
         fetch(`/api/sales/actuals?year=${year}`, { cache: "no-store" }),
         fetch(`/api/sales/achievement?year=${year}`, { cache: "no-store" }),
         fetch(`/api/sales/trend?year=${year}`, { cache: "no-store" }),
       ]);
-      const [tData, aData, achData, trData] = await Promise.all([
-        tRes.json(), aRes.json(), achRes.json(), trRes.json(),
-      ]);
-      setTargets(tData.targets || []);
-      setActuals(aData.actuals || []);
-      setAchievement(achData);
-      setTrends(trData.brandTrends || []);
-      setStatus(`${(tData.targets || []).length} targets, ${(aData.actuals || []).length} actuals, ${year}`);
-    } catch (err) {
-      setStatus(`Error: ${err instanceof Error ? err.message : String(err)}`);
+
+      const targetsJson = await targetsRes.json();
+      const actualsJson = await actualsRes.json();
+      const achievementJson = await achievementRes.json();
+      const trendJson = await trendRes.json();
+
+      setTargets(targetsJson.targets || []);
+      setActuals(actualsJson.actuals || []);
+      setAchievement(achievementJson);
+      setTrend(trendJson.brandTrends || []);
+    } catch (error) {
+      setMessage(`❌ Gagal memuat data: ${String(error)}`);
     } finally {
       setLoading(false);
     }
-  }, [year]);
+  }
 
-  useEffect(() => { loadData(); }, [loadData]);
+  useEffect(() => { loadData(); }, [refreshKey, year]);
 
-  async function handleCreateTarget(e: React.FormEvent) {
+  // ── Create target ───────────────────────────────────────────────
+  async function handleCreateTarget(e: FormEvent) {
     e.preventDefault();
-    setStatus("Menyimpan target...");
+    setMessage("");
     try {
       const res = await fetch("/api/sales/targets", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           brandId: targetForm.brandId,
-          brandName: targetForm.brandName,
-          year: Number(targetForm.year),
-          month: Number(targetForm.month),
+          brandName: targetForm.brandName || BRANDS.find((b) => b.id === targetForm.brandId)?.name || "",
+          year: targetForm.year,
+          month: targetForm.month,
           targetAmount: Number(targetForm.targetAmount),
           notes: targetForm.notes,
         }),
       });
-      if (!res.ok) throw new Error("Gagal menyimpan target");
-      setTargetForm({ brandId: "", brandName: "", year: "2026", month: "1", targetAmount: "", notes: "" });
-      await loadData();
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Gagal membuat target");
+      setMessage("✅ Target berhasil dibuat!");
+      setTargetForm({ brandId: "", brandName: "", year: 2026, month: 1, targetAmount: "", notes: "" });
+      refresh();
     } catch (err) {
-      setStatus(`Error: ${err instanceof Error ? err.message : String(err)}`);
+      setMessage(`❌ ${String(err)}`);
     }
   }
 
-  async function handleCreateActual(e: React.FormEvent) {
+  // ── Create actual ───────────────────────────────────────────────
+  async function handleCreateActual(e: FormEvent) {
     e.preventDefault();
-    setStatus("Mencatat penjualan...");
+    setMessage("");
     try {
       const res = await fetch("/api/sales/actuals", {
         method: "POST",
@@ -182,7 +219,7 @@ export default function SalesTargetPage() {
         body: JSON.stringify({
           date: actualForm.date,
           brandId: actualForm.brandId,
-          brandName: actualForm.brandName,
+          brandName: actualForm.brandName || BRANDS.find((b) => b.id === actualForm.brandId)?.name || "",
           productSku: actualForm.productSku,
           qtySold: Number(actualForm.qtySold),
           unitPrice: Number(actualForm.unitPrice),
@@ -190,473 +227,580 @@ export default function SalesTargetPage() {
           notes: actualForm.notes,
         }),
       });
-      if (!res.ok) throw new Error("Gagal mencatat penjualan");
-      setActualForm({
-        date: new Date().toISOString().slice(0, 10),
-        brandId: "", brandName: "", productSku: "",
-        qtySold: "1", unitPrice: "", channel: "Direct", notes: "",
-      });
-      await loadData();
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Gagal membuat actual sale");
+      setMessage("✅ Actual sale berhasil ditambahkan!");
+      setActualForm({ date: todayStr(), brandId: "", brandName: "", productSku: "", qtySold: "", unitPrice: "", channel: "Direct", notes: "" });
+      refresh();
     } catch (err) {
-      setStatus(`Error: ${err instanceof Error ? err.message : String(err)}`);
+      setMessage(`❌ ${String(err)}`);
     }
   }
 
+  // ── Seed data ───────────────────────────────────────────────────
+  async function handleSeed() {
+    setMessage("");
+    try {
+      const res = await fetch("/api/sales/seed", { method: "POST" });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Gagal seed data");
+      setMessage(`✅ ${json.message}`);
+      refresh();
+    } catch (err) {
+      setMessage(`❌ ${String(err)}`);
+    }
+  }
+
+  // ── Computed stats ──────────────────────────────────────────────
+  const totalTarget = targets.reduce((s, t) => s + t.targetAmount, 0);
+  const totalActual = actuals.reduce((s, a) => s + a.totalRevenue, 0);
+  const overallAchievement = totalTarget > 0 ? Math.round((totalActual / totalTarget) * 100 * 100) / 100 : 0;
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 p-6">
       {/* Header */}
-      <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
-          <p className="text-sm uppercase tracking-[0.3em] text-muted-foreground">Sales Analytics</p>
-          <h1 className="text-3xl font-bold">🎯 Sales Target vs Actual</h1>
-          <p className="text-muted-foreground">
-            Tracking target dan aktual penjualan per brand — L&apos;Arc~en~Scent, Pixel Potion, Nuscentza
-          </p>
+          <h1 className="text-2xl font-bold text-white">🎯 Sales Target vs Actual</h1>
+          <p className="text-sm text-white/40 mt-1">Tracking target dan aktual penjualan per brand</p>
         </div>
-        <Button onClick={loadData} disabled={loading}>{loading ? "Memuat..." : "Refresh"}</Button>
+        <div className="flex items-center gap-3">
+          <div>
+            <Label className="text-xs text-white/40">Tahun</Label>
+            <select
+              value={year}
+              onChange={(e) => setYear(Number(e.target.value))}
+              className="mt-1 rounded-lg bg-white/[0.06] px-3 py-2 text-sm text-white/80 ring-1 ring-white/10 border-none outline-none"
+            >
+              {[2025, 2026, 2027].map((y) => (
+                <option key={y} value={y} className="bg-gray-900">{y}</option>
+              ))}
+            </select>
+          </div>
+          <Button onClick={handleSeed} variant="outline" className="mt-6 border-white/10 text-white/60 hover:text-white hover:bg-white/[0.06]">
+            🌱 Seed Data
+          </Button>
+        </div>
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-2 border-b">
-        {([
-          { key: "dashboard", label: "📊 Dashboard" },
-          { key: "targets", label: "🎯 Targets" },
-          { key: "actuals", label: "💰 Input Actual Sales" },
-          { key: "trend", label: "📈 Trend Analysis" },
-        ] as const).map((t) => (
-          <button key={t.key} onClick={() => setTab(t.key)}
-            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${tab === t.key ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
-            {t.label}
-          </button>
-        ))}
-      </div>
+      {message && (
+        <div className={`rounded-xl px-4 py-3 text-sm ring-1 ${message.startsWith("✅") ? "bg-emerald-500/10 text-emerald-300 ring-emerald-400/20" : "bg-red-500/10 text-red-300 ring-red-400/20"}`}>
+          {message}
+        </div>
+      )}
 
-      <p className="text-xs text-muted-foreground">{status}</p>
+      <Tabs defaultValue="dashboard" className="space-y-6">
+        <TabsList className="bg-white/[0.04] ring-1 ring-white/10 rounded-xl p-1">
+          <TabsTrigger value="dashboard" className="data-[state=active]:bg-white/10 data-[state=active]:text-white text-white/50">📊 Dashboard</TabsTrigger>
+          <TabsTrigger value="targets" className="data-[state=active]:bg-white/10 data-[state=active]:text-white text-white/50">🎯 Targets</TabsTrigger>
+          <TabsTrigger value="actuals" className="data-[state=active]:bg-white/10 data-[state=active]:text-white text-white/50">💰 Input Actual</TabsTrigger>
+          <TabsTrigger value="trend" className="data-[state=active]:bg-white/10 data-[state=active]:text-white text-white/50">📈 Trend</TabsTrigger>
+        </TabsList>
 
-      {/* ═══ TAB: Dashboard ═══ */}
-      {tab === "dashboard" && (
-        <div className="space-y-6">
-          {/* KPI cards */}
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-            <Card>
-              <CardHeader className="pb-2"><CardDescription>Total Target</CardDescription></CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">
-                  {achievement ? fmt(achievement.grandTotal.target) : "—"}
-                </div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2"><CardDescription>Total Actual</CardDescription></CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold text-emerald-600">
-                  {achievement ? fmt(achievement.grandTotal.actual) : "—"}
-                </div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2"><CardDescription>Overall Achievement</CardDescription></CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">
-                  {achievement ? `${achievement.grandTotal.achievementPct}%` : "—"}
-                </div>
-                {achievement && <ProgressBar pct={achievement.grandTotal.achievementPct} size="sm" />}
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2"><CardDescription>Brands Tracked</CardDescription></CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{achievement?.brands.length || 0}</div>
-              </CardContent>
-            </Card>
+        {/* ── Dashboard Tab ─────────────────────────────────────── */}
+        <TabsContent value="dashboard" className="space-y-6">
+          {/* Summary Stats */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <StatCard label="Total Target" value={formatRp(totalTarget)} color="bg-blue-500/10 ring-blue-400/20 text-blue-300" />
+            <StatCard label="Total Actual" value={formatRp(totalActual)} color="bg-emerald-500/10 ring-emerald-400/20 text-emerald-300" />
+            <StatCard label="Achievement" value={`${overallAchievement}%`} sub={overallAchievement >= 100 ? "✅ Target tercapai!" : "⚠️ Belum tercapai"} color="bg-purple-500/10 ring-purple-400/20 text-purple-300" />
+            <StatCard label="Transaksi" value={`${actuals.length}`} sub={`${targets.length} target entries`} color="bg-amber-500/10 ring-amber-400/20 text-amber-300" />
           </div>
 
-          {/* Per-brand achievement */}
-          <h2 className="text-lg font-semibold">Achievement per Brand</h2>
-          {!achievement || achievement.brands.length === 0 ? (
-            <Card>
-              <CardContent className="py-12 text-center">
-                <div className="text-4xl mb-4">🎯</div>
-                <h3 className="text-lg font-semibold mb-2">Belum Ada Data</h3>
-                <p className="text-sm text-muted-foreground">Tambahkan target untuk mulai tracking achievement.</p>
-              </CardContent>
-            </Card>
-          ) : (
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {achievement.brands.map((brand) => (
-                <Card key={brand.brandId} className="hover:shadow-md transition-shadow">
-                  <CardHeader className="pb-2">
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <CardTitle className="text-base">{brand.brandName}</CardTitle>
-                        <CardDescription>{brand.brandId}</CardDescription>
-                      </div>
-                      <Badge className={
-                        brand.achievementPct >= 100 ? "bg-emerald-600" :
-                        brand.achievementPct >= 75 ? "bg-blue-600" :
-                        brand.achievementPct >= 50 ? "bg-yellow-600" : "bg-red-500"
-                      }>
-                        {brand.achievementPct}%
-                      </Badge>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    <div className="grid grid-cols-2 gap-2 text-sm">
-                      <div>
-                        <span className="text-muted-foreground">Target:</span>{" "}
-                        <span className="font-medium">{fmt(brand.totalTarget)}</span>
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">Actual:</span>{" "}
-                        <span className="font-medium text-emerald-600">{fmt(brand.totalActual)}</span>
+          {/* Per-Brand Achievement */}
+          <Card className="bg-white/[0.03] ring-1 ring-white/[0.08] border-0">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-semibold text-white">🏆 Achievement per Brand</CardTitle>
+              <CardDescription className="text-xs text-white/35">Progress target vs actual per brand</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              {achievement?.brands && achievement.brands.length > 0 ? (
+                achievement.brands.map((b) => (
+                  <div key={b.brandId} className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium text-white">{b.brandName}</span>
+                      <div className="flex items-center gap-3 text-xs text-white/50">
+                        <span>Target: <strong className="text-white/70">{formatRpFull(b.totalTarget)}</strong></span>
+                        <span>Actual: <strong className="text-white/70">{formatRpFull(b.totalActual)}</strong></span>
+                        <span className={`font-bold ${b.achievementPct >= 100 ? "text-emerald-400" : b.achievementPct >= 50 ? "text-amber-400" : "text-red-400"}`}>
+                          {b.achievementPct}%
+                        </span>
                       </div>
                     </div>
-                    <ProgressBar pct={brand.achievementPct} />
-                    <div className="text-xs text-muted-foreground">
-                      {brand.months.filter((m) => m.target > 0).length} bulan tercatat
-                    </div>
+                    <ProgressBar pct={b.achievementPct} />
                     {/* Monthly breakdown */}
-                    <div className="space-y-1">
-                      {brand.months.filter((m) => m.target > 0).map((m) => (
-                        <div key={m.month} className="flex items-center gap-2 text-xs">
-                          <span className="w-8">{MONTH_NAMES[m.month]}</span>
-                          <div className="flex-1 bg-gray-100 rounded-full h-1.5">
-                            <div
-                              className={`h-1.5 rounded-full ${m.achievementPct >= 100 ? "bg-emerald-500" : m.achievementPct >= 50 ? "bg-blue-500" : "bg-red-400"}`}
-                              style={{ width: `${Math.min(m.achievementPct, 100)}%` }}
-                            />
-                          </div>
-                          <span className="w-10 text-right">{m.achievementPct}%</span>
+                    <div className="grid grid-cols-6 gap-2 mt-2">
+                      {b.months.map((m) => (
+                        <div key={m.month} className="text-center">
+                          <p className="text-[10px] text-white/30">{m.monthName}</p>
+                          <p className={`text-xs font-medium ${m.achievementPct >= 100 ? "text-emerald-400" : m.achievementPct >= 50 ? "text-amber-400" : "text-red-400"}`}>
+                            {m.achievementPct}%
+                          </p>
                         </div>
                       ))}
                     </div>
-                  </CardContent>
-                </Card>
-              ))}
+                  </div>
+                ))
+              ) : (
+                <div className="text-center py-8 text-white/25 text-sm">
+                  {loading ? "Memuat data..." : "Belum ada data. Klik \"Seed Data\" untuk mengisi data contoh."}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Grand Total */}
+          {achievement?.grandTotal && achievement.grandTotal.target > 0 && (
+            <div className="rounded-2xl bg-gradient-to-r from-blue-500/10 to-purple-500/10 p-6 ring-1 ring-white/10">
+              <div className="flex items-center justify-between flex-wrap gap-4">
+                <div>
+                  <p className="text-sm text-white/50">Grand Total Achievement {achievement.year}</p>
+                  <p className="text-3xl font-bold text-white mt-1">{achievement.grandTotal.achievementPct}%</p>
+                </div>
+                <div className="flex gap-6 text-sm">
+                  <div>
+                    <p className="text-white/40">Target</p>
+                    <p className="text-lg font-semibold text-blue-300">{formatRpFull(achievement.grandTotal.target)}</p>
+                  </div>
+                  <div>
+                    <p className="text-white/40">Actual</p>
+                    <p className="text-lg font-semibold text-emerald-300">{formatRpFull(achievement.grandTotal.actual)}</p>
+                  </div>
+                  <div>
+                    <p className="text-white/40">Selisih</p>
+                    <p className={`text-lg font-semibold ${achievement.grandTotal.actual >= achievement.grandTotal.target ? "text-emerald-300" : "text-red-300"}`}>
+                      {formatRpFull(achievement.grandTotal.actual - achievement.grandTotal.target)}
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <div className="mt-4">
+                <ProgressBar pct={achievement.grandTotal.achievementPct} />
+              </div>
             </div>
           )}
-        </div>
-      )}
+        </TabsContent>
 
-      {/* ═══ TAB: Targets ═══ */}
-      {tab === "targets" && (
-        <div className="space-y-6">
-          {/* Add target form */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Tambah / Edit Target</CardTitle>
-              <CardDescription>Set target penjualan per brand per bulan</CardDescription>
+        {/* ── Targets Tab ──────────────────────────────────────── */}
+        <TabsContent value="targets" className="space-y-6">
+          {/* Add Target Form */}
+          <Card className="bg-white/[0.03] ring-1 ring-white/[0.08] border-0">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-semibold text-white">➕ Tambah / Edit Target</CardTitle>
+              <CardDescription className="text-xs text-white/35">Buat target penjualan per brand per bulan</CardDescription>
             </CardHeader>
             <CardContent>
-              <form className="space-y-4 max-w-2xl" onSubmit={handleCreateTarget}>
-                <div className="grid gap-3 md:grid-cols-2">
-                  <div className="grid gap-1">
-                    <Label>Brand *</Label>
-                    <select className="rounded-md border bg-background px-3 py-2 text-sm" value={targetForm.brandId}
+              <form onSubmit={handleCreateTarget} className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <Label className="text-xs text-white/50">Brand *</Label>
+                    <select
+                      value={targetForm.brandId}
                       onChange={(e) => {
-                        const brand = brandOptions.find((b) => b.id === e.target.value);
-                        setTargetForm({ ...targetForm, brandId: e.target.value, brandName: brand?.name || "" });
-                      }} required>
-                      <option value="">Pilih Brand</option>
-                      {brandOptions.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                        const brand = BRANDS.find((b) => b.id === e.target.value);
+                        setTargetForm((f) => ({ ...f, brandId: e.target.value, brandName: brand?.name || "" }));
+                      }}
+                      required
+                      className="mt-1 w-full rounded-lg bg-white/[0.06] px-3 py-2 text-sm text-white/80 ring-1 ring-white/10 border-none outline-none"
+                    >
+                      <option value="" className="bg-gray-900">— Pilih Brand —</option>
+                      {BRANDS.map((b) => (
+                        <option key={b.id} value={b.id} className="bg-gray-900">{b.name}</option>
+                      ))}
                     </select>
                   </div>
-                  <div className="grid gap-1">
-                    <Label>Tahun</Label>
-                    <Input type="number" value={targetForm.year} onChange={(e) => setTargetForm({ ...targetForm, year: e.target.value })} />
+                  <div>
+                    <Label className="text-xs text-white/50">Tahun *</Label>
+                    <Input
+                      type="number"
+                      value={targetForm.year}
+                      onChange={(e) => setTargetForm((f) => ({ ...f, year: Number(e.target.value) }))}
+                      required
+                      className="bg-white/[0.06] border-white/10 text-white"
+                    />
                   </div>
-                </div>
-                <div className="grid gap-3 md:grid-cols-2">
-                  <div className="grid gap-1">
-                    <Label>Bulan</Label>
-                    <select className="rounded-md border bg-background px-3 py-2 text-sm" value={targetForm.month}
-                      onChange={(e) => setTargetForm({ ...targetForm, month: e.target.value })}>
-                      {MONTH_NAMES.slice(1).map((name, i) => <option key={i + 1} value={i + 1}>{name}</option>)}
+                  <div>
+                    <Label className="text-xs text-white/50">Bulan *</Label>
+                    <select
+                      value={targetForm.month}
+                      onChange={(e) => setTargetForm((f) => ({ ...f, month: Number(e.target.value) }))}
+                      className="mt-1 w-full rounded-lg bg-white/[0.06] px-3 py-2 text-sm text-white/80 ring-1 ring-white/10 border-none outline-none"
+                    >
+                      {MONTH_NAMES.slice(1).map((m, i) => (
+                        <option key={i} value={i + 1} className="bg-gray-900">{m}</option>
+                      ))}
                     </select>
                   </div>
-                  <div className="grid gap-1">
-                    <Label>Target Amount (Rp) *</Label>
-                    <Input type="number" placeholder="5000000" value={targetForm.targetAmount}
-                      onChange={(e) => setTargetForm({ ...targetForm, targetAmount: e.target.value })} required />
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <Label className="text-xs text-white/50">Target Amount (Rp) *</Label>
+                    <Input
+                      type="number"
+                      value={targetForm.targetAmount}
+                      onChange={(e) => setTargetForm((f) => ({ ...f, targetAmount: e.target.value }))}
+                      required
+                      placeholder="5000000"
+                      className="bg-white/[0.06] border-white/10 text-white placeholder:text-white/25"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs text-white/50">Notes</Label>
+                    <Input
+                      value={targetForm.notes}
+                      onChange={(e) => setTargetForm((f) => ({ ...f, notes: e.target.value }))}
+                      placeholder="Catatan opsional"
+                      className="bg-white/[0.06] border-white/10 text-white placeholder:text-white/25"
+                    />
                   </div>
                 </div>
-                <div className="grid gap-1">
-                  <Label>Notes</Label>
-                  <input className="rounded-md border bg-background px-3 py-2 text-sm" placeholder="Optional notes"
-                    value={targetForm.notes} onChange={(e) => setTargetForm({ ...targetForm, notes: e.target.value })} />
-                </div>
-                <Button type="submit">Simpan Target</Button>
+                <Button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white">
+                  Simpan Target
+                </Button>
               </form>
             </CardContent>
           </Card>
 
-          {/* Targets table */}
-          <h2 className="text-lg font-semibold">Daftar Target</h2>
-          {targets.length === 0 ? (
-            <Card><CardContent className="py-8 text-center text-muted-foreground">Belum ada target.</CardContent></Card>
-          ) : (
-            <div className="rounded-md border overflow-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-muted/60 text-left">
-                  <tr>
-                    <th className="p-3">Brand</th>
-                    <th className="p-3">Month</th>
-                    <th className="p-3 text-right">Target</th>
-                    <th className="p-3 text-right">Actual</th>
-                    <th className="p-3 text-right">Achievement %</th>
-                    <th className="p-3">Notes</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {targets.map((t) => (
-                    <tr key={`${t.targetId}_${t.month}`} className="border-t hover:bg-muted/30">
-                      <td className="p-3 font-medium">{t.brandName}</td>
-                      <td className="p-3">{MONTH_NAMES[t.month]} {t.year}</td>
-                      <td className="p-3 text-right">{fmt(t.targetAmount)}</td>
-                      <td className="p-3 text-right">{fmt(t.actualAmount)}</td>
-                      <td className="p-3 text-right">
-                        <Badge className={
-                          t.achievementPct >= 100 ? "bg-emerald-600" :
-                          t.achievementPct >= 75 ? "bg-blue-600" :
-                          t.achievementPct >= 50 ? "bg-yellow-600" : "bg-red-500"
-                        }>
-                          {t.achievementPct}%
-                        </Badge>
-                      </td>
-                      <td className="p-3 text-xs text-muted-foreground">{t.notes}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ═══ TAB: Input Actual Sales ═══ */}
-      {tab === "actuals" && (
-        <div className="space-y-6">
-          {/* Add actual form */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Catat Penjualan Aktual</CardTitle>
-              <CardDescription>Input transaksi penjualan harian</CardDescription>
+          {/* Targets Table */}
+          <Card className="bg-white/[0.03] ring-1 ring-white/[0.08] border-0">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-semibold text-white">📋 Daftar Target</CardTitle>
+              <CardDescription className="text-xs text-white/35">{targets.length} target entries</CardDescription>
             </CardHeader>
             <CardContent>
-              <form className="space-y-4 max-w-2xl" onSubmit={handleCreateActual}>
-                <div className="grid gap-3 md:grid-cols-2">
-                  <div className="grid gap-1">
-                    <Label>Tanggal *</Label>
-                    <Input type="date" value={actualForm.date}
-                      onChange={(e) => setActualForm({ ...actualForm, date: e.target.value })} required />
+              {loading ? (
+                <div className="space-y-3">
+                  {[1, 2, 3].map((i) => <div key={i} className="h-16 rounded-xl bg-white/[0.03] animate-pulse" />)}
+                </div>
+              ) : targets.length === 0 ? (
+                <div className="text-center py-8 text-white/25 text-sm">Belum ada target. Tambah target di atas.</div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-xs text-white/40 border-b border-white/[0.06]">
+                        <th className="text-left py-2 px-3">Brand</th>
+                        <th className="text-left py-2 px-3">Bulan</th>
+                        <th className="text-right py-2 px-3">Target</th>
+                        <th className="text-right py-2 px-3">Actual</th>
+                        <th className="text-right py-2 px-3">Achievement</th>
+                        <th className="text-left py-2 px-3">Notes</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {targets.map((t) => (
+                        <tr key={t.targetId} className="border-b border-white/[0.04] hover:bg-white/[0.02]">
+                          <td className="py-2.5 px-3 text-white font-medium">{t.brandName}</td>
+                          <td className="py-2.5 px-3 text-white/60">{MONTH_NAMES[t.month]} {t.year}</td>
+                          <td className="py-2.5 px-3 text-right text-white/70">{formatRpFull(t.targetAmount)}</td>
+                          <td className="py-2.5 px-3 text-right text-white/70">{formatRpFull(t.actualAmount)}</td>
+                          <td className="py-2.5 px-3 text-right">
+                            <span className={`font-semibold ${t.achievementPct >= 100 ? "text-emerald-400" : t.achievementPct >= 50 ? "text-amber-400" : "text-red-400"}`}>
+                              {t.achievementPct}%
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-3 text-white/40 text-xs max-w-[200px] truncate">{t.notes || "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* ── Input Actual Sales Tab ───────────────────────────── */}
+        <TabsContent value="actuals" className="space-y-6">
+          {/* Add Actual Form */}
+          <Card className="bg-white/[0.03] ring-1 ring-white/[0.08] border-0">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-semibold text-white">💰 Input Actual Sales</CardTitle>
+              <CardDescription className="text-xs text-white/35">Catat transaksi penjualan aktual</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={handleCreateActual} className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <Label className="text-xs text-white/50">Tanggal *</Label>
+                    <Input
+                      type="date"
+                      value={actualForm.date}
+                      onChange={(e) => setActualForm((f) => ({ ...f, date: e.target.value }))}
+                      required
+                      className="bg-white/[0.06] border-white/10 text-white"
+                    />
                   </div>
-                  <div className="grid gap-1">
-                    <Label>Brand *</Label>
-                    <select className="rounded-md border bg-background px-3 py-2 text-sm" value={actualForm.brandId}
+                  <div>
+                    <Label className="text-xs text-white/50">Brand *</Label>
+                    <select
+                      value={actualForm.brandId}
                       onChange={(e) => {
-                        const brand = brandOptions.find((b) => b.id === e.target.value);
-                        setActualForm({ ...actualForm, brandId: e.target.value, brandName: brand?.name || "" });
-                      }} required>
-                      <option value="">Pilih Brand</option>
-                      {brandOptions.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                        const brand = BRANDS.find((b) => b.id === e.target.value);
+                        setActualForm((f) => ({ ...f, brandId: e.target.value, brandName: brand?.name || "" }));
+                      }}
+                      required
+                      className="mt-1 w-full rounded-lg bg-white/[0.06] px-3 py-2 text-sm text-white/80 ring-1 ring-white/10 border-none outline-none"
+                    >
+                      <option value="" className="bg-gray-900">— Pilih Brand —</option>
+                      {BRANDS.map((b) => (
+                        <option key={b.id} value={b.id} className="bg-gray-900">{b.name}</option>
+                      ))}
                     </select>
                   </div>
-                </div>
-                <div className="grid gap-1">
-                  <Label>Product / SKU</Label>
-                  <Input placeholder="L'Arc~en~Scent EDP 30ml" value={actualForm.productSku}
-                    onChange={(e) => setActualForm({ ...actualForm, productSku: e.target.value })} />
-                </div>
-                <div className="grid gap-3 md:grid-cols-3">
-                  <div className="grid gap-1">
-                    <Label>Qty *</Label>
-                    <Input type="number" min="1" value={actualForm.qtySold}
-                      onChange={(e) => setActualForm({ ...actualForm, qtySold: e.target.value })} required />
+                  <div>
+                    <Label className="text-xs text-white/50">Product / SKU *</Label>
+                    <Input
+                      value={actualForm.productSku}
+                      onChange={(e) => setActualForm((f) => ({ ...f, productSku: e.target.value }))}
+                      required
+                      placeholder="Nama produk / SKU"
+                      className="bg-white/[0.06] border-white/10 text-white placeholder:text-white/25"
+                    />
                   </div>
-                  <div className="grid gap-1">
-                    <Label>Unit Price (Rp) *</Label>
-                    <Input type="number" placeholder="150000" value={actualForm.unitPrice}
-                      onChange={(e) => setActualForm({ ...actualForm, unitPrice: e.target.value })} required />
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  <div>
+                    <Label className="text-xs text-white/50">Qty Sold *</Label>
+                    <Input
+                      type="number"
+                      value={actualForm.qtySold}
+                      onChange={(e) => setActualForm((f) => ({ ...f, qtySold: e.target.value }))}
+                      required
+                      placeholder="10"
+                      className="bg-white/[0.06] border-white/10 text-white placeholder:text-white/25"
+                    />
                   </div>
-                  <div className="grid gap-1">
-                    <Label>Channel</Label>
-                    <select className="rounded-md border bg-background px-3 py-2 text-sm" value={actualForm.channel}
-                      onChange={(e) => setActualForm({ ...actualForm, channel: e.target.value })}>
-                      <option value="Direct">Direct</option>
-                      <option value="Instagram">Instagram</option>
-                      <option value="TikTok">TikTok</option>
-                      <option value="Shopee">Shopee</option>
-                      <option value="Tokopedia">Tokopedia</option>
-                      <option value="Event">Event</option>
+                  <div>
+                    <Label className="text-xs text-white/50">Unit Price (Rp) *</Label>
+                    <Input
+                      type="number"
+                      value={actualForm.unitPrice}
+                      onChange={(e) => setActualForm((f) => ({ ...f, unitPrice: e.target.value }))}
+                      required
+                      placeholder="150000"
+                      className="bg-white/[0.06] border-white/10 text-white placeholder:text-white/25"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs text-white/50">Channel</Label>
+                    <select
+                      value={actualForm.channel}
+                      onChange={(e) => setActualForm((f) => ({ ...f, channel: e.target.value }))}
+                      className="mt-1 w-full rounded-lg bg-white/[0.06] px-3 py-2 text-sm text-white/80 ring-1 ring-white/10 border-none outline-none"
+                    >
+                      {CHANNELS.map((c) => (
+                        <option key={c} value={c} className="bg-gray-900">{c}</option>
+                      ))}
                     </select>
                   </div>
-                </div>
-                <div className="grid gap-1">
-                  <Label>Notes</Label>
-                  <input className="rounded-md border bg-background px-3 py-2 text-sm" placeholder="Optional notes"
-                    value={actualForm.notes} onChange={(e) => setActualForm({ ...actualForm, notes: e.target.value })} />
-                </div>
-                {actualForm.qtySold && actualForm.unitPrice && (
-                  <div className="text-sm text-muted-foreground">
-                    Total: <span className="font-bold">{fmt(Number(actualForm.qtySold) * Number(actualForm.unitPrice))}</span>
+                  <div>
+                    <Label className="text-xs text-white/50">Total Revenue</Label>
+                    <Input
+                      value={actualForm.qtySold && actualForm.unitPrice ? formatRpFull(Number(actualForm.qtySold) * Number(actualForm.unitPrice)) : ""}
+                      readOnly
+                      placeholder="Auto-calculated"
+                      className="bg-white/[0.03] border-white/10 text-white/50"
+                    />
                   </div>
-                )}
-                <Button type="submit">Catat Penjualan</Button>
+                </div>
+                <div>
+                  <Label className="text-xs text-white/50">Notes</Label>
+                  <Input
+                    value={actualForm.notes}
+                    onChange={(e) => setActualForm((f) => ({ ...f, notes: e.target.value }))}
+                    placeholder="Catatan opsional"
+                    className="bg-white/[0.06] border-white/10 text-white placeholder:text-white/25"
+                  />
+                </div>
+                <Button type="submit" className="bg-emerald-600 hover:bg-emerald-700 text-white">
+                  Simpan Actual Sale
+                </Button>
               </form>
             </CardContent>
           </Card>
 
-          {/* Recent actuals */}
-          <h2 className="text-lg font-semibold">Recent Actual Sales</h2>
-          {actuals.length === 0 ? (
-            <Card><CardContent className="py-8 text-center text-muted-foreground">Belum ada transaksi.</CardContent></Card>
-          ) : (
-            <div className="rounded-md border overflow-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-muted/60 text-left">
-                  <tr>
-                    <th className="p-3">Date</th>
-                    <th className="p-3">Brand</th>
-                    <th className="p-3">Product/SKU</th>
-                    <th className="p-3 text-right">Qty</th>
-                    <th className="p-3 text-right">Unit Price</th>
-                    <th className="p-3 text-right">Total</th>
-                    <th className="p-3">Channel</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {actuals.slice(0, 50).map((a) => (
-                    <tr key={a.actualId} className="border-t hover:bg-muted/30">
-                      <td className="p-3">{a.date}</td>
-                      <td className="p-3 font-medium">{a.brandName}</td>
-                      <td className="p-3 text-xs">{a.productSku}</td>
-                      <td className="p-3 text-right">{fmtNum(a.qtySold)}</td>
-                      <td className="p-3 text-right">{fmt(a.unitPrice)}</td>
-                      <td className="p-3 text-right font-medium">{fmt(a.totalRevenue)}</td>
-                      <td className="p-3">{a.channel}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      )}
+          {/* Recent Actuals */}
+          <Card className="bg-white/[0.03] ring-1 ring-white/[0.08] border-0">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-semibold text-white">📋 Transaksi Terbaru</CardTitle>
+              <CardDescription className="text-xs text-white/35">{actuals.length} transaksi</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {loading ? (
+                <div className="space-y-3">
+                  {[1, 2, 3].map((i) => <div key={i} className="h-16 rounded-xl bg-white/[0.03] animate-pulse" />)}
+                </div>
+              ) : actuals.length === 0 ? (
+                <div className="text-center py-8 text-white/25 text-sm">Belum ada transaksi. Input actual sale di atas.</div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-xs text-white/40 border-b border-white/[0.06]">
+                        <th className="text-left py-2 px-3">Tanggal</th>
+                        <th className="text-left py-2 px-3">Brand</th>
+                        <th className="text-left py-2 px-3">Product / SKU</th>
+                        <th className="text-right py-2 px-3">Qty</th>
+                        <th className="text-right py-2 px-3">Unit Price</th>
+                        <th className="text-right py-2 px-3">Total</th>
+                        <th className="text-left py-2 px-3">Channel</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {actuals.slice(0, 20).map((a) => (
+                        <tr key={a.actualId} className="border-b border-white/[0.04] hover:bg-white/[0.02]">
+                          <td className="py-2.5 px-3 text-white/60">{a.date}</td>
+                          <td className="py-2.5 px-3 text-white font-medium">{a.brandName}</td>
+                          <td className="py-2.5 px-3 text-white/70">{a.productSku}</td>
+                          <td className="py-2.5 px-3 text-right text-white/60">{a.qtySold}</td>
+                          <td className="py-2.5 px-3 text-right text-white/60">{formatRpFull(a.unitPrice)}</td>
+                          <td className="py-2.5 px-3 text-right text-white font-medium">{formatRpFull(a.totalRevenue)}</td>
+                          <td className="py-2.5 px-3">
+                            <span className="inline-block rounded-full bg-white/[0.06] px-2 py-0.5 text-xs text-white/60">{a.channel}</span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-      {/* ═══ TAB: Trend Analysis ═══ */}
-      {tab === "trend" && (
-        <div className="space-y-6">
-          {trends.length === 0 ? (
-            <Card><CardContent className="py-8 text-center text-muted-foreground">
-              <p>Belum ada data trend.</p>
-            </CardContent></Card>
+        {/* ── Trend Analysis Tab ──────────────────────────────── */}
+        <TabsContent value="trend" className="space-y-6">
+          {loading ? (
+            <div className="space-y-4">
+              {[1, 2, 3].map((i) => <div key={i} className="h-32 rounded-xl bg-white/[0.03] animate-pulse" />)}
+            </div>
+          ) : trend.length === 0 ? (
+            <div className="text-center py-12 text-white/25 text-sm">Belum ada data trend. Klik &quot;Seed Data&quot; untuk mengisi data contoh.</div>
           ) : (
             <>
-              {/* Brand comparison */}
-              <h2 className="text-lg font-semibold">Per Brand — MoM Trend</h2>
-              {trends.map((brand) => (
-                <Card key={brand.brandId}>
-                  <CardHeader className="pb-2">
-                    <div className="flex justify-between items-start">
+              {trend.map((brand) => (
+                <Card key={brand.brandId} className="bg-white/[0.03] ring-1 ring-white/[0.08] border-0">
+                  <CardHeader className="pb-3">
+                    <div className="flex items-center justify-between">
                       <div>
-                        <CardTitle className="text-base">{brand.brandName}</CardTitle>
-                        <CardDescription>
-                          Total: {fmt(brand.totalActual)} / {fmt(brand.totalTarget)} ({brand.overallAchievementPct}%)
+                        <CardTitle className="text-sm font-semibold text-white">📈 {brand.brandName}</CardTitle>
+                        <CardDescription className="text-xs text-white/35">
+                          Target: {formatRpFull(brand.totalTarget)} | Actual: {formatRpFull(brand.totalActual)} | Achievement: {brand.overallAchievementPct}%
                         </CardDescription>
                       </div>
-                      <Badge className={
-                        brand.overallAchievementPct >= 100 ? "bg-emerald-600" :
-                        brand.overallAchievementPct >= 75 ? "bg-blue-600" :
-                        brand.overallAchievementPct >= 50 ? "bg-yellow-600" : "bg-red-500"
-                      }>
+                      <span className={`text-lg font-bold ${brand.overallAchievementPct >= 100 ? "text-emerald-400" : brand.overallAchievementPct >= 50 ? "text-amber-400" : "text-red-400"}`}>
                         {brand.overallAchievementPct}%
-                      </Badge>
+                      </span>
                     </div>
                   </CardHeader>
                   <CardContent>
-                    {/* Monthly table */}
-                    <div className="rounded-md border overflow-auto">
-                      <table className="w-full text-sm">
-                        <thead className="bg-muted/60 text-left">
-                          <tr>
-                            <th className="p-2">Month</th>
-                            <th className="p-2 text-right">Target</th>
-                            <th className="p-2 text-right">Actual</th>
-                            <th className="p-2 text-right">Achievement</th>
-                            <th className="p-2 text-right">MoM Growth</th>
-                            <th className="p-2 w-32">Progress</th>
+                    {/* Monthly trend table */}
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="text-white/40 border-b border-white/[0.06]">
+                            <th className="text-left py-2 px-2">Bulan</th>
+                            <th className="text-right py-2 px-2">Target</th>
+                            <th className="text-right py-2 px-2">Actual</th>
+                            <th className="text-right py-2 px-2">Achievement</th>
+                            <th className="text-right py-2 px-2">MoM Growth</th>
+                            <th className="py-2 px-2 min-w-[120px]">Progress</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {brand.monthly.filter((m) => m.target > 0 || m.actual > 0).map((m) => (
-                            <tr key={m.month} className="border-t">
-                              <td className="p-2 font-medium">{m.monthName}</td>
-                              <td className="p-2 text-right">{fmt(m.target)}</td>
-                              <td className="p-2 text-right">{fmt(m.actual)}</td>
-                              <td className="p-2 text-right">
-                                <Badge className={
-                                  m.achievementPct >= 100 ? "bg-emerald-600" :
-                                  m.achievementPct >= 75 ? "bg-blue-600" :
-                                  m.achievementPct >= 50 ? "bg-yellow-600" : "bg-red-500"
-                                }>
+                          {brand.monthly.map((m) => (
+                            <tr key={m.month} className="border-b border-white/[0.03]">
+                              <td className="py-2 px-2 text-white/70 font-medium">{m.monthName}</td>
+                              <td className="py-2 px-2 text-right text-white/50">{formatRpFull(m.target)}</td>
+                              <td className="py-2 px-2 text-right text-white/50">{formatRpFull(m.actual)}</td>
+                              <td className="py-2 px-2 text-right">
+                                <span className={`font-semibold ${m.achievementPct >= 100 ? "text-emerald-400" : m.achievementPct >= 50 ? "text-amber-400" : m.achievementPct > 0 ? "text-red-400" : "text-white/30"}`}>
                                   {m.achievementPct}%
-                                </Badge>
+                                </span>
                               </td>
-                              <td className="p-2 text-right text-xs">
+                              <td className="py-2 px-2 text-right">
                                 {m.momGrowthPct !== null ? (
-                                  <span className={m.momGrowthPct >= 0 ? "text-emerald-600" : "text-red-500"}>
+                                  <span className={m.momGrowthPct >= 0 ? "text-emerald-400" : "text-red-400"}>
                                     {m.momGrowthPct >= 0 ? "+" : ""}{m.momGrowthPct}%
                                   </span>
-                                ) : "—"}
+                                ) : (
+                                  <span className="text-white/20">—</span>
+                                )}
                               </td>
-                              <td className="p-2"><ProgressBar pct={m.achievementPct} size="sm" /></td>
+                              <td className="py-2 px-2">
+                                <ProgressBar pct={m.achievementPct} />
+                              </td>
                             </tr>
                           ))}
                         </tbody>
                       </table>
                     </div>
+
+                    {/* Visual bar chart */}
+                    <div className="mt-4 flex items-end gap-2 h-32">
+                      {brand.monthly.map((m) => {
+                        const maxVal = Math.max(...brand.monthly.map((x) => Math.max(x.target, x.actual)), 1);
+                        const targetH = (m.target / maxVal) * 100;
+                        const actualH = (m.actual / maxVal) * 100;
+                        return (
+                          <div key={m.month} className="flex-1 flex flex-col items-center gap-1">
+                            <div className="flex gap-0.5 items-end h-24 w-full justify-center">
+                              <div
+                                className="w-3 rounded-t bg-blue-500/40"
+                                style={{ height: `${targetH}%` }}
+                                title={`Target: ${formatRpFull(m.target)}`}
+                              />
+                              <div
+                                className={`w-3 rounded-t ${m.achievementPct >= 100 ? "bg-emerald-500" : "bg-amber-500"}`}
+                                style={{ height: `${actualH}%` }}
+                                title={`Actual: ${formatRpFull(m.actual)}`}
+                              />
+                            </div>
+                            <span className="text-[10px] text-white/30">{m.monthName}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div className="flex items-center gap-4 mt-2 text-[10px] text-white/40">
+                      <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-blue-500/40" /> Target</span>
+                      <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-emerald-500" /> Actual</span>
+                    </div>
                   </CardContent>
                 </Card>
               ))}
 
-              {/* Brand comparison summary */}
-              <h2 className="text-lg font-semibold">Brand Comparison</h2>
-              <div className="rounded-md border overflow-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-muted/60 text-left">
-                    <tr>
-                      <th className="p-3">Brand</th>
-                      <th className="p-3 text-right">Total Target</th>
-                      <th className="p-3 text-right">Total Actual</th>
-                      <th className="p-3 text-right">Achievement %</th>
-                      <th className="p-3">Visual</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {trends.map((brand) => (
-                      <tr key={brand.brandId} className="border-t">
-                        <td className="p-3 font-medium">{brand.brandName}</td>
-                        <td className="p-3 text-right">{fmt(brand.totalTarget)}</td>
-                        <td className="p-3 text-right font-medium text-emerald-600">{fmt(brand.totalActual)}</td>
-                        <td className="p-3 text-right">
-                          <Badge className={
-                            brand.overallAchievementPct >= 100 ? "bg-emerald-600" :
-                            brand.overallAchievementPct >= 75 ? "bg-blue-600" :
-                            brand.overallAchievementPct >= 50 ? "bg-yellow-600" : "bg-red-500"
-                          }>
+              {/* Brand Comparison */}
+              <Card className="bg-white/[0.03] ring-1 ring-white/[0.08] border-0">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm font-semibold text-white">🏆 Brand Comparison</CardTitle>
+                  <CardDescription className="text-xs text-white/35">Perbandingan achievement antar brand</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    {trend.map((brand) => (
+                      <div key={brand.brandId} className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium text-white">{brand.brandName}</span>
+                          <span className={`text-sm font-bold ${brand.overallAchievementPct >= 100 ? "text-emerald-400" : "text-amber-400"}`}>
                             {brand.overallAchievementPct}%
-                          </Badge>
-                        </td>
-                        <td className="p-3 w-40"><ProgressBar pct={brand.overallAchievementPct} /></td>
-                      </tr>
+                          </span>
+                        </div>
+                        <ProgressBar pct={brand.overallAchievementPct} />
+                        <div className="flex gap-4 text-xs text-white/40">
+                          <span>Target: {formatRpFull(brand.totalTarget)}</span>
+                          <span>Actual: {formatRpFull(brand.totalActual)}</span>
+                          <span>Selisih: <span className={brand.totalActual >= brand.totalTarget ? "text-emerald-400" : "text-red-400"}>{formatRpFull(brand.totalActual - brand.totalTarget)}</span></span>
+                        </div>
+                      </div>
                     ))}
-                  </tbody>
-                </table>
-              </div>
+                  </div>
+                </CardContent>
+              </Card>
             </>
           )}
-        </div>
-      )}
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
