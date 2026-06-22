@@ -58,6 +58,8 @@ export const SHEETS: Record<string, { range: string; description: string }> = {
   QCChecklist:       { range: "QC_Checklist!A1:I1000",          description: "QC checklist results per batch and stage" },
   AgentAuditLog:     { range: "Agent_Audit_Log!A1:H10000",      description: "Agent action audit trail — all agent actions logged here" },
   AgentApprovals:    { range: "Agent_Approvals!A1:J5000",       description: "Pending and resolved approval requests from agents" },
+  ProductionWaste:   { range: "Production_Waste!A1:K1000",      description: "Waste/reject tracking per batch" },
+  ProductionTargets: { range: "Production_Targets!A1:F1000",    description: "Monthly production targets per brand" },
   Ecommerse:         { range: "Ecommerse!A1:Z1000",            description: "E-commerce transactions (online orders)" },
   EcommerseMetrics:  { range: "Ecommerse_Metrics!A1:Z100",     description: "E-commerce aggregated metrics" },
   MerchTIM:          { range: "Merch_TIM!A1:L1000",           description: "Merchandise TIM product catalog" },
@@ -71,6 +73,8 @@ export const SHEETS: Record<string, { range: string; description: string }> = {
   Formula_Cost_Summary:{ range: "Formula_Cost_Summary!A1:I1000",  description: "Ringkasan cost per formula" },
   ExpenseSubmissions:{ range: "Expense_Submissions!A1:L1000",    description: "Expense submissions dengan approval flow" },
   ExpenseApprovers:{ range: "Expense_Approvers!A1:D100",         description: "List approver expense" },
+  SalesTargets:      { range: "Sales_Targets!A1:K1000",            description: "Sales targets per brand per month" },
+  SalesActuals:      { range: "Sales_Actuals!A1:J1000",            description: "Actual sales transactions" },
 };
 
 // ── Auth ──────────────────────────────────────────────────────────
