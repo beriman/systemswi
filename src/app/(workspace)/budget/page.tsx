@@ -512,8 +512,8 @@ export default function BudgetPage() {
                               <TableCell className={`text-right ${variance >= 0 ? "text-green-700" : "text-red-700"}`}>
                                 {formatCurrency(variance)}
                               </TableCell>
-                              <td className="text-right">{percent}%</td>
-                              <td className="w-40"><ProgressBar percent={percent} status={status} /></td>
+                              <TableCell className="text-right">{percent}%</TableCell>
+                              <TableCell className="w-40"><ProgressBar percent={percent} status={status} /></TableCell>
                             </TableRow>
                           );
                         })
