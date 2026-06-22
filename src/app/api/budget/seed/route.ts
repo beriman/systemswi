@@ -4,13 +4,14 @@ import { readRange, writeRange, appendRows } from "@/lib/sheets/sheets-real";
 
 export const runtime = "nodejs";
 
+// Use "Jan-26" format (with dash) to prevent Google Sheets from auto-converting to dates
 const MONTHS = [
-  { name: "Jan 2026", short: "Jan", monthNum: 1 },
-  { name: "Feb 2026", short: "Feb", monthNum: 2 },
-  { name: "Mar 2026", short: "Mar", monthNum: 3 },
-  { name: "Apr 2026", short: "Apr", monthNum: 4 },
-  { name: "May 2026", short: "May", monthNum: 5 },
-  { name: "Jun 2026", short: "Jun", monthNum: 6 },
+  { name: "Jan-26", short: "Jan", monthNum: 1 },
+  { name: "Feb-26", short: "Feb", monthNum: 2 },
+  { name: "Mar-26", short: "Mar", monthNum: 3 },
+  { name: "Apr-26", short: "Apr", monthNum: 4 },
+  { name: "May-26", short: "May", monthNum: 5 },
+  { name: "Jun-26", short: "Jun", monthNum: 6 },
 ];
 
 interface CategoryConfig {
@@ -30,8 +31,8 @@ const CATEGORIES: CategoryConfig[] = [
 ];
 
 const DEMO_ALERTS: Record<string, number> = {
-  "Bahan Baku|Jun 2026": 0.97,
-  "Iklan & Marketing|Apr 2026": 0.98,
+  "Bahan Baku|Jun-26": 0.97,
+  "Iklan & Marketing|Apr-26": 0.98,
 };
 
 function randBetween(min: number, max: number): number {
@@ -55,12 +56,12 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // Clear sheet if forced — overwrite entire range with empty values then rewrite
+    // Clear sheet if forced — overwrite the full API read range to remove stale data
     if (hasData && force) {
       try {
-        // Write empty values to the full range to clear old data
-        const emptyRows = Array(100).fill(null).map(() => Array(12).fill(""));
-        await writeRange("Budget_vs_Actual!A1:L100", emptyRows);
+        // Clear A1:R500 (must match the API read range so no stale rows remain)
+        const emptyRows = Array(500).fill(null).map(() => Array(18).fill(""));
+        await writeRange("Budget_vs_Actual!A1:R500", emptyRows);
       } catch (clearErr) {
         console.error("Clear failed, proceeding with overwrite:", clearErr);
       }
@@ -102,7 +103,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Write headers + data in a single writeRange call
+    // Write headers + data in a single writeRange call (full range A1:R31 to match API reads)
     const headers = [
       "ID", "Category", "Month", "Year", "Budget", "Actual",
       "Remaining", "Event", "Notes", "Created", "Updated",
@@ -110,7 +111,14 @@ export async function POST(req: NextRequest) {
 
     const allRows: (string | number)[][] = [headers, ...rows];
 
-    await writeRange("Budget_vs_Actual!A1:K31", allRows);
+    // Pad each row to 18 columns (A-R) so the full range is cleanly overwritten
+    const paddedRows = allRows.map((row) => {
+      const padded = [...row];
+      while (padded.length < 18) padded.push("");
+      return padded;
+    });
+
+    await writeRange("Budget_vs_Actual!A1:R31", paddedRows);
 
     return NextResponse.json({
       success: true,

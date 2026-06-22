@@ -116,7 +116,7 @@ export async function POST(req: NextRequest) {
     const row = [
       id,
       body.category || "Uncategorized",
-      body.month || `${now.toLocaleString("en-US", { month: "short" })} ${now.getFullYear()}`,
+      body.month || `${now.toLocaleString("en-US", { month: "short" })}-${String(now.getFullYear()).slice(2)}`,
       body.year || String(now.getFullYear()),
       Number(body.budget) || 0,
       Number(body.actual) || 0,
