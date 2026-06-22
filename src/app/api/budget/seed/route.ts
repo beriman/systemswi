@@ -1,6 +1,7 @@
 // POST /api/budget/seed — Seed budget vs actual data
 import { NextRequest, NextResponse } from "next/server";
-import { readRange, writeRange, appendRows } from "@/lib/sheets/sheets-real";
+import { readRange, writeRange, appendRows, getAuth, SPREADSHEET_ID } from "@/lib/sheets/sheets-real";
+import { google } from "googleapis";
 
 export const runtime = "nodejs";
 
@@ -17,7 +18,6 @@ interface CategoryConfig {
   name: string;
   minBudget: number;
   maxBudget: number;
-  // actual will be computed as a % of budget
   actualMinPct: number;
   actualMaxPct: number;
 }
@@ -30,7 +30,6 @@ const CATEGORIES: CategoryConfig[] = [
   { name: "Transport", minBudget: 500_000, maxBudget: 1_500_000, actualMinPct: 0.60, actualMaxPct: 0.85 },
 ];
 
-// Demo alerts: Bahan Baku Jun 2026 = 97%, Iklan Apr 2026 = 98%
 const DEMO_ALERTS: Record<string, number> = {
   "Bahan Baku|Jun 2026": 0.97,
   "Iklan & Marketing|Apr 2026": 0.98,
@@ -57,17 +56,43 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // Clear sheet if forced
+    // Clear sheet if forced — delete all rows then rewrite from scratch
     if (hasData && force) {
-      await writeRange("Budget_vs_Actual!A1:R500", [[]]);
-    }
+      try {
+        const auth = getAuth();
+        const sheets = google.sheets({ version: "v4", auth });
 
-    // Write headers
-    const headers = [
-      "ID", "Category", "Month", "Year", "Budget", "Actual",
-      "Remaining", "Event", "Notes", "Created", "Updated",
-    ];
-    await writeRange("Budget_vs_Actual!A1:K1", [headers]);
+        // Get sheet ID
+        const ss = await sheets.spreadsheets.get({
+          spreadsheetId: SPREADSHEET_ID,
+          fields: "sheets.properties",
+        });
+        const sheetId = ss.data.sheets?.find(
+          (s: any) => s.properties?.title === "Budget_vs_Actual"
+        )?.properties?.sheetId;
+
+        if (sheetId !== undefined) {
+          // Delete all rows (row 1 onwards) to clear old data completely
+          await sheets.spreadsheets.batchUpdate({
+            spreadsheetId: SPREADSHEET_ID,
+            requestBody: {
+              requests: [{
+                deleteDimension: {
+                  range: {
+                    sheetId,
+                    dimension: "ROWS",
+                    startIndex: 0, // row 1 (0-indexed)
+                    endIndex: 1000, // delete up to row 1000
+                  },
+                },
+              }],
+            },
+          });
+        }
+      } catch (clearErr) {
+        console.error("Clear failed, proceeding with overwrite:", clearErr);
+      }
+    }
 
     // Generate seed rows
     const rows: (string | number)[][] = [];
@@ -84,7 +109,7 @@ export async function POST(req: NextRequest) {
         } else {
           actualPct = cat.actualMinPct + Math.random() * (cat.actualMaxPct - cat.actualMinPct);
         }
-        const actual = Math.round(budget * actualPct / 1000) * 1000; // round to thousands
+        const actual = Math.round(budget * actualPct / 1000) * 1000;
         const remaining = budget - actual;
 
         const id = `bgt-${String(idCounter).padStart(4, "0")}`;
@@ -105,8 +130,15 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Write all rows at once
-    await writeRange(`Budget_vs_Actual!A2:K${rows.length + 1}`, rows);
+    // Write headers + data in a single writeRange call
+    const headers = [
+      "ID", "Category", "Month", "Year", "Budget", "Actual",
+      "Remaining", "Event", "Notes", "Created", "Updated",
+    ];
+
+    const allRows: (string | number)[][] = [headers, ...rows];
+
+    await writeRange("Budget_vs_Actual!A1:K31", allRows);
 
     return NextResponse.json({
       success: true,
