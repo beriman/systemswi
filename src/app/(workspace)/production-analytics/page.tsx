@@ -8,8 +8,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, RefreshCw } from "lucide-react";
 
 /* ── Types ── */
 
@@ -54,17 +55,8 @@ type CostVariance = {
   variancePct: number;
 };
 
-type TimelineEntry = {
-  brand: string;
-  month: string;
-  batches: number;
-  totalQty: number;
-  totalCost: number;
-  avgHpp: number;
-};
-
 type WasteEvent = {
-  id: string;
+  wasteId: string;
   date: string;
   productionId: string;
   batchCode: string;
@@ -88,63 +80,65 @@ type MonthlySummary = {
 
 /* ── Helpers ── */
 
-function formatCurrency(value: number): string {
+function formatCurrency(amount: number): string {
   return new Intl.NumberFormat("id-ID", {
     style: "currency",
     currency: "IDR",
     minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(value);
+  }).format(amount || 0);
 }
 
 function formatNumber(value: number): string {
-  return new Intl.NumberFormat("id-ID").format(value);
+  return new Intl.NumberFormat("id-ID").format(value || 0);
 }
 
-function StatusBadge({ status }: { status: string }) {
-  const s = status.toLowerCase();
-  if (s === "completed" || s === "done" || s === "pass" || s === "passed")
-    return <Badge variant="success">{status}</Badge>;
-  if (s === "pending" || s === "in progress" || s === "processing")
-    return <Badge variant="warning">{status}</Badge>;
-  if (s === "failed" || s === "reject" || s === "rejected")
-    return <Badge variant="destructive">{status}</Badge>;
-  return <Badge variant="secondary">{status}</Badge>;
+function statusVariant(s: string): "default" | "destructive" | "outline" | "secondary" {
+  const v = s.toLowerCase();
+  if (v === "done" || v === "completed") return "default";
+  if (v === "in progress") return "secondary";
+  if (v === "qc") return "secondary";
+  return "outline";
 }
 
-/* ── Main Page ── */
+function qcStatusVariant(s: string): "default" | "destructive" | "outline" | "secondary" {
+  const v = s.toLowerCase();
+  if (v === "passed") return "default";
+  if (v === "failed") return "destructive";
+  if (v === "rework") return "secondary";
+  return "outline";
+}
+
+/* ── KPI Card ── */
+
+function KpiCard({ title, value, note, accent = "" }: { title: string; value: string; note: string; accent?: string }) {
+  return (
+    <Card>
+      <CardContent className="pt-6">
+        <p className="text-sm text-muted-foreground">{title}</p>
+        <p className={`text-2xl font-bold mt-1 ${accent}`}>{value}</p>
+        <p className="text-xs text-muted-foreground mt-1">{note}</p>
+      </CardContent>
+    </Card>
+  );
+}
+
+/* ── Main Component ── */
 
 export default function ProductionAnalyticsPage() {
   const [activeTab, setActiveTab] = useState("overview");
 
-  // Overview
-  const [analytics, setAnalytics] = useState<AnalyticsSummary | null>(null);
-  const [analyticsLoading, setAnalyticsLoading] = useState(true);
-
-  // Yield
+  // Data states
+  const [summary, setSummary] = useState<AnalyticsSummary | null>(null);
   const [batches, setBatches] = useState<BatchYield[]>([]);
-  const [yieldLoading, setYieldLoading] = useState(true);
-
-  // Cost Variance
   const [variances, setVariances] = useState<CostVariance[]>([]);
-  const [varianceLoading, setVarianceLoading] = useState(true);
-
-  // Timeline
-  const [timeline, setTimeline] = useState<TimelineEntry[]>([]);
-  const [timelineLoading, setTimelineLoading] = useState(true);
-
-  // Waste
   const [wasteEvents, setWasteEvents] = useState<WasteEvent[]>([]);
-  const [wasteTotal, setWasteTotal] = useState(0);
-  const [wasteLoading, setWasteLoading] = useState(true);
-
-  // Monthly
   const [monthlySummary, setMonthlySummary] = useState<MonthlySummary[]>([]);
-  const [monthlyLoading, setMonthlyLoading] = useState(true);
 
-  // Waste form
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Waste form state
   const [wasteForm, setWasteForm] = useState({
-    batchCode: "",
     brand: "",
     product: "",
     qtyRejected: "",
@@ -154,153 +148,108 @@ export default function ProductionAnalyticsPage() {
     notes: "",
   });
   const [wasteSubmitting, setWasteSubmitting] = useState(false);
-  const [wasteMessage, setWasteMessage] = useState("");
 
-  // Fetch all data
-  const fetchAnalytics = useCallback(async () => {
-    setAnalyticsLoading(true);
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
     try {
-      const res = await fetch("/api/production/analytics");
-      const json = await res.json();
-      setAnalytics(json);
-    } catch {
-      setAnalytics(null);
-    } finally {
-      setAnalyticsLoading(false);
-    }
-  }, []);
+      const [summaryRes, yieldRes, varianceRes, wasteRes, monthlyRes] = await Promise.all([
+        fetch("/api/production/analytics", { cache: "no-store" }),
+        fetch("/api/production/yield", { cache: "no-store" }),
+        fetch("/api/production/cost-variance", { cache: "no-store" }),
+        fetch("/api/production/waste", { cache: "no-store" }),
+        fetch("/api/production/monthly", { cache: "no-store" }),
+      ]);
 
-  const fetchYield = useCallback(async () => {
-    setYieldLoading(true);
-    try {
-      const res = await fetch("/api/production/yield");
-      const json = await res.json();
-      setBatches(json.batches || []);
-    } catch {
-      setBatches([]);
+      if (summaryRes.ok) {
+        const json = await summaryRes.json();
+        setSummary(json);
+      }
+      if (yieldRes.ok) {
+        const json = await yieldRes.json();
+        setBatches(json.batches || []);
+      }
+      if (varianceRes.ok) {
+        const json = await varianceRes.json();
+        setVariances(json.variances || []);
+      }
+      if (wasteRes.ok) {
+        const json = await wasteRes.json();
+        setWasteEvents(json.wasteEvents || []);
+      }
+      if (monthlyRes.ok) {
+        const json = await monthlyRes.json();
+        setMonthlySummary(json.monthlySummary || []);
+      }
+    } catch (err) {
+      setError(String(err));
     } finally {
-      setYieldLoading(false);
-    }
-  }, []);
-
-  const fetchVariance = useCallback(async () => {
-    setVarianceLoading(true);
-    try {
-      const res = await fetch("/api/production/cost-variance");
-      const json = await res.json();
-      setVariances(json.variances || []);
-    } catch {
-      setVariances([]);
-    } finally {
-      setVarianceLoading(false);
-    }
-  }, []);
-
-  const fetchTimeline = useCallback(async () => {
-    setTimelineLoading(true);
-    try {
-      const res = await fetch("/api/production/timeline");
-      const json = await res.json();
-      setTimeline(json.timeline || []);
-    } catch {
-      setTimeline([]);
-    } finally {
-      setTimelineLoading(false);
-    }
-  }, []);
-
-  const fetchWaste = useCallback(async () => {
-    setWasteLoading(true);
-    try {
-      const res = await fetch("/api/production/waste");
-      const json = await res.json();
-      setWasteEvents(json.wasteEvents || []);
-      setWasteTotal(json.totalWasteCost || 0);
-    } catch {
-      setWasteEvents([]);
-    } finally {
-      setWasteLoading(false);
-    }
-  }, []);
-
-  const fetchMonthly = useCallback(async () => {
-    setMonthlyLoading(true);
-    try {
-      const res = await fetch("/api/production/monthly");
-      const json = await res.json();
-      setMonthlySummary(json.monthlySummary || []);
-    } catch {
-      setMonthlySummary([]);
-    } finally {
-      setMonthlyLoading(false);
+      setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    fetchAnalytics();
-    fetchYield();
-    fetchVariance();
-    fetchTimeline();
-    fetchWaste();
-    fetchMonthly();
-  }, [fetchAnalytics, fetchYield, fetchVariance, fetchTimeline, fetchWaste, fetchMonthly]);
+    loadData();
+  }, [loadData]);
 
-  // Waste form submit
-  const handleWasteSubmit = async (e: FormEvent) => {
+  async function submitWaste(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setWasteSubmitting(true);
-    setWasteMessage("");
+    setError(null);
     try {
       const res = await fetch("/api/production/waste", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          batchCode: wasteForm.batchCode,
           brand: wasteForm.brand,
           product: wasteForm.product,
-          qtyRejected: parseFloat(wasteForm.qtyRejected) || 0,
+          qtyRejected: Number(wasteForm.qtyRejected) || 0,
           reason: wasteForm.reason,
           disposition: wasteForm.disposition,
-          costImpact: parseFloat(wasteForm.costImpact) || 0,
+          costImpact: Number(wasteForm.costImpact) || 0,
           notes: wasteForm.notes,
         }),
       });
       const json = await res.json();
-      if (res.ok) {
-        setWasteMessage("✅ Waste event logged successfully");
-        setWasteForm({
-          batchCode: "",
-          brand: "",
-          product: "",
-          qtyRejected: "",
-          reason: "",
-          disposition: "Scrap",
-          costImpact: "",
-          notes: "",
-        });
-        fetchWaste();
-      } else {
-        setWasteMessage(`❌ ${json.error || "Failed to log waste event"}`);
-      }
-    } catch {
-      setWasteMessage("❌ Network error");
+      if (!res.ok) throw new Error(json.error || "Gagal mencatat waste event");
+      setWasteForm({ brand: "", product: "", qtyRejected: "", reason: "", disposition: "Scrap", costImpact: "", notes: "" });
+      await loadData();
+    } catch (err) {
+      setError(String(err));
     } finally {
       setWasteSubmitting(false);
     }
-  };
+  }
+
+  // Derived
+  const totalWasteCost = wasteEvents.reduce((s, w) => s + w.costImpact, 0);
+  const totalWasteQty = wasteEvents.reduce((s, w) => s + w.qtyRejected, 0);
 
   return (
-    <div className="flex flex-col gap-6 p-6">
+    <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold">📊 Production Analytics</h1>
-        <p className="text-muted-foreground">
-          Analitik produksi parfum — yield, cost variance, waste tracking, dan ringkasan bulanan.
-        </p>
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div>
+          <h2 className="text-2xl font-bold">📊 Production Analytics</h2>
+          <p className="text-muted-foreground">
+            Analitik produksi parfum: yield, cost variance, waste tracking, dan ringkasan bulanan.
+          </p>
+        </div>
+        <Button onClick={loadData} disabled={loading} variant="outline" size="sm">
+          <RefreshCw className="h-4 w-4 mr-2" />
+          {loading ? "Memuat..." : "Refresh"}
+        </Button>
       </div>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-5">
+      {error && (
+        <Card className="border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/30">
+          <CardContent className="py-4 text-red-700 dark:text-red-300 text-sm">{error}</CardContent>
+        </Card>
+      )}
+
+      {/* Tabs */}
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList className="grid w-full grid-cols-5 lg:w-auto">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="yield">Yield Analysis</TabsTrigger>
           <TabsTrigger value="cost">Cost Analysis</TabsTrigger>
@@ -308,96 +257,65 @@ export default function ProductionAnalyticsPage() {
           <TabsTrigger value="monthly">Monthly Summary</TabsTrigger>
         </TabsList>
 
-        {/* ── Tab 1: Overview ── */}
-        <TabsContent value="overview" className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <Card>
-              <CardHeader className="pb-2">
-                <CardDescription>Total Batches</CardDescription>
-                <CardTitle className="text-3xl">
-                  {analyticsLoading ? <Skeleton className="h-8 w-20" /> : formatNumber(analytics?.totalBatches || 0)}
-                </CardTitle>
-              </CardHeader>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardDescription>Total Units Produced</CardDescription>
-                <CardTitle className="text-3xl">
-                  {analyticsLoading ? <Skeleton className="h-8 w-20" /> : formatNumber(analytics?.totalUnits || 0)}
-                </CardTitle>
-              </CardHeader>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardDescription>Avg HPP / Unit</CardDescription>
-                <CardTitle className="text-3xl">
-                  {analyticsLoading ? <Skeleton className="h-8 w-24" /> : formatCurrency(analytics?.avgHpp || 0)}
-                </CardTitle>
-              </CardHeader>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardDescription>Total Production Cost</CardDescription>
-                <CardTitle className="text-3xl">
-                  {analyticsLoading ? <Skeleton className="h-8 w-28" /> : formatCurrency(analytics?.totalCost || 0)}
-                </CardTitle>
-              </CardHeader>
-            </Card>
+        {/* ── Overview Tab ── */}
+        <TabsContent value="overview" className="space-y-4 mt-4">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <KpiCard
+              title="Total Batches"
+              value={loading ? "..." : formatNumber(summary?.totalBatches || 0)}
+              note="semua produksi"
+            />
+            <KpiCard
+              title="Total Units"
+              value={loading ? "..." : formatNumber(summary?.totalUnits || 0)}
+              note="unit diproduksi"
+            />
+            <KpiCard
+              title="Avg HPP"
+              value={loading ? "..." : formatCurrency(summary?.avgHpp || 0)}
+              note="per unit (weighted)"
+            />
+            <KpiCard
+              title="Total Cost"
+              value={loading ? "..." : formatCurrency(summary?.totalCost || 0)}
+              note="semua batch"
+            />
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <KpiCard
+              title="Waste Events"
+              value={loading ? "..." : formatNumber(wasteEvents.length)}
+              note="kejadian reject"
+            />
+            <KpiCard
+              title="Waste Qty"
+              value={loading ? "..." : formatNumber(totalWasteQty)}
+              note="unit ditolak"
+            />
+            <KpiCard
+              title="Waste Cost Impact"
+              value={loading ? "..." : formatCurrency(totalWasteCost)}
+              note="kerugian akibat waste"
+              accent="text-red-600"
+            />
+            <KpiCard
+              title="Brands Active"
+              value={loading ? "..." : formatNumber(new Set(batches.map((b) => b.brand)).size)}
+              note="brand diproduksi"
+            />
           </div>
 
-          {/* Timeline summary table */}
+          {/* Quick batch list */}
           <Card>
             <CardHeader>
-              <CardTitle>Production Timeline</CardTitle>
-              <CardDescription>Ringkasan produksi per brand per bulan</CardDescription>
+              <CardTitle>Batch Terbaru</CardTitle>
+              <CardDescription>5 batch produksi terakhir</CardDescription>
             </CardHeader>
             <CardContent>
-              {timelineLoading ? (
-                <Skeleton className="h-48 w-full" />
-              ) : timeline.length === 0 ? (
-                <p className="text-muted-foreground text-center py-8">No production data available</p>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Month</TableHead>
-                      <TableHead>Brand</TableHead>
-                      <TableHead className="text-right">Batches</TableHead>
-                      <TableHead className="text-right">Total Qty</TableHead>
-                      <TableHead className="text-right">Avg HPP</TableHead>
-                      <TableHead className="text-right">Total Cost</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {timeline.map((entry, i) => (
-                      <TableRow key={`${entry.month}-${entry.brand}-${i}`}>
-                        <TableCell>{entry.month}</TableCell>
-                        <TableCell>{entry.brand}</TableCell>
-                        <TableCell className="text-right">{formatNumber(entry.batches)}</TableCell>
-                        <TableCell className="text-right">{formatNumber(entry.totalQty)}</TableCell>
-                        <TableCell className="text-right">{formatCurrency(entry.avgHpp)}</TableCell>
-                        <TableCell className="text-right">{formatCurrency(entry.totalCost)}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* ── Tab 2: Yield Analysis ── */}
-        <TabsContent value="yield">
-          <Card>
-            <CardHeader>
-              <CardTitle>Yield Analysis</CardTitle>
-              <CardDescription>Detail yield per batch — brand, product, qty, HPP, status, QC</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {yieldLoading ? (
-                <Skeleton className="h-64 w-full" />
+              {loading ? (
+                <Skeleton className="h-40 w-full" />
               ) : batches.length === 0 ? (
-                <p className="text-muted-foreground text-center py-8">No batch data available</p>
+                <EmptyState title="Belum ada data produksi" description="Data batch akan muncul di sini setelah produksi dimulai." />
               ) : (
                 <Table>
                   <TableHeader>
@@ -412,19 +330,15 @@ export default function ProductionAnalyticsPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {batches.map((batch) => (
-                      <TableRow key={batch.id}>
-                        <TableCell className="font-mono text-sm">{batch.batchCode}</TableCell>
-                        <TableCell>{batch.brand}</TableCell>
-                        <TableCell>{batch.product}</TableCell>
-                        <TableCell className="text-right">{formatNumber(batch.qty)}</TableCell>
-                        <TableCell className="text-right">{formatCurrency(batch.hppPerUnit)}</TableCell>
-                        <TableCell>
-                          <StatusBadge status={batch.status} />
-                        </TableCell>
-                        <TableCell>
-                          <StatusBadge status={batch.qcStatus} />
-                        </TableCell>
+                    {batches.slice(0, 5).map((b) => (
+                      <TableRow key={b.id}>
+                        <TableCell className="font-mono text-xs">{b.batchCode}</TableCell>
+                        <TableCell>{b.brand}</TableCell>
+                        <TableCell>{b.product}</TableCell>
+                        <TableCell className="text-right">{formatNumber(b.qty)}</TableCell>
+                        <TableCell className="text-right">{formatCurrency(b.hppPerUnit)}</TableCell>
+                        <TableCell><Badge variant={statusVariant(b.status)}>{b.status}</Badge></TableCell>
+                        <TableCell><Badge variant={qcStatusVariant(b.qcStatus)}>{b.qcStatus}</Badge></TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -434,288 +348,295 @@ export default function ProductionAnalyticsPage() {
           </Card>
         </TabsContent>
 
-        {/* ── Tab 3: Cost Analysis ── */}
-        <TabsContent value="cost">
+        {/* ── Yield Analysis Tab ── */}
+        <TabsContent value="yield" className="space-y-4 mt-4">
           <Card>
             <CardHeader>
-              <CardTitle>Cost Analysis</CardTitle>
+              <CardTitle>Yield Analysis</CardTitle>
+              <CardDescription>Detail yield per batch: brand, product, qty, HPP, status, dan QC</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {loading ? (
+                <Skeleton className="h-60 w-full" />
+              ) : batches.length === 0 ? (
+                <EmptyState title="Belum ada data yield" description="Data yield batch akan muncul di sini." />
+              ) : (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Batch Code</TableHead>
+                        <TableHead>Brand</TableHead>
+                        <TableHead>Product</TableHead>
+                        <TableHead>Date</TableHead>
+                        <TableHead className="text-right">Qty</TableHead>
+                        <TableHead className="text-right">HPP/Unit</TableHead>
+                        <TableHead className="text-right">Total Cost</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>QC</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {batches.map((b) => (
+                        <TableRow key={b.id}>
+                          <TableCell className="font-mono text-xs">{b.batchCode}</TableCell>
+                          <TableCell>{b.brand}</TableCell>
+                          <TableCell>{b.product}</TableCell>
+                          <TableCell>{b.date}</TableCell>
+                          <TableCell className="text-right">{formatNumber(b.qty)}</TableCell>
+                          <TableCell className="text-right">{formatCurrency(b.hppPerUnit)}</TableCell>
+                          <TableCell className="text-right">{formatCurrency(b.totalProductionCost)}</TableCell>
+                          <TableCell><Badge variant={statusVariant(b.status)}>{b.status}</Badge></TableCell>
+                          <TableCell><Badge variant={qcStatusVariant(b.qcStatus)}>{b.qcStatus}</Badge></TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* ── Cost Analysis Tab ── */}
+        <TabsContent value="cost" className="space-y-4 mt-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Cost Variance Analysis</CardTitle>
               <CardDescription>Perbandingan HPP aktual vs target per batch</CardDescription>
             </CardHeader>
             <CardContent>
-              {varianceLoading ? (
-                <Skeleton className="h-64 w-full" />
+              {loading ? (
+                <Skeleton className="h-60 w-full" />
               ) : variances.length === 0 ? (
-                <p className="text-muted-foreground text-center py-8">No cost data available</p>
+                <EmptyState title="Belum ada data cost variance" description="Data variance akan muncul setelah ada data produksi dan target." />
               ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Batch</TableHead>
-                      <TableHead>Brand</TableHead>
-                      <TableHead>Product</TableHead>
-                      <TableHead className="text-right">Total Cost</TableHead>
-                      <TableHead className="text-right">HPP/Unit</TableHead>
-                      <TableHead className="text-right">Target HPP</TableHead>
-                      <TableHead className="text-right">Variance %</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {variances.map((v) => (
-                      <TableRow key={v.id}>
-                        <TableCell className="font-mono text-sm">{v.batchCode}</TableCell>
-                        <TableCell>{v.brand}</TableCell>
-                        <TableCell>{v.product}</TableCell>
-                        <TableCell className="text-right">{formatCurrency(v.totalCost)}</TableCell>
-                        <TableCell className="text-right">{formatCurrency(v.actualHpp)}</TableCell>
-                        <TableCell className="text-right">
-                          {v.targetHpp > 0 ? formatCurrency(v.targetHpp) : "—"}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {v.targetHpp > 0 ? (
-                            <Badge variant={v.variancePct > 0 ? "destructive" : "success"}>
-                              {v.variancePct > 0 ? "+" : ""}
-                              {v.variancePct.toFixed(1)}%
-                            </Badge>
-                          ) : (
-                            "—"
-                          )}
-                        </TableCell>
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Batch Code</TableHead>
+                        <TableHead>Brand</TableHead>
+                        <TableHead>Product</TableHead>
+                        <TableHead>Month</TableHead>
+                        <TableHead className="text-right">Total Cost</TableHead>
+                        <TableHead className="text-right">HPP/Unit</TableHead>
+                        <TableHead className="text-right">Target HPP</TableHead>
+                        <TableHead className="text-right">Variance %</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                    </TableHeader>
+                    <TableBody>
+                      {variances.map((v) => (
+                        <TableRow key={v.id}>
+                          <TableCell className="font-mono text-xs">{v.batchCode}</TableCell>
+                          <TableCell>{v.brand}</TableCell>
+                          <TableCell>{v.product}</TableCell>
+                          <TableCell>{v.month}</TableCell>
+                          <TableCell className="text-right">{formatCurrency(v.totalCost)}</TableCell>
+                          <TableCell className="text-right">{formatCurrency(v.actualHpp)}</TableCell>
+                          <TableCell className="text-right">{v.targetHpp > 0 ? formatCurrency(v.targetHpp) : "—"}</TableCell>
+                          <TableCell className="text-right">
+                            {v.targetHpp > 0 ? (
+                              <span className={v.variancePct > 0 ? "text-red-600 font-medium" : "text-green-600 font-medium"}>
+                                {v.variancePct > 0 ? "+" : ""}{v.variancePct.toFixed(1)}%
+                              </span>
+                            ) : "—"}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
               )}
             </CardContent>
           </Card>
         </TabsContent>
 
-        {/* ── Tab 4: Waste Tracking ── */}
-        <TabsContent value="waste" className="space-y-4">
-          {/* KPI */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <Card>
-              <CardHeader className="pb-2">
-                <CardDescription>Total Waste Events</CardDescription>
-                <CardTitle className="text-3xl">
-                  {wasteLoading ? <Skeleton className="h-8 w-16" /> : wasteEvents.length}
-                </CardTitle>
-              </CardHeader>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardDescription>Total Waste Cost</CardDescription>
-                <CardTitle className="text-3xl">
-                  {wasteLoading ? <Skeleton className="h-8 w-24" /> : formatCurrency(wasteTotal)}
-                </CardTitle>
-              </CardHeader>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardDescription>Total Qty Rejected</CardDescription>
-                <CardTitle className="text-3xl">
-                  {wasteLoading ? (
-                    <Skeleton className="h-8 w-20" />
-                  ) : (
-                    formatNumber(wasteEvents.reduce((sum, w) => sum + w.qtyRejected, 0))
-                  )}
-                </CardTitle>
-              </CardHeader>
-            </Card>
-          </div>
-
-          {/* Add waste form */}
+        {/* ── Waste Tracking Tab ── */}
+        <TabsContent value="waste" className="space-y-4 mt-4">
+          {/* Add Waste Form */}
           <Card>
             <CardHeader>
               <CardTitle>Log Waste Event</CardTitle>
-              <CardDescription>Catat reject / damage / waste produksi</CardDescription>
+              <CardDescription>Catat kejadian reject / waste produksi</CardDescription>
             </CardHeader>
             <CardContent>
-              <form onSubmit={handleWasteSubmit} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                <div>
-                  <Label htmlFor="waste-batch">Batch Code</Label>
-                  <Input
-                    id="waste-batch"
-                    value={wasteForm.batchCode}
-                    onChange={(e) => setWasteForm({ ...wasteForm, batchCode: e.target.value })}
-                    placeholder="BATCH-001"
-                  />
+              <form onSubmit={submitWaste} className="space-y-4">
+                <div className="grid gap-4 md:grid-cols-3">
+                  <div>
+                    <Label className="mb-1 block text-xs text-muted-foreground">Brand *</Label>
+                    <Input
+                      value={wasteForm.brand}
+                      onChange={(e) => setWasteForm((f) => ({ ...f, brand: e.target.value }))}
+                      placeholder="Nama brand"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <Label className="mb-1 block text-xs text-muted-foreground">Product *</Label>
+                    <Input
+                      value={wasteForm.product}
+                      onChange={(e) => setWasteForm((f) => ({ ...f, product: e.target.value }))}
+                      placeholder="Nama produk"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <Label className="mb-1 block text-xs text-muted-foreground">Qty Rejected *</Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      value={wasteForm.qtyRejected}
+                      onChange={(e) => setWasteForm((f) => ({ ...f, qtyRejected: e.target.value }))}
+                      placeholder="Jumlah unit ditolak"
+                      required
+                    />
+                  </div>
+                </div>
+                <div className="grid gap-4 md:grid-cols-3">
+                  <div>
+                    <Label className="mb-1 block text-xs text-muted-foreground">Reason</Label>
+                    <Input
+                      value={wasteForm.reason}
+                      onChange={(e) => setWasteForm((f) => ({ ...f, reason: e.target.value }))}
+                      placeholder="Alasan reject"
+                    />
+                  </div>
+                  <div>
+                    <Label className="mb-1 block text-xs text-muted-foreground">Disposition</Label>
+                    <select
+                      value={wasteForm.disposition}
+                      onChange={(e) => setWasteForm((f) => ({ ...f, disposition: e.target.value }))}
+                      className="h-9 w-full rounded-md border bg-background px-3 text-sm"
+                    >
+                      <option value="Scrap">Scrap</option>
+                      <option value="Rework">Rework</option>
+                      <option value="Recycle">Recycle</option>
+                    </select>
+                  </div>
+                  <div>
+                    <Label className="mb-1 block text-xs text-muted-foreground">Cost Impact (IDR)</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={wasteForm.costImpact}
+                      onChange={(e) => setWasteForm((f) => ({ ...f, costImpact: e.target.value }))}
+                      placeholder="0"
+                    />
+                  </div>
                 </div>
                 <div>
-                  <Label htmlFor="waste-brand">Brand</Label>
+                  <Label className="mb-1 block text-xs text-muted-foreground">Notes</Label>
                   <Input
-                    id="waste-brand"
-                    value={wasteForm.brand}
-                    onChange={(e) => setWasteForm({ ...wasteForm, brand: e.target.value })}
-                    placeholder="Brand name"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="waste-product">Product</Label>
-                  <Input
-                    id="waste-product"
-                    value={wasteForm.product}
-                    onChange={(e) => setWasteForm({ ...wasteForm, product: e.target.value })}
-                    placeholder="Product name"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="waste-qty">Qty Rejected</Label>
-                  <Input
-                    id="waste-qty"
-                    type="number"
-                    value={wasteForm.qtyRejected}
-                    onChange={(e) => setWasteForm({ ...wasteForm, qtyRejected: e.target.value })}
-                    placeholder="0"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="waste-reason">Reason</Label>
-                  <Input
-                    id="waste-reason"
-                    value={wasteForm.reason}
-                    onChange={(e) => setWasteForm({ ...wasteForm, reason: e.target.value })}
-                    placeholder="Contoh: QC fail, damage"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="waste-disposition">Disposition</Label>
-                  <select
-                    id="waste-disposition"
-                    value={wasteForm.disposition}
-                    onChange={(e) => setWasteForm({ ...wasteForm, disposition: e.target.value })}
-                    className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
-                  >
-                    <option value="Rework">Rework</option>
-                    <option value="Scrap">Scrap</option>
-                    <option value="Return">Return</option>
-                  </select>
-                </div>
-                <div>
-                  <Label htmlFor="waste-cost">Cost Impact (IDR)</Label>
-                  <Input
-                    id="waste-cost"
-                    type="number"
-                    value={wasteForm.costImpact}
-                    onChange={(e) => setWasteForm({ ...wasteForm, costImpact: e.target.value })}
-                    placeholder="0"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="waste-notes">Notes</Label>
-                  <Input
-                    id="waste-notes"
                     value={wasteForm.notes}
-                    onChange={(e) => setWasteForm({ ...wasteForm, notes: e.target.value })}
-                    placeholder="Optional notes"
+                    onChange={(e) => setWasteForm((f) => ({ ...f, notes: e.target.value }))}
+                    placeholder="Catatan tambahan"
                   />
                 </div>
-                <div className="md:col-span-2 lg:col-span-4 flex items-center gap-4">
+                <div className="flex justify-end">
                   <Button type="submit" disabled={wasteSubmitting}>
-                    <Plus className="w-4 h-4 mr-2" />
-                    {wasteSubmitting ? "Logging..." : "Log Waste Event"}
+                    <Plus className="h-4 w-4 mr-2" />
+                    {wasteSubmitting ? "Menyimpan..." : "Log Waste Event"}
                   </Button>
-                  {wasteMessage && (
-                    <span className="text-sm">{wasteMessage}</span>
-                  )}
                 </div>
               </form>
             </CardContent>
           </Card>
 
-          {/* Waste events table */}
+          {/* Waste Events Table */}
           <Card>
             <CardHeader>
               <CardTitle>Waste Events</CardTitle>
-              <CardDescription>Daftar semua waste / reject events</CardDescription>
+              <CardDescription>
+                {wasteEvents.length} kejadian | Total: {formatNumber(totalWasteQty)} unit | Cost impact: {formatCurrency(totalWasteCost)}
+              </CardDescription>
             </CardHeader>
             <CardContent>
-              {wasteLoading ? (
-                <Skeleton className="h-48 w-full" />
+              {loading ? (
+                <Skeleton className="h-40 w-full" />
               ) : wasteEvents.length === 0 ? (
-                <p className="text-muted-foreground text-center py-8">No waste events recorded</p>
+                <EmptyState title="Belum ada waste event" description="Waste event akan muncul di sini setelah dicatat." />
               ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Date</TableHead>
-                      <TableHead>Batch</TableHead>
-                      <TableHead>Brand</TableHead>
-                      <TableHead>Product</TableHead>
-                      <TableHead className="text-right">Qty Rejected</TableHead>
-                      <TableHead>Reason</TableHead>
-                      <TableHead>Disposition</TableHead>
-                      <TableHead className="text-right">Cost Impact</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {wasteEvents.map((w) => (
-                      <TableRow key={w.id}>
-                        <TableCell>{w.date}</TableCell>
-                        <TableCell className="font-mono text-sm">{w.batchCode}</TableCell>
-                        <TableCell>{w.brand}</TableCell>
-                        <TableCell>{w.product}</TableCell>
-                        <TableCell className="text-right">{formatNumber(w.qtyRejected)}</TableCell>
-                        <TableCell>{w.reason}</TableCell>
-                        <TableCell>
-                          <Badge
-                            variant={
-                              w.disposition === "Scrap"
-                                ? "destructive"
-                                : w.disposition === "Rework"
-                                ? "warning"
-                                : "secondary"
-                            }
-                          >
-                            {w.disposition}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-right">{formatCurrency(w.costImpact)}</TableCell>
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Waste ID</TableHead>
+                        <TableHead>Date</TableHead>
+                        <TableHead>Batch Code</TableHead>
+                        <TableHead>Brand</TableHead>
+                        <TableHead>Product</TableHead>
+                        <TableHead className="text-right">Qty Rejected</TableHead>
+                        <TableHead>Reason</TableHead>
+                        <TableHead>Disposition</TableHead>
+                        <TableHead className="text-right">Cost Impact</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                    </TableHeader>
+                    <TableBody>
+                      {wasteEvents.map((w) => (
+                        <TableRow key={w.wasteId}>
+                          <TableCell className="font-mono text-xs">{w.wasteId}</TableCell>
+                          <TableCell>{w.date}</TableCell>
+                          <TableCell className="font-mono text-xs">{w.batchCode}</TableCell>
+                          <TableCell>{w.brand}</TableCell>
+                          <TableCell>{w.product}</TableCell>
+                          <TableCell className="text-right">{formatNumber(w.qtyRejected)}</TableCell>
+                          <TableCell>{w.reason}</TableCell>
+                          <TableCell>
+                            <Badge variant={w.disposition === "Scrap" ? "destructive" : w.disposition === "Rework" ? "secondary" : "outline"}>
+                              {w.disposition}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-right text-red-600">{formatCurrency(w.costImpact)}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
               )}
             </CardContent>
           </Card>
         </TabsContent>
 
-        {/* ── Tab 5: Monthly Summary ── */}
-        <TabsContent value="monthly">
+        {/* ── Monthly Summary Tab ── */}
+        <TabsContent value="monthly" className="space-y-4 mt-4">
           <Card>
             <CardHeader>
               <CardTitle>Monthly Production Summary</CardTitle>
               <CardDescription>Ringkasan produksi per brand per bulan</CardDescription>
             </CardHeader>
             <CardContent>
-              {monthlyLoading ? (
-                <Skeleton className="h-64 w-full" />
+              {loading ? (
+                <Skeleton className="h-60 w-full" />
               ) : monthlySummary.length === 0 ? (
-                <p className="text-muted-foreground text-center py-8">No monthly data available</p>
+                <EmptyState title="Belum ada data bulanan" description="Data ringkasan bulanan akan muncul di sini." />
               ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Month</TableHead>
-                      <TableHead>Brand</TableHead>
-                      <TableHead className="text-right">Batches</TableHead>
-                      <TableHead className="text-right">Total Qty</TableHead>
-                      <TableHead className="text-right">Avg HPP</TableHead>
-                      <TableHead className="text-right">Total Cost</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {monthlySummary.map((entry, i) => (
-                      <TableRow key={`${entry.month}-${entry.brand}-${i}`}>
-                        <TableCell>{entry.month}</TableCell>
-                        <TableCell>{entry.brand}</TableCell>
-                        <TableCell className="text-right">{formatNumber(entry.batches)}</TableCell>
-                        <TableCell className="text-right">{formatNumber(entry.totalQty)}</TableCell>
-                        <TableCell className="text-right">{formatCurrency(entry.avgHpp)}</TableCell>
-                        <TableCell className="text-right">{formatCurrency(entry.totalCost)}</TableCell>
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Month</TableHead>
+                        <TableHead>Brand</TableHead>
+                        <TableHead className="text-right">Batches</TableHead>
+                        <TableHead className="text-right">Total Qty</TableHead>
+                        <TableHead className="text-right">Avg HPP</TableHead>
+                        <TableHead className="text-right">Total Cost</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                    </TableHeader>
+                    <TableBody>
+                      {monthlySummary.map((m, i) => (
+                        <TableRow key={`${m.month}-${m.brand}-${i}`}>
+                          <TableCell className="font-mono">{m.month}</TableCell>
+                          <TableCell>{m.brand}</TableCell>
+                          <TableCell className="text-right">{formatNumber(m.batches)}</TableCell>
+                          <TableCell className="text-right">{formatNumber(m.totalQty)}</TableCell>
+                          <TableCell className="text-right">{formatCurrency(m.avgHpp)}</TableCell>
+                          <TableCell className="text-right">{formatCurrency(m.totalCost)}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
               )}
             </CardContent>
           </Card>
