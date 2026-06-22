@@ -451,13 +451,11 @@ export default function FormulasPage() {
                 </div>
               ) : filtered.length === 0 ? (
                 <EmptyState
+                  icon="🧪"
                   title="Belum ada formula"
                   description="Klik '+ New Formula' untuk membuat formula pertama."
-                  action={
-                    <Button onClick={() => { resetBuilder(); setSelectedId(null); }}>
-                      + New Formula
-                    </Button>
-                  }
+                  actionLabel="+ New Formula"
+                  onAction={() => { resetBuilder(); setSelectedId(null); }}
                 />
               ) : (
                 <div className="overflow-x-auto">
