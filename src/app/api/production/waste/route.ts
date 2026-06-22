@@ -1,26 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { readRange, writeRange, appendRows } from "@/lib/sheets/sheets-real";
+import { readRange, appendRows } from "@/lib/sheets/sheets-real";
 
-const WASTE_HEADERS = [
-  "Waste ID", "Date", "Production ID", "Batch Code", "Brand",
-  "Product", "Qty Rejected", "Reason", "Disposition", "Cost Impact", "Notes"
-];
+// Production_Waste column indices:
+// 0: Waste ID, 1: Date, 2: Production ID, 3: Batch Code, 4: Brand,
+// 5: Product, 6: Qty Rejected, 7: Reason, 8: Disposition, 9: Cost Impact, 10: Notes
 
-async function ensureHeaders() {
-  try {
-    const existing = await readRange("Production_Waste!A1:K1");
-    if (!existing || existing.length === 0 || !existing[0]?.[0]) {
-      await writeRange("Production_Waste!A1:K1", [WASTE_HEADERS]);
-    }
-  } catch {
-    await writeRange("Production_Waste!A1:K1", [WASTE_HEADERS]);
-  }
-}
-
-// GET — list all waste events
 export async function GET() {
   try {
-    await ensureHeaders();
     const rows = await readRange("Production_Waste!A1:K1000");
     if (rows.length < 2) {
       return NextResponse.json({ wasteEvents: [] });
@@ -34,10 +20,10 @@ export async function GET() {
       batchCode: row[3] || "",
       brand: row[4] || "",
       product: row[5] || "",
-      qtyRejected: parseInt(row[6] || "0", 10) || 0,
+      qtyRejected: parseInt(row[6], 10) || 0,
       reason: row[7] || "",
       disposition: row[8] || "",
-      costImpact: parseFloat(row[9] || "0") || 0,
+      costImpact: parseFloat(row[9]) || 0,
       notes: row[10] || "",
     }));
 
@@ -50,66 +36,29 @@ export async function GET() {
   }
 }
 
-// POST — log a new waste event
 export async function POST(req: NextRequest) {
   try {
-    await ensureHeaders();
-
     const body = await req.json();
-    const {
-      productionId,
-      batchCode,
-      brand,
-      product,
-      qtyRejected,
-      reason,
-      disposition,
-      costImpact,
-      notes,
-    } = body;
+    const now = new Date().toISOString().slice(0, 10);
+    const wasteId = `W-${Date.now()}`;
 
-    if (!brand || !product || !qtyRejected) {
-      return NextResponse.json(
-        { error: "Missing required fields: brand, product, qtyRejected" },
-        { status: 400 }
-      );
-    }
-
-    const wasteId = `W-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-    const date = new Date().toISOString().slice(0, 10);
-
-    const newRow: (string | number)[] = [
+    const row = [
       wasteId,
-      date,
-      productionId || "",
-      batchCode || "",
-      brand,
-      product,
-      qtyRejected,
-      reason || "Unspecified",
-      disposition || "Scrap",
-      costImpact || 0,
-      notes || "",
+      body.date || now,
+      body.productionId || "",
+      body.batchCode || "",
+      body.brand || "",
+      body.product || "",
+      body.qtyRejected || 0,
+      body.reason || "",
+      body.disposition || "Scrap",
+      body.costImpact || 0,
+      body.notes || "",
     ];
 
-    await appendRows("ProductionWaste", [newRow]);
+    await appendRows("ProductionWaste", [row]);
 
-    return NextResponse.json({
-      success: true,
-      waste: {
-        wasteId,
-        date,
-        productionId: productionId || "",
-        batchCode: batchCode || "",
-        brand,
-        product,
-        qtyRejected,
-        reason: reason || "Unspecified",
-        disposition: disposition || "Scrap",
-        costImpact: costImpact || 0,
-        notes: notes || "",
-      },
-    });
+    return NextResponse.json({ success: true, wasteId });
   } catch (error: any) {
     return NextResponse.json(
       { error: error.message || "Failed to log waste event" },
