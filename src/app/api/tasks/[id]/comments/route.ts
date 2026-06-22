@@ -1,15 +1,14 @@
-// POST /api/tasks/[id]/comments — Add comment to task
+// POST /api/tasks/[id]/comments — Add comment to a task
 import { NextRequest, NextResponse } from "next/server";
 import {
   readTaskSheet,
   appendTaskRows,
   initializeTaskSheets,
   TASK_SHEETS,
-  SPREADSHEET_ID,
 } from "@/lib/tasks/sheets";
 import { googleWorkspaceDegradedSource, isGoogleWorkspaceAuthError } from "@/lib/api/google-workspace-error";
 
-const SOURCE = "Google Sheets: Task_Comments";
+const TASKS_SOURCE = "Google Sheets: Task_Comments";
 
 function s(row: string[], idx: number): string {
   return row[idx] || "";
@@ -38,23 +37,29 @@ export async function POST(
     const commentId = `CMT-${Date.now()}`;
     const now = today();
 
-    await appendTaskRows(TASK_SHEETS.TaskComments, [[
+    const row = [
       commentId,
       id,
       body.author || "System",
       now,
       body.comment || "",
-    ]]);
+    ];
+
+    await appendTaskRows(TASK_SHEETS.TaskComments, [row]);
 
     return NextResponse.json({
       success: true,
       commentId,
-      taskId: id,
-      message: "Comment added successfully",
+      message: "Comment added successfully.",
     }, { status: 201 });
   } catch (error) {
     if (isGoogleWorkspaceAuthError(error)) {
-      return NextResponse.json({ sourceStatus: "blocked", source: SOURCE, error: "Google Workspace OAuth perlu re-auth", details: String(error) }, { status: 503 });
+      return NextResponse.json({
+        sourceStatus: "blocked",
+        source: TASKS_SOURCE,
+        error: "Google Workspace OAuth perlu re-auth sebelum bisa menambah comment",
+        details: String(error),
+      }, { status: 503 });
     }
     return NextResponse.json({ error: "Failed to add comment", details: String(error) }, { status: 500 });
   }

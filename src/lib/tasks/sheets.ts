@@ -128,3 +128,52 @@ export async function initializeTaskSheets(): Promise<void> {
     "Comment ID", "Task ID", "Author", "Date", "Comment",
   ]);
 }
+
+function today(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function daysFromNow(days: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+export async function seedTaskData(): Promise<{ tasksAdded: number; commentsAdded: number }> {
+  await initializeTaskSheets();
+
+  // Check if Tasks sheet already has data rows
+  const existing = await readTaskSheet(TASK_SHEETS.Tasks);
+  if (existing.length > 1) {
+    const existingIds = new Set(existing.slice(1).map((r) => r[0]));
+    const comments = await readTaskSheet(TASK_SHEETS.TaskComments);
+    return {
+      tasksAdded: existingIds.size,
+      commentsAdded: Math.max(0, comments.length - 1),
+    };
+  }
+
+  const t = today();
+  const taskRows: (string | number)[][] = [
+    ["TSK-001", "Finalisasi Laporan Q2 2026", "Compile dan review laporan keuangan Q2 dari semua divisi", "Beriman", "Beriman", daysFromNow(14), "High", "Done", "Laporan Keuangan", "System", "2026-06-01", "2026-06-20", "Selesai lebih awal"],
+    ["TSK-002", "Revisi Formula Parfum Vanilla Oud", "Adjust rasio vanilla dan oud sesuai feedback panel test", "Siti Aminah", "Siti Aminah", daysFromNow(-3), "High", "In Progress", "R&D Parfum", "Beriman", "2026-06-05", "", "Iterasi ke-3 sedang diuji"],
+    ["TSK-003", "Kirim Sample ke BPOM", "Kirim 15 sample produk untuk registrasi BPOM batch Juli", "Ahmad Rizki", "Ahmad Rizki", daysFromNow(7), "High", "In Progress", "Registrasi BPOM", "Beriman", "2026-06-10", "", "Menunggu kelengkapan dokumen"],
+    ["TSK-004", "Setup Booth Event Pekan Raya", "Koordinasi venue, deksor, dan merchandise untuk PRJ 2026", "Dewi Lestari", "Dewi Lestari", daysFromNow(21), "Medium", "To Do", "Event Pekan Raya 2026", "Rudi Hartono", "2026-06-12", "", ""],
+    ["TSK-005", "Update Data Customer CRM Migrasi", "Migrasi data customer lama ke format baru CRM hub", "Rudi Hartono", "Rudi Hartono", daysFromNow(10), "Medium", "To Do", "CRM Migration", "Beriman", "2026-06-15", "", ""],
+    ["TSK-006", "Review Kontrak Supplier Packaging", "Review dan negosiasi ulang kontrak supplier packaging Q3", "Siti Aminah", "Siti Aminah", daysFromNow(5), "Medium", "Review", "Procurement", "Beriman", "2026-06-08", "", "Menunggu counter-offer dari supplier"],
+    ["TSK-007", "Buat Konten Marketing Ramadan 2027", "Desain konten dan jadwal posting campaign Ramadan", "Dewi Lestari", "Dewi Lestari", daysFromNow(30), "Low", "Done", "Marketing Campaign", "Beriman", "2026-06-01", "2026-06-18", "Konten sudah di-approve"],
+    ["TSK-008", "Audit Stok Gudang Utama", "Stok opname fisik gudang utama Jatiasih", "Ahmad Rizki", "Ahmad Rizki", daysFromNow(-5), "High", "Overdue", "Inventory Audit", "Rudi Hartono", "2026-06-03", "", "Perlu reschedule — tim sedang tidak available"],
+  ];
+
+  await appendTaskRows(TASK_SHEETS.Tasks, taskRows);
+
+  const commentRows: (string | number)[][] = [
+    ["CMT-001", "TSK-002", "Beriman", t, "Tolong update hasil panel test di sheet Formula sebelum review akhir."],
+    ["CMT-002", "TSK-002", "Siti Aminah", t, "Siap, hasil iterasi 3 sudah diupload. Tinggal review saja."],
+    ["CMT-003", "TSK-008", "Rudi Hartono", t, "Audit dijadwalkan ulang ke minggu depan. Tim sedang handling klaim supplier."],
+  ];
+
+  await appendTaskRows(TASK_SHEETS.TaskComments, commentRows);
+
+  return { tasksAdded: taskRows.length, commentsAdded: commentRows.length };
+}

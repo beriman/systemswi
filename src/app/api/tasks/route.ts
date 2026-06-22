@@ -1,16 +1,16 @@
-// GET /api/tasks — List tasks (filter: assignee, status, event, priority)
+// GET /api/tasks — List all tasks (filter: status, assignee, priority, search)
 // POST /api/tasks — Create new task
 import { NextRequest, NextResponse } from "next/server";
 import {
   readTaskSheet,
   appendTaskRows,
   initializeTaskSheets,
+  seedTaskData,
   TASK_SHEETS,
-  SPREADSHEET_ID,
 } from "@/lib/tasks/sheets";
 import { googleWorkspaceDegradedSource, isGoogleWorkspaceAuthError } from "@/lib/api/google-workspace-error";
 
-const SOURCE = "Google Sheets: Tasks";
+const TASKS_SOURCE = "Google Sheets: Tasks";
 
 function s(row: string[], idx: number): string {
   return row[idx] || "";
@@ -20,7 +20,7 @@ function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-interface TaskRow {
+interface Task {
   id: string;
   title: string;
   description: string;
@@ -36,7 +36,7 @@ interface TaskRow {
   notes: string;
 }
 
-function parseTaskRows(rows: string[][]): TaskRow[] {
+function parseTaskRows(rows: string[][]): Task[] {
   if (rows.length <= 1) return [];
   return rows.slice(1).filter((row) => s(row, 0)).map((row) => ({
     id: s(row, 0),
@@ -46,7 +46,7 @@ function parseTaskRows(rows: string[][]): TaskRow[] {
     picName: s(row, 4),
     dueDate: s(row, 5),
     priority: s(row, 6),
-    status: s(row, 7) || "Todo",
+    status: s(row, 7),
     relatedEvent: s(row, 8),
     createdBy: s(row, 9),
     createdDate: s(row, 10),
@@ -55,48 +55,74 @@ function parseTaskRows(rows: string[][]): TaskRow[] {
   }));
 }
 
-function taskToRow(t: TaskRow): (string | number)[] {
-  return [
-    t.id, t.title, t.description, t.assignee, t.picName,
-    t.dueDate, t.priority, t.status, t.relatedEvent,
-    t.createdBy, t.createdDate, t.completedDate, t.notes,
-  ];
-}
-
 export async function GET(req: NextRequest) {
   try {
     await initializeTaskSheets();
+
     const url = new URL(req.url);
-    const assignee = url.searchParams.get("assignee");
-    const status = url.searchParams.get("status");
-    const event = url.searchParams.get("event");
-    const priority = url.searchParams.get("priority");
+    const statusFilter = url.searchParams.get("status");
+    const assigneeFilter = url.searchParams.get("assignee");
+    const priorityFilter = url.searchParams.get("priority");
+    const search = url.searchParams.get("search");
+    const seed = url.searchParams.get("seed");
+
+    // Seed endpoint: /api/tasks?seed=1
+    if (seed === "1") {
+      const result = await seedTaskData();
+      return NextResponse.json({ success: true, ...result });
+    }
 
     const rows = await readTaskSheet(TASK_SHEETS.Tasks);
     let tasks = parseTaskRows(rows);
 
-    if (assignee) tasks = tasks.filter((t) => t.assignee.toLowerCase().includes(assignee.toLowerCase()));
-    if (status) tasks = tasks.filter((t) => t.status.toLowerCase() === status.toLowerCase());
-    if (event) tasks = tasks.filter((t) => t.relatedEvent.toLowerCase().includes(event.toLowerCase()));
-    if (priority) tasks = tasks.filter((t) => t.priority.toLowerCase() === priority.toLowerCase());
+    if (statusFilter) {
+      tasks = tasks.filter((t) => t.status.toLowerCase() === statusFilter.toLowerCase());
+    }
+    if (assigneeFilter) {
+      tasks = tasks.filter((t) => t.assignee.toLowerCase().includes(assigneeFilter.toLowerCase()));
+    }
+    if (priorityFilter) {
+      tasks = tasks.filter((t) => t.priority.toLowerCase() === priorityFilter.toLowerCase());
+    }
+    if (search) {
+      const q = search.toLowerCase();
+      tasks = tasks.filter(
+        (t) =>
+          t.title.toLowerCase().includes(q) ||
+          t.description.toLowerCase().includes(q) ||
+          t.assignee.toLowerCase().includes(q) ||
+          t.relatedEvent.toLowerCase().includes(q)
+      );
+    }
 
-    // Stats
-    const todoCount = tasks.filter((t) => t.status === "Todo").length;
-    const inProgressCount = tasks.filter((t) => t.status === "In Progress").length;
-    const reviewCount = tasks.filter((t) => t.status === "Review").length;
-    const doneCount = tasks.filter((t) => t.status === "Done").length;
-    const overdueCount = tasks.filter((t) => t.dueDate && t.dueDate < today() && t.status !== "Done" && t.status !== "Cancelled").length;
+    // Dashboard stats
+    const byStatus: Record<string, number> = {};
+    for (const t of tasks) {
+      byStatus[t.status] = (byStatus[t.status] || 0) + 1;
+    }
+    const overdueTasks = tasks.filter(
+      (t) => t.dueDate && t.dueDate < today() && t.status !== "Done"
+    );
+    const todayTasks = tasks.filter((t) => t.dueDate === today());
 
     return NextResponse.json({
-      source: SOURCE,
+      source: TASKS_SOURCE,
       sourceStatus: "live",
-      spreadsheetId: SPREADSHEET_ID,
       tasks,
-      stats: { total: tasks.length, todoCount, inProgressCount, reviewCount, doneCount, overdueCount },
+      stats: {
+        total: tasks.length,
+        byStatus,
+        overdueCount: overdueTasks.length,
+        todayCount: todayTasks.length,
+      },
     });
   } catch (error) {
     if (isGoogleWorkspaceAuthError(error)) {
-      return NextResponse.json({ ...googleWorkspaceDegradedSource(SOURCE, error), tasks: [], stats: { total: 0, todoCount: 0, inProgressCount: 0, reviewCount: 0, doneCount: 0, overdueCount: 0 } });
+      return NextResponse.json({
+        ...googleWorkspaceDegradedSource(TASKS_SOURCE, error),
+        tasks: [],
+        stats: { total: 0, byStatus: {}, overdueCount: 0, todayCount: 0 },
+      });
     }
     return NextResponse.json({ error: "Failed to fetch tasks", details: String(error) }, { status: 500 });
   }
@@ -105,37 +131,50 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     await initializeTaskSheets();
+
     const body = await req.json();
     const now = today();
     const taskId = `TSK-${Date.now()}`;
 
-    const newTask: TaskRow = {
-      id: taskId,
-      title: body.title || "Untitled Task",
-      description: body.description || "",
-      assignee: body.assignee || "",
-      picName: body.picName || body.assignee || "",
-      dueDate: body.dueDate || "",
-      priority: body.priority || "Medium",
-      status: "Todo",
-      relatedEvent: body.relatedEvent || "",
-      createdBy: body.createdBy || "System",
-      createdDate: now,
-      completedDate: "",
-      notes: body.notes || "",
-    };
+    const validStatuses = ["To Do", "In Progress", "Review", "Done", "Overdue"];
+    const validPriorities = ["High", "Medium", "Low"];
 
-    await appendTaskRows(TASK_SHEETS.Tasks, [taskToRow(newTask)]);
+    const status = body.status || "To Do";
+    const finalStatus = validStatuses.includes(status) ? status : "To Do";
+    const priority = body.priority || "Medium";
+    const finalPriority = validPriorities.includes(priority) ? priority : "Medium";
+
+    const row = [
+      taskId,
+      body.title || "Untitled Task",
+      body.description || "",
+      body.assignee || "",
+      body.picName || body.assignee || "",
+      body.dueDate || "",
+      finalPriority,
+      finalStatus,
+      body.relatedEvent || "",
+      body.createdBy || "System",
+      now,
+      "",
+      body.notes || "",
+    ];
+
+    await appendTaskRows(TASK_SHEETS.Tasks, [row]);
 
     return NextResponse.json({
       success: true,
       taskId,
-      message: "Task created successfully",
-      task: newTask,
+      message: "Task created successfully.",
     }, { status: 201 });
   } catch (error) {
     if (isGoogleWorkspaceAuthError(error)) {
-      return NextResponse.json({ sourceStatus: "blocked", source: SOURCE, error: "Google Workspace OAuth perlu re-auth", details: String(error) }, { status: 503 });
+      return NextResponse.json({
+        sourceStatus: "blocked",
+        source: TASKS_SOURCE,
+        error: "Google Workspace OAuth perlu re-auth sebelum bisa membuat task",
+        details: String(error),
+      }, { status: 503 });
     }
     return NextResponse.json({ error: "Failed to create task", details: String(error) }, { status: 500 });
   }

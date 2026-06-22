@@ -60,8 +60,18 @@ export async function POST(req: NextRequest) {
     if (hasData && force) {
       try {
         // Clear A1:R500 (must match the API read range so no stale rows remain)
-        const emptyRows = Array(500).fill(null).map(() => Array(18).fill(""));
+        // Use " " (single space) instead of empty string to force Google Sheets to clear cells
+        const emptyRows = Array.from({ length: 500 }, () => Array(18).fill(" "));
         await writeRange("Budget_vs_Actual!A1:R500", emptyRows);
+        // Also clear via raw API to ensure cells are truly cleared
+        const { getAuth } = await import("@/lib/sheets/sheets-real");
+        const { google } = await import("googleapis");
+        const auth = getAuth();
+        const sheets = google.sheets({ version: "v4", auth });
+        await sheets.spreadsheets.values.clear({
+          spreadsheetId: "1lQ_FX6v-aX0XNwkRO6TyYLU1NGq6lAMFvK88S09KZsA",
+          range: "Budget_vs_Actual!A1:R500",
+        });
       } catch (clearErr) {
         console.error("Clear failed, proceeding with overwrite:", clearErr);
       }
@@ -103,7 +113,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Write headers + data in a single writeRange call (full range A1:R31 to match API reads)
+    // Write headers + data in a single writeRange call (full range A1:R500 to match API reads)
     const headers = [
       "ID", "Category", "Month", "Year", "Budget", "Actual",
       "Remaining", "Event", "Notes", "Created", "Updated",
@@ -118,7 +128,12 @@ export async function POST(req: NextRequest) {
       return padded;
     });
 
-    await writeRange("Budget_vs_Actual!A1:R31", paddedRows);
+    // Pad to 500 rows to fully overwrite the API read range
+    while (paddedRows.length < 500) {
+      paddedRows.push(Array(18).fill(""));
+    }
+
+    await writeRange("Budget_vs_Actual!A1:R500", paddedRows);
 
     return NextResponse.json({
       success: true,
