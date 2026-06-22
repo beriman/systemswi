@@ -80,8 +80,6 @@ export const SHEETS: Record<string, { range: string; description: string }> = {
 
   // ── Aliases used by API routes (match appendRows/updateRow sheetName args) ──
   ReorderAlerts:     { range: "Reorder_Alerts!A1:L1000",          description: "Reorder alerts — alias for Reorder_Alerts" },
-  PurchaseOrders:    { range: "Purchase_Orders!A1:N1000",         description: "Purchase orders — alias for Purchase_Orders" },
-  GoodsReceipts:     { range: "Goods_Receipts!A1:J1000",          description: "Goods receipts — alias for Goods_Receipts" },
 };
 
 // ── Auth ──────────────────────────────────────────────────────────
