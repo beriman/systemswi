@@ -1,55 +1,99 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState, useCallback } from "react";
+import {
+  Package, AlertTriangle, ShoppingCart, ClipboardList, RefreshCw,
+  Plus, CheckCircle, XCircle, Truck, TrendingDown, DollarSign,
+  ArrowDownCircle, Eye, Send
+} from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-// Using native select to avoid @radix-ui/react-select dependency
+import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  AlertTriangle, Package, ShoppingCart, ClipboardCheck, RefreshCw,
-  Plus, CheckCircle, XCircle, Clock, Eye, Truck, DollarSign,
-} from "lucide-react";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Skeleton } from "@/components/ui/skeleton";
+import { X } from "lucide-react";
 
 /* ── Types ── */
 
 type ReorderAlert = {
-  alertId: string; date: string; itemId: string; itemName: string;
-  currentQty: number; minimumQty: number; reorderQty: number;
-  supplier: string; unitCost: number; totalCost: number;
+  alertId: string;
+  date: string;
+  itemId: string;
+  itemName: string;
+  currentQty: number;
+  minimumQty: number;
+  reorderQty: number;
+  supplier: string;
+  unitCost: number;
+  totalCost: number;
   status: "New" | "PO Created" | "Received" | "Cancelled";
   poNumber: string;
+  rowNumber: number;
 };
 
 type PurchaseOrder = {
-  id: string; date: string; supplierId: string; supplierName: string;
-  itemId: string; itemName: string; quantity: number; unit: string;
-  unitCost: number; total: number;
+  id: string;
+  date: string;
+  supplierId: string;
+  supplierName: string;
+  itemId: string;
+  itemName: string;
+  quantity: number;
+  unit: string;
+  unitCost: number;
+  total: number;
   status: "draft" | "ordered" | "partial" | "received" | "cancelled";
-  expectedDate: string; notes: string;
+  expectedDate: string;
+  proofUrl: string;
+  notes: string;
+  rowNumber: number;
 };
 
 type GoodsReceipt = {
-  receiptId: string; date: string; poNumber: string;
-  itemId: string; itemName: string; qtyReceived: number;
-  unitCost: number; totalCost: number;
-  condition: "Good" | "Damaged" | "Partial"; notes: string;
+  receiptId: string;
+  date: string;
+  poNumber: string;
+  itemId: string;
+  itemName: string;
+  qtyReceived: number;
+  unitCost: number;
+  totalCost: number;
+  condition: "Good" | "Damaged" | "Partial";
+  notes: string;
+  rowNumber: number;
 };
 
 type InventoryItem = {
-  id: string; sku: string; name: string; category: string;
-  unit: string; qty: number; minimumQty: number; reorderQty: number;
-  unitCost: number; supplier: string; location: string;
-  status: "ok" | "low" | "critical" | "empty";
+  id: string;
+  sku: string;
+  name: string;
+  category: string;
+  unit: string;
+  qty: number;
+  minimumQty: number;
+  reorderQty: number;
+  unitCost: number;
+  supplier: string;
+  location: string;
+  status: string;
+  lastMovementAt: string;
+  notes: string;
+  rowNumber: number;
 };
 
 type ReorderSummary = {
-  totalAlerts: number; newAlerts: number; poCreated: number;
-  totalItemsBelowMin: number; totalReorderValue: number;
-  pendingPOs: number; completedReceipts: number;
+  totalAlerts: number;
+  newAlerts: number;
+  poCreated: number;
+  totalItemsBelowMin: number;
+  totalReorderValue: number;
+  pendingPOs: number;
+  completedReceipts: number;
 };
 
 type ReorderData = {
@@ -69,108 +113,203 @@ type PendingPOData = {
 /* ── Helpers ── */
 
 const rupiah = (value: number) =>
-  new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(value || 0);
+  new Intl.NumberFormat("id-ID", {
+    style: "currency",
+    currency: "IDR",
+    maximumFractionDigits: 0,
+  }).format(value || 0);
 
 const fmtNum = (value: number) =>
   new Intl.NumberFormat("id-ID").format(value || 0);
 
-const statusBadge = (status: string) => {
-  const map: Record<string, { variant: string; icon: React.ReactNode }> = {
-    "New": { variant: "warning", icon: <Clock className="w-3 h-3" /> },
-    "PO Created": { variant: "default", icon: <ShoppingCart className="w-3 h-3" /> },
-    "Received": { variant: "success", icon: <CheckCircle className="w-3 h-3" /> },
-    "Cancelled": { variant: "destructive", icon: <XCircle className="w-3 h-3" /> },
-    "draft": { variant: "secondary", icon: <Clock className="w-3 h-3" /> },
-    "ordered": { variant: "default", icon: <ShoppingCart className="w-3 h-3" /> },
-    "partial": { variant: "warning", icon: <Package className="w-3 h-3" /> },
-    "received": { variant: "success", icon: <CheckCircle className="w-3 h-3" /> },
-    "ok": { variant: "success", icon: <CheckCircle className="w-3 h-3" /> },
-    "low": { variant: "warning", icon: <AlertTriangle className="w-3 h-3" /> },
-    "critical": { variant: "destructive", icon: <XCircle className="w-3 h-3" /> },
-    "empty": { variant: "destructive", icon: <XCircle className="w-3 h-3" /> },
-  };
-  const cfg = map[status] || { variant: "outline", icon: null };
+const alertStatusClass: Record<string, string> = {
+  New: "bg-blue-100 text-blue-700",
+  "PO Created": "bg-purple-100 text-purple-700",
+  Received: "bg-green-100 text-green-700",
+  Cancelled: "bg-gray-100 text-gray-700",
+};
+
+const poStatusClass: Record<string, string> = {
+  draft: "bg-gray-100 text-gray-700",
+  ordered: "bg-blue-100 text-blue-700",
+  partial: "bg-yellow-100 text-yellow-700",
+  received: "bg-green-100 text-green-700",
+  cancelled: "bg-red-100 text-red-700",
+};
+
+const stockStatusClass: Record<string, string> = {
+  ok: "bg-green-100 text-green-700",
+  low: "bg-yellow-100 text-yellow-700",
+  critical: "bg-orange-100 text-orange-700",
+  empty: "bg-red-100 text-red-700",
+};
+
+const conditionClass: Record<string, string> = {
+  Good: "bg-green-100 text-green-700",
+  Damaged: "bg-red-100 text-red-700",
+  Partial: "bg-yellow-100 text-yellow-700",
+};
+
+function stockStatusBadge(status: string) {
   return (
-    <Badge variant={cfg.variant as any} className="gap-1">
-      {cfg.icon} {status}
+    <Badge className={stockStatusClass[status] || "bg-gray-100 text-gray-700"}>
+      {status}
     </Badge>
   );
-};
+}
 
-const stockColor = (status: string) => {
-  if (status === "ok") return "bg-green-50";
-  if (status === "low") return "bg-yellow-50";
-  if (status === "critical" || status === "empty") return "bg-red-50";
-  return "";
-};
+function alertStatusBadge(status: string) {
+  return (
+    <Badge className={alertStatusClass[status] || "bg-gray-100 text-gray-700"}>
+      {status}
+    </Badge>
+  );
+}
 
-/* ── Main Page ── */
+function poStatusBadge(status: string) {
+  return (
+    <Badge className={poStatusClass[status] || "bg-gray-100 text-gray-700"}>
+      {status}
+    </Badge>
+  );
+}
+
+function conditionBadge(condition: string) {
+  return (
+    <Badge className={conditionClass[condition] || "bg-gray-100 text-gray-700"}>
+      {condition}
+    </Badge>
+  );
+}
+
+function today() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+/* ── Main Component ── */
 
 export default function ReorderPage() {
   const [reorderData, setReorderData] = useState<ReorderData | null>(null);
-  const [pendingPOData, setPendingPOData] = useState<PendingPOData | null>(null);
+  const [pendingPOs, setPendingPOs] = useState<PendingPOData | null>(null);
   const [allPOs, setAllPOs] = useState<PurchaseOrder[]>([]);
   const [receipts, setReceipts] = useState<GoodsReceipt[]>([]);
-  const [allInventory, setAllInventory] = useState<InventoryItem[]>([]);
+  const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [actionLoading, setActionLoading] = useState(false);
-  const [seedResult, setSeedResult] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState("");
+  const [messageType, setMessageType] = useState<"success" | "error" | "info">("info");
+  const [activeTab, setActiveTab] = useState("dashboard");
 
-  // Receipt form
-  const [receiptForm, setReceiptForm] = useState({
-    poNumber: "",
+  // Modals
+  const [showGeneratePO, setShowGeneratePO] = useState(false);
+  const [selectedAlert, setSelectedAlert] = useState<ReorderAlert | null>(null);
+  const [showReceiveItems, setShowReceiveItems] = useState(false);
+  const [selectedPO, setSelectedPO] = useState<PurchaseOrder | null>(null);
+  const [showCreatePO, setShowCreatePO] = useState(false);
+
+  // Forms
+  const [poForm, setPoForm] = useState({
+    supplierId: "",
+    supplierName: "",
     itemId: "",
     itemName: "",
-    qtyReceived: "",
-    unitCost: "",
-    condition: "Good",
+    quantity: 0,
+    unit: "unit",
+    unitCost: 0,
+    expectedDate: today(),
     notes: "",
   });
 
-  // PO form
-  const [poForm, setPoForm] = useState({
-    supplierId: "",
+  const [receiveForm, setReceiveForm] = useState({
+    poNumber: "",
     itemId: "",
     itemName: "",
-    quantity: "",
-    unitCost: "",
-    unit: "unit",
+    qtyReceived: 0,
+    unitCost: 0,
+    condition: "Good" as "Good" | "Damaged" | "Partial",
+    notes: "",
   });
 
-  const fetchData = useCallback(async () => {
-    setLoading(true);
-    setError("");
+  /* ── Data Loading ── */
+
+  async function loadReorderData() {
     try {
-      const [reorderRes, pendingRes, invRes, poRes, receiptRes] = await Promise.all([
-        fetch("/api/reorder"),
-        fetch("/api/reorder/pending-po"),
-        fetch("/api/inventory"),
-        fetch("/api/procurement"),
-        fetch("/api/reorder/receipt").catch(() => null),
-      ]);
-
-      const reorderJson = await reorderRes.json();
-      const pendingJson = await pendingRes.json();
-      const invJson = await invRes.json();
-      const poJson = await poRes.json();
-
-      setReorderData(reorderJson);
-      setPendingPOData(pendingJson);
-      setAllInventory(invJson.items || []);
-      setAllPOs(poJson.purchaseOrders || []);
-      setReceipts(poJson.receipts || []);
-    } catch (e: any) {
-      setError(e.message || "Gagal memuat data");
-    } finally {
-      setLoading(false);
+      const res = await fetch("/api/reorder", { cache: "no-store" });
+      const json = await res.json();
+      if (res.ok || json.alerts) {
+        setReorderData({
+          source: json.source || "",
+          alerts: json.alerts || [],
+          summary: json.summary || {
+            totalAlerts: 0, newAlerts: 0, poCreated: 0,
+            totalItemsBelowMin: 0, totalReorderValue: 0,
+            pendingPOs: 0, completedReceipts: 0,
+          },
+          itemsBelowMin: json.itemsBelowMin || [],
+        });
+      }
+    } catch (error) {
+      console.error("Failed to load reorder data:", error);
     }
+  }
+
+  async function loadPendingPOs() {
+    try {
+      const res = await fetch("/api/reorder/pending-po", { cache: "no-store" });
+      const json = await res.json();
+      if (res.ok || json.pendingPOs) {
+        setPendingPOs(json);
+        setAllPOs(json.pendingPOs || []);
+      }
+    } catch (error) {
+      console.error("Failed to load pending POs:", error);
+    }
+  }
+
+  async function loadReceipts() {
+    try {
+      const res = await fetch("/api/reorder/receipt", { cache: "no-store" });
+      if (res.ok) {
+        const json = await res.json();
+        setReceipts(json.receipts || []);
+      }
+    } catch {
+      // GET may not be supported, that's ok
+    }
+  }
+
+  async function loadInventory() {
+    try {
+      const res = await fetch("/api/inventory", { cache: "no-store" });
+      if (res.ok) {
+        const json = await res.json();
+        setInventory(json.items || []);
+      }
+    } catch (error) {
+      console.error("Failed to load inventory:", error);
+    }
+  }
+
+  async function loadAll() {
+    setLoading(true);
+    await Promise.all([
+      loadReorderData(),
+      loadPendingPOs(),
+      loadReceipts(),
+      loadInventory(),
+    ]);
+    setLoading(false);
+  }
+
+  useEffect(() => {
+    loadAll().catch(console.error);
   }, []);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  /* ── Actions ── */
 
-  const handleGenerateAlerts = async () => {
-    setActionLoading(true);
+  async function handleGenerateAlerts() {
+    setSaving(true);
+    setMessage("");
     try {
       const res = await fetch("/api/reorder", {
         method: "POST",
@@ -178,18 +317,21 @@ export default function ReorderPage() {
         body: JSON.stringify({ action: "generate-alerts" }),
       });
       const json = await res.json();
-      if (json.success) {
-        await fetchData();
-      }
-    } catch (e: any) {
-      setError(e.message);
+      if (!res.ok) throw new Error(json.error || "Gagal generate alerts");
+      setMessageType("success");
+      setMessage(`✅ ${json.alertsGenerated} alert baru di-generate dari Inventory_Master`);
+      await loadReorderData();
+    } catch (error) {
+      setMessageType("error");
+      setMessage(`❌ ${String(error)}`);
     } finally {
-      setActionLoading(false);
+      setSaving(false);
     }
-  };
+  }
 
-  const handleGeneratePO = async (alertId: string) => {
-    setActionLoading(true);
+  async function handleGeneratePO(alertId: string) {
+    setSaving(true);
+    setMessage("");
     try {
       const res = await fetch("/api/reorder", {
         method: "POST",
@@ -197,180 +339,593 @@ export default function ReorderPage() {
         body: JSON.stringify({ action: "generate-po", alertId }),
       });
       const json = await res.json();
-      if (json.success) {
-        await fetchData();
-      }
-    } catch (e: any) {
-      setError(e.message);
+      if (!res.ok) throw new Error(json.error || "Gagal generate PO");
+      setMessageType("success");
+      setMessage(`✅ PO ${json.po.id} dibuat untuk ${json.po.itemName} — ${rupiah(json.po.total)}`);
+      setShowGeneratePO(false);
+      setSelectedAlert(null);
+      await Promise.all([loadReorderData(), loadPendingPOs()]);
+    } catch (error) {
+      setMessageType("error");
+      setMessage(`❌ ${String(error)}`);
     } finally {
-      setActionLoading(false);
+      setSaving(false);
     }
-  };
+  }
 
-  const handleConfirmReceipt = async () => {
-    setActionLoading(true);
+  async function handleCreatePO(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setSaving(true);
+    setMessage("");
+    try {
+      const res = await fetch("/api/procurement", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          supplierId: poForm.supplierId,
+          supplierName: poForm.supplierName,
+          itemId: poForm.itemId,
+          itemName: poForm.itemName,
+          quantity: poForm.quantity,
+          unit: poForm.unit,
+          unitCost: poForm.unitCost,
+          total: poForm.quantity * poForm.unitCost,
+          expectedDate: poForm.expectedDate,
+          notes: poForm.notes,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Gagal membuat PO");
+      setMessageType("success");
+      setMessage(`✅ PO ${json.po?.id || "baru"} berhasil dibuat`);
+      setShowCreatePO(false);
+      setPoForm({
+        supplierId: "", supplierName: "", itemId: "", itemName: "",
+        quantity: 0, unit: "unit", unitCost: 0, expectedDate: today(), notes: "",
+      });
+      await loadPendingPOs();
+      setActiveTab("purchase-orders");
+    } catch (error) {
+      setMessageType("error");
+      setMessage(`❌ ${String(error)}`);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleReceiveItems(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setSaving(true);
+    setMessage("");
     try {
       const res = await fetch("/api/reorder/receipt", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          ...receiptForm,
-          qtyReceived: Number(receiptForm.qtyReceived),
-          unitCost: Number(receiptForm.unitCost) || 0,
+          poNumber: receiveForm.poNumber,
+          itemId: receiveForm.itemId,
+          itemName: receiveForm.itemName,
+          qtyReceived: receiveForm.qtyReceived,
+          unitCost: receiveForm.unitCost,
+          condition: receiveForm.condition,
+          notes: receiveForm.notes,
         }),
       });
       const json = await res.json();
-      if (json.success) {
-        setReceiptForm({ poNumber: "", itemId: "", itemName: "", qtyReceived: "", unitCost: "", condition: "Good", notes: "" });
-        await fetchData();
-      }
-    } catch (e: any) {
-      setError(e.message);
+      if (!res.ok) throw new Error(json.error || "Gagal konfirmasi receipt");
+      setMessageType("success");
+      setMessage(
+        `✅ Receipt ${json.receipt.receiptId} tercatat — ${receiveForm.qtyReceived} ${receiveForm.itemName} (${receiveForm.condition})${json.inventoryUpdated ? ", inventory diupdate" : ""}`
+      );
+      setShowReceiveItems(false);
+      setSelectedPO(null);
+      await Promise.all([loadReorderData(), loadPendingPOs(), loadReceipts(), loadInventory()]);
+    } catch (error) {
+      setMessageType("error");
+      setMessage(`❌ ${String(error)}`);
     } finally {
-      setActionLoading(false);
+      setSaving(false);
     }
-  };
+  }
 
-  const handleSeed = async () => {
-    setActionLoading(true);
-    setSeedResult("");
+  async function handleSeed() {
+    setSaving(true);
+    setMessage("");
     try {
       const res = await fetch("/api/reorder/seed", { method: "POST" });
       const json = await res.json();
-      setSeedResult(json.success ? `✅ ${json.message} — ${JSON.stringify(json.counts)}` : `❌ ${json.error}`);
-      if (json.success) await fetchData();
-    } catch (e: any) {
-      setSeedResult(`❌ ${e.message}`);
+      if (!res.ok) throw new Error(json.error || "Gagal seed data");
+      setMessageType("success");
+      setMessage(`✅ Seed berhasil: ${json.details?.join(", ") || "data created"}`);
+      await loadAll();
+    } catch (error) {
+      setMessageType("error");
+      setMessage(`❌ ${String(error)}`);
     } finally {
-      setActionLoading(false);
+      setSaving(false);
     }
-  };
-
-  if (loading) {
-    return (
-      <div className="p-6 space-y-4">
-        <div className="h-8 w-64 bg-muted animate-pulse rounded" />
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          {[1, 2, 3, 4].map((i) => (
-            <div key={i} className="h-24 bg-muted animate-pulse rounded-lg" />
-          ))}
-        </div>
-        <div className="h-64 bg-muted animate-pulse rounded-lg" />
-      </div>
-    );
   }
+
+  /* ── Derived Data ── */
 
   const summary = reorderData?.summary;
   const alerts = reorderData?.alerts || [];
-  const pendingPOs = pendingPOData?.pendingPOs || [];
-  const itemsBelowMin = allInventory.filter((i) => i.status !== "ok");
+  const itemsBelowMin = reorderData?.itemsBelowMin || [];
+
+  const criticalItems = useMemo(
+    () => inventory.filter((i) => i.qty <= i.minimumQty * 0.5 && i.minimumQty > 0),
+    [inventory]
+  );
+  const lowItems = useMemo(
+    () => inventory.filter(
+      (i) => i.qty > i.minimumQty * 0.5 && i.qty <= i.minimumQty && i.minimumQty > 0
+    ),
+    [inventory]
+  );
+  const okItems = useMemo(
+    () => inventory.filter((i) => i.qty > i.minimumQty),
+    [inventory]
+  );
+
+  /* ── Render ── */
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="space-y-6">
+      {/* Generate PO Modal */}
+      {showGeneratePO && selectedAlert && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <Card className="w-full max-w-md">
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle>Generate PO</CardTitle>
+                <CardDescription>
+                  Buat Purchase Order dari alert {selectedAlert.alertId}
+                </CardDescription>
+              </div>
+              <Button variant="ghost" size="sm" onClick={() => { setShowGeneratePO(false); setSelectedAlert(null); }}>
+                <X className="h-4 w-4" />
+              </Button>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3 mb-4">
+                <div className="text-sm">
+                  <span className="text-muted-foreground">Item:</span>{" "}
+                  <span className="font-medium">{selectedAlert.itemName}</span>
+                </div>
+                <div className="text-sm">
+                  <span className="text-muted-foreground">Current Qty:</span>{" "}
+                  <span className="font-medium">{fmtNum(selectedAlert.currentQty)}</span>
+                  {" · "}
+                  <span className="text-muted-foreground">Min:</span>{" "}
+                  <span className="font-medium">{fmtNum(selectedAlert.minimumQty)}</span>
+                </div>
+                <div className="text-sm">
+                  <span className="text-muted-foreground">Reorder Qty:</span>{" "}
+                  <span className="font-medium">{fmtNum(selectedAlert.reorderQty)}</span>
+                </div>
+                <div className="text-sm">
+                  <span className="text-muted-foreground">Supplier:</span>{" "}
+                  <span className="font-medium">{selectedAlert.supplier}</span>
+                </div>
+                <div className="text-sm">
+                  <span className="text-muted-foreground">Est. Total:</span>{" "}
+                  <span className="font-bold text-green-700">{rupiah(selectedAlert.reorderQty * selectedAlert.unitCost)}</span>
+                </div>
+              </div>
+              <div className="flex gap-2 justify-end">
+                <Button variant="outline" onClick={() => { setShowGeneratePO(false); setSelectedAlert(null); }}>
+                  Batal
+                </Button>
+                <Button
+                  onClick={() => handleGeneratePO(selectedAlert.alertId)}
+                  disabled={saving}
+                >
+                  {saving ? "Membuat PO..." : "📋 Generate PO"}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Receive Items Modal */}
+      {showReceiveItems && selectedPO && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <Card className="w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle>Terima Barang</CardTitle>
+                <CardDescription>
+                  Konfirmasi penerimaan barang untuk PO {selectedPO.id}
+                </CardDescription>
+              </div>
+              <Button variant="ghost" size="sm" onClick={() => { setShowReceiveItems(false); setSelectedPO(null); }}>
+                <X className="h-4 w-4" />
+              </Button>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={handleReceiveItems} className="space-y-4">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <Label className="mb-1 block text-xs text-muted-foreground">PO Number</Label>
+                    <Input value={selectedPO.id} disabled />
+                  </div>
+                  <div>
+                    <Label className="mb-1 block text-xs text-muted-foreground">Item</Label>
+                    <Input value={selectedPO.itemName} disabled />
+                  </div>
+                </div>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <Label className="mb-1 block text-xs text-muted-foreground">Qty Diterima *</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      max={selectedPO.quantity}
+                      value={receiveForm.qtyReceived || ""}
+                      onChange={(e) => setReceiveForm((f) => ({ ...f, qtyReceived: Number(e.target.value) }))}
+                      required
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Order: {fmtNum(selectedPO.quantity)} {selectedPO.unit}
+                    </p>
+                  </div>
+                  <div>
+                    <Label className="mb-1 block text-xs text-muted-foreground">Kondisi *</Label>
+                    <select
+                      value={receiveForm.condition}
+                      onChange={(e) => setReceiveForm((f) => ({ ...f, condition: e.target.value as "Good" | "Damaged" | "Partial" }))}
+                      className="h-9 w-full rounded-md border bg-background px-3 text-sm"
+                    >
+                      <option value="Good">✅ Good</option>
+                      <option value="Partial">⚠️ Partial</option>
+                      <option value="Damaged">❌ Damaged</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <Label className="mb-1 block text-xs text-muted-foreground">Unit Cost (Rp)</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={receiveForm.unitCost || selectedPO.unitCost}
+                      onChange={(e) => setReceiveForm((f) => ({ ...f, unitCost: Number(e.target.value) }))}
+                    />
+                  </div>
+                  <div>
+                    <Label className="mb-1 block text-xs text-muted-foreground">Total</Label>
+                    <Input value={rupiah((receiveForm.qtyReceived || 0) * (receiveForm.unitCost || selectedPO.unitCost))} disabled />
+                  </div>
+                </div>
+                <div>
+                  <Label className="mb-1 block text-xs text-muted-foreground">Catatan</Label>
+                  <Textarea
+                    rows={2}
+                    value={receiveForm.notes}
+                    onChange={(e) => setReceiveForm((f) => ({ ...f, notes: e.target.value }))}
+                    placeholder="Kondisi barang, dll..."
+                  />
+                </div>
+                <div className="flex gap-2 justify-end">
+                  <Button type="button" variant="outline" onClick={() => { setShowReceiveItems(false); setSelectedPO(null); }}>
+                    Batal
+                  </Button>
+                  <Button type="submit" disabled={saving}>
+                    {saving ? "Menyimpan..." : "📦 Konfirmasi Receipt"}
+                  </Button>
+                </div>
+              </form>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Create PO Modal */}
+      {showCreatePO && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <Card className="w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle>Buat PO Baru</CardTitle>
+                <CardDescription>Manual purchase order</CardDescription>
+              </div>
+              <Button variant="ghost" size="sm" onClick={() => setShowCreatePO(false)}>
+                <X className="h-4 w-4" />
+              </Button>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={handleCreatePO} className="space-y-4">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <Label className="mb-1 block text-xs text-muted-foreground">Supplier ID</Label>
+                    <Input
+                      value={poForm.supplierId}
+                      onChange={(e) => setPoForm((f) => ({ ...f, supplierId: e.target.value }))}
+                      placeholder="SUP-001"
+                    />
+                  </div>
+                  <div>
+                    <Label className="mb-1 block text-xs text-muted-foreground">Supplier Name</Label>
+                    <Input
+                      value={poForm.supplierName}
+                      onChange={(e) => setPoForm((f) => ({ ...f, supplierName: e.target.value }))}
+                      placeholder="PT ..."
+                    />
+                  </div>
+                </div>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <Label className="mb-1 block text-xs text-muted-foreground">Item ID</Label>
+                    <Input
+                      value={poForm.itemId}
+                      onChange={(e) => setPoForm((f) => ({ ...f, itemId: e.target.value }))}
+                      placeholder="RM-001"
+                    />
+                  </div>
+                  <div>
+                    <Label className="mb-1 block text-xs text-muted-foreground">Item Name</Label>
+                    <Input
+                      value={poForm.itemName}
+                      onChange={(e) => setPoForm((f) => ({ ...f, itemName: e.target.value }))}
+                      placeholder="Alcohol 96%"
+                    />
+                  </div>
+                </div>
+                <div className="grid gap-4 md:grid-cols-3">
+                  <div>
+                    <Label className="mb-1 block text-xs text-muted-foreground">Quantity</Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      value={poForm.quantity || ""}
+                      onChange={(e) => setPoForm((f) => ({ ...f, quantity: Number(e.target.value) }))}
+                    />
+                  </div>
+                  <div>
+                    <Label className="mb-1 block text-xs text-muted-foreground">Unit</Label>
+                    <Input
+                      value={poForm.unit}
+                      onChange={(e) => setPoForm((f) => ({ ...f, unit: e.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <Label className="mb-1 block text-xs text-muted-foreground">Unit Cost (Rp)</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={poForm.unitCost || ""}
+                      onChange={(e) => setPoForm((f) => ({ ...f, unitCost: Number(e.target.value) }))}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <Label className="mb-1 block text-xs text-muted-foreground">Expected Date</Label>
+                  <Input
+                    type="date"
+                    value={poForm.expectedDate}
+                    onChange={(e) => setPoForm((f) => ({ ...f, expectedDate: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <Label className="mb-1 block text-xs text-muted-foreground">Notes</Label>
+                  <Textarea
+                    rows={2}
+                    value={poForm.notes}
+                    onChange={(e) => setPoForm((f) => ({ ...f, notes: e.target.value }))}
+                  />
+                </div>
+                <div className="flex gap-2 justify-end">
+                  <Button type="button" variant="outline" onClick={() => setShowCreatePO(false)}>
+                    Batal
+                  </Button>
+                  <Button type="submit" disabled={saving}>
+                    {saving ? "Membuat..." : "📋 Buat PO"}
+                  </Button>
+                </div>
+              </form>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            📦 Auto-Reorder System
-          </h1>
-          <p className="text-muted-foreground text-sm mt-1">
-            Monitoring stok, generate PO otomatis, dan konfirmasi penerimaan barang
+          <h2 className="text-2xl font-bold flex items-center gap-2">
+            <Package className="h-6 w-6" />
+            Auto-Reorder System
+          </h2>
+          <p className="text-muted-foreground">
+            Sistem otomatis reorder bahan baku & packaging — alert, PO, receipt, inventory status.
           </p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={handleSeed} disabled={actionLoading}>
+        <div className="flex gap-2 flex-wrap">
+          <Button onClick={handleSeed} disabled={saving} variant="secondary" size="sm">
             🌱 Seed Data
           </Button>
-          <Button variant="outline" size="sm" onClick={handleGenerateAlerts} disabled={actionLoading}>
-            <RefreshCw className="w-4 h-4 mr-1" /> Generate Alerts
+          <Button onClick={handleGenerateAlerts} disabled={saving} variant="default" size="sm">
+            <AlertTriangle className="h-4 w-4 mr-1" /> Generate Alerts
           </Button>
-          <Button variant="outline" size="sm" onClick={fetchData} disabled={loading}>
-            <RefreshCw className="w-4 h-4 mr-1" /> Refresh
+          <Button onClick={loadAll} disabled={loading} variant="outline" size="sm">
+            <RefreshCw className={`h-4 w-4 mr-1 ${loading ? "animate-spin" : ""}`} /> Refresh
           </Button>
         </div>
       </div>
 
-      {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
-          ⚠️ {error}
-        </div>
+      {/* Message */}
+      {message && (
+        <Card className={
+          messageType === "success" ? "border-green-200 bg-green-50" :
+          messageType === "error" ? "border-red-200 bg-red-50" :
+          "border-blue-200 bg-blue-50"
+        }>
+          <CardContent className="py-3 text-sm">{message}</CardContent>
+        </Card>
       )}
 
-      {seedResult && (
-        <div className="bg-blue-50 border border-blue-200 text-blue-700 px-4 py-3 rounded-lg text-sm">
-          {seedResult}
-        </div>
-      )}
+      {/* KPI Cards */}
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardDescription className="flex items-center gap-1">
+              <AlertTriangle className="h-3 w-3" /> Items Below Minimum
+            </CardDescription>
+            <CardTitle className="text-2xl text-orange-600">
+              {loading ? <Skeleton className="h-8 w-16" /> : fmtNum(summary?.totalItemsBelowMin || 0)}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-xs text-muted-foreground">
+              {fmtNum(criticalItems.length)} critical, {fmtNum(lowItems.length)} low stock
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardDescription className="flex items-center gap-1">
+              <DollarSign className="h-3 w-3" /> Reorder Value
+            </CardDescription>
+            <CardTitle className="text-2xl text-red-600">
+              {loading ? <Skeleton className="h-8 w-24" /> : rupiah(summary?.totalReorderValue || 0)}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-xs text-muted-foreground">total nilai perlu di-reorder</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardDescription className="flex items-center gap-1">
+              <ShoppingCart className="h-3 w-3" /> Pending PO
+            </CardDescription>
+            <CardTitle className="text-2xl text-blue-600">
+              {loading ? <Skeleton className="h-8 w-16" /> : fmtNum(summary?.pendingPOs || 0)}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-xs text-muted-foreground">
+              {rupiah(pendingPOs?.totalValue || 0)} nilai pending
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardDescription className="flex items-center gap-1">
+              <ClipboardList className="h-3 w-3" /> Reorder Alerts
+            </CardDescription>
+            <CardTitle className="text-2xl">
+              {loading ? <Skeleton className="h-8 w-16" /> : fmtNum(summary?.totalAlerts || 0)}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-xs text-muted-foreground">
+              {fmtNum(summary?.newAlerts || 0)} new, {fmtNum(summary?.poCreated || 0)} PO created
+            </p>
+          </CardContent>
+        </Card>
+      </div>
 
-      {/* ── Dashboard Tabs ── */}
-      <Tabs defaultValue="dashboard" className="space-y-4">
+      {/* Tabs */}
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
           <TabsTrigger value="dashboard">📊 Dashboard</TabsTrigger>
-          <TabsTrigger value="alerts">🔔 Reorder Alerts</TabsTrigger>
-          <TabsTrigger value="orders">🛒 Purchase Orders</TabsTrigger>
-          <TabsTrigger value="inventory">📦 Inventory Status</TabsTrigger>
+          <TabsTrigger value="alerts">🔔 Reorder Alerts ({alerts.length})</TabsTrigger>
+          <TabsTrigger value="purchase-orders">🧾 Purchase Orders ({allPOs.length})</TabsTrigger>
+          <TabsTrigger value="inventory">📦 Inventory Status ({inventory.length})</TabsTrigger>
         </TabsList>
 
         {/* ── Tab: Dashboard ── */}
         <TabsContent value="dashboard" className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="grid gap-4 md:grid-cols-2">
+            {/* Items Below Minimum */}
             <Card>
-              <CardHeader className="pb-2">
-                <CardDescription className="flex items-center gap-2">
-                  <AlertTriangle className="w-4 h-4 text-red-500" /> Items Below Minimum
-                </CardDescription>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  <TrendingDown className="h-5 w-5 text-orange-500" />
+                  Items Below Minimum
+                </CardTitle>
+                <CardDescription>Perlu segera di-reorder</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="text-3xl font-bold text-red-600">
-                  {summary?.totalItemsBelowMin ?? allInventory.filter((i) => i.status !== "ok").length}
-                </div>
-                <p className="text-xs text-muted-foreground mt-1">perlu reorder</p>
+                {itemsBelowMin.length === 0 ? (
+                  <EmptyState
+                    icon={<CheckCircle className="h-8 w-8" />}
+                    title="Semua stok aman"
+                    description="Tidak ada item di bawah minimum qty"
+                  />
+                ) : (
+                  <div className="space-y-2">
+                    {itemsBelowMin.slice(0, 8).map((item) => (
+                      <div
+                        key={item.id}
+                        className="flex items-center justify-between p-2 rounded-md border bg-card"
+                      >
+                        <div>
+                          <p className="text-sm font-medium">{item.name}</p>
+                          <p className="text-xs text-muted-foreground">{item.sku} · {item.category}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm font-bold text-red-600">
+                            {fmtNum(item.qty)} / {fmtNum(item.minimumQty)}
+                          </p>
+                          <p className="text-xs text-muted-foreground">{item.unit}</p>
+                        </div>
+                      </div>
+                    ))}
+                    {itemsBelowMin.length > 8 && (
+                      <p className="text-xs text-muted-foreground text-center pt-1">
+                        +{itemsBelowMin.length - 8} item lainnya
+                      </p>
+                    )}
+                  </div>
+                )}
               </CardContent>
             </Card>
 
+            {/* Recent Alerts */}
             <Card>
-              <CardHeader className="pb-2">
-                <CardDescription className="flex items-center gap-2">
-                  <Package className="w-4 h-4 text-yellow-500" /> Reorder Alerts
-                </CardDescription>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  <AlertTriangle className="h-5 w-5 text-yellow-500" />
+                  Recent Alerts
+                </CardTitle>
+                <CardDescription>Alert terbaru dari sistem</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="text-3xl font-bold text-yellow-600">
-                  {summary?.totalAlerts ?? alerts.length}
-                </div>
-                <p className="text-xs text-muted-foreground mt-1">
-                  {summary?.newAlerts ?? alerts.filter((a) => a.status === "New").length} baru
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="pb-2">
-                <CardDescription className="flex items-center gap-2">
-                  <ShoppingCart className="w-4 h-4 text-blue-500" /> Pending PO
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-bold text-blue-600">
-                  {summary?.pendingPOs ?? pendingPOs.length}
-                </div>
-                <p className="text-xs text-muted-foreground mt-1">
-                  {rupiah(pendingPOData?.totalValue || 0)} total value
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="pb-2">
-                <CardDescription className="flex items-center gap-2">
-                  <DollarSign className="w-4 h-4 text-green-500" /> Total Reorder Value
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-bold text-green-600">
-                  {rupiah(summary?.totalReorderValue || 0)}
-                </div>
-                <p className="text-xs text-muted-foreground mt-1">estimasi biaya reorder</p>
+                {alerts.length === 0 ? (
+                  <EmptyState
+                    icon={<CheckCircle className="h-8 w-8" />}
+                    title="Tidak ada alert"
+                    description="Generate alerts dari Inventory_Master"
+                  />
+                ) : (
+                  <div className="space-y-2">
+                    {alerts.slice(0, 8).map((alert) => (
+                      <div
+                        key={alert.alertId}
+                        className="flex items-center justify-between p-2 rounded-md border bg-card"
+                      >
+                        <div>
+                          <p className="text-sm font-medium">{alert.itemName}</p>
+                          <p className="text-xs text-muted-foreground">{alert.alertId}</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {alertStatusBadge(alert.status)}
+                          {alert.status === "New" && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => { setSelectedAlert(alert); setShowGeneratePO(true); }}
+                            >
+                              <Send className="h-3 w-3" />
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>
@@ -380,16 +935,21 @@ export default function ReorderPage() {
             <CardHeader>
               <CardTitle className="text-lg">Quick Actions</CardTitle>
             </CardHeader>
-            <CardContent className="flex flex-wrap gap-3">
-              <Button onClick={handleGenerateAlerts} disabled={actionLoading} className="gap-2">
-                <RefreshCw className="w-4 h-4" /> Scan & Generate Alerts
-              </Button>
-              <Button variant="outline" onClick={handleSeed} disabled={actionLoading} className="gap-2">
-                🌱 Seed Sample Data
-              </Button>
-              <Button variant="outline" onClick={fetchData} className="gap-2">
-                <RefreshCw className="w-4 h-4" /> Refresh Data
-              </Button>
+            <CardContent>
+              <div className="flex flex-wrap gap-2">
+                <Button onClick={handleGenerateAlerts} disabled={saving} variant="default">
+                  <AlertTriangle className="h-4 w-4 mr-1" /> Generate Alerts dari Inventory
+                </Button>
+                <Button onClick={() => setShowCreatePO(true)} variant="outline">
+                  <Plus className="h-4 w-4 mr-1" /> Buat PO Manual
+                </Button>
+                <Button onClick={() => { setActiveTab("alerts"); }} variant="outline">
+                  <Eye className="h-4 w-4 mr-1" /> Lihat Semua Alerts
+                </Button>
+                <Button onClick={() => { setActiveTab("purchase-orders"); }} variant="outline">
+                  <ShoppingCart className="h-4 w-4 mr-1" /> Lihat Purchase Orders
+                </Button>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
@@ -397,65 +957,77 @@ export default function ReorderPage() {
         {/* ── Tab: Reorder Alerts ── */}
         <TabsContent value="alerts" className="space-y-4">
           <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <AlertTriangle className="w-5 h-5 text-yellow-500" /> Reorder Alerts
-              </CardTitle>
-              <CardDescription>
-                Item dengan stok di bawah minimum yang perlu di-reorder
-              </CardDescription>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <AlertTriangle className="h-5 w-5" />
+                  Reorder Alerts
+                </CardTitle>
+                <CardDescription>
+                  {fmtNum(alerts.length)} alerts — {fmtNum(alerts.filter((a) => a.status === "New").length)} new
+                </CardDescription>
+              </div>
+              <Button onClick={handleGenerateAlerts} disabled={saving} size="sm">
+                <AlertTriangle className="h-4 w-4 mr-1" /> Generate Alerts
+              </Button>
             </CardHeader>
             <CardContent>
               {alerts.length === 0 ? (
-                <div className="text-center py-12 text-muted-foreground">
-                  <Package className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                  <p className="font-medium">Tidak ada reorder alert</p>
-                  <p className="text-sm mt-1">Klik &quot;Generate Alerts&quot; untuk scan Inventory_Master</p>
-                </div>
+                <EmptyState
+                  icon={<AlertTriangle className="h-8 w-8" />}
+                  title="Belum ada reorder alerts"
+                  description="Klik 'Generate Alerts' untuk scan Inventory_Master dan buat alert otomatis untuk item di bawah minimum."
+                />
               ) : (
                 <div className="overflow-x-auto">
                   <Table>
                     <TableHeader>
                       <TableRow>
                         <TableHead>Alert ID</TableHead>
+                        <TableHead>Date</TableHead>
                         <TableHead>Item</TableHead>
-                        <TableHead>Current Qty</TableHead>
-                        <TableHead>Min Qty</TableHead>
-                        <TableHead>Reorder Qty</TableHead>
+                        <TableHead className="text-right">Current</TableHead>
+                        <TableHead className="text-right">Min</TableHead>
+                        <TableHead className="text-right">Reorder Qty</TableHead>
                         <TableHead>Supplier</TableHead>
-                        <TableHead>Total Cost</TableHead>
+                        <TableHead className="text-right">Est. Cost</TableHead>
                         <TableHead>Status</TableHead>
-                        <TableHead>Action</TableHead>
+                        <TableHead>PO Number</TableHead>
+                        <TableHead className="text-right">Action</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {alerts.map((alert) => (
                         <TableRow key={alert.alertId}>
                           <TableCell className="font-mono text-xs">{alert.alertId}</TableCell>
+                          <TableCell>{alert.date}</TableCell>
                           <TableCell>
-                            <div className="font-medium">{alert.itemName}</div>
-                            <div className="text-xs text-muted-foreground">{alert.itemId}</div>
+                            <div>
+                              <p className="font-medium text-sm">{alert.itemName}</p>
+                              <p className="text-xs text-muted-foreground">{alert.itemId}</p>
+                            </div>
                           </TableCell>
-                          <TableCell className="text-red-600 font-bold">{fmtNum(alert.currentQty)}</TableCell>
-                          <TableCell>{fmtNum(alert.minimumQty)}</TableCell>
-                          <TableCell className="font-bold">{fmtNum(alert.reorderQty)}</TableCell>
+                          <TableCell className="text-right font-mono">{fmtNum(alert.currentQty)}</TableCell>
+                          <TableCell className="text-right font-mono">{fmtNum(alert.minimumQty)}</TableCell>
+                          <TableCell className="text-right font-mono">{fmtNum(alert.reorderQty)}</TableCell>
                           <TableCell className="text-sm">{alert.supplier}</TableCell>
-                          <TableCell>{rupiah(alert.totalCost)}</TableCell>
-                          <TableCell>{statusBadge(alert.status)}</TableCell>
-                          <TableCell>
-                            {alert.status === "New" ? (
+                          <TableCell className="text-right font-mono text-sm">{rupiah(alert.totalCost)}</TableCell>
+                          <TableCell>{alertStatusBadge(alert.status)}</TableCell>
+                          <TableCell className="font-mono text-xs">{alert.poNumber || "—"}</TableCell>
+                          <TableCell className="text-right">
+                            {alert.status === "New" && (
                               <Button
                                 size="sm"
-                                onClick={() => handleGeneratePO(alert.alertId)}
-                                disabled={actionLoading}
-                                className="gap-1"
+                                onClick={() => { setSelectedAlert(alert); setShowGeneratePO(true); }}
                               >
-                                <ShoppingCart className="w-3 h-3" /> Create PO
+                                Generate PO
                               </Button>
-                            ) : (
-                              <Badge variant="outline" className="text-xs">
-                                {alert.poNumber || "—"}
-                              </Badge>
+                            )}
+                            {alert.status === "PO Created" && (
+                              <Badge className="bg-purple-100 text-purple-700">PO: {alert.poNumber}</Badge>
+                            )}
+                            {alert.status === "Received" && (
+                              <CheckCircle className="h-4 w-4 text-green-600 inline" />
                             )}
                           </TableCell>
                         </TableRow>
@@ -469,106 +1041,29 @@ export default function ReorderPage() {
         </TabsContent>
 
         {/* ── Tab: Purchase Orders ── */}
-        <TabsContent value="orders" className="space-y-4">
-          {/* Receive Items Form */}
+        <TabsContent value="purchase-orders" className="space-y-4">
           <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Truck className="w-5 h-5 text-blue-500" /> Receive Items
-              </CardTitle>
-              <CardDescription>
-                Konfirmasi penerimaan barang dari supplier
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <Label>PO Number</Label>
-                  <select
-                    className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
-                    value={receiptForm.poNumber}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      setReceiptForm((f) => ({ ...f, poNumber: v }));
-                      const po = allPOs.find((p) => p.id === v);
-                      if (po) {
-                        setReceiptForm((f) => ({
-                          ...f,
-                          poNumber: v,
-                          itemId: po.itemId,
-                          itemName: po.itemName,
-                          unitCost: String(po.unitCost),
-                        }));
-                      }
-                    }}
-                  >
-                    <option value="">Pilih PO...</option>
-                    {allPOs.filter((p) => p.status !== "received" && p.status !== "cancelled").map((po) => (
-                      <option key={po.id} value={po.id}>
-                        {po.id} — {po.itemName} ({po.status})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <Label>Qty Received</Label>
-                  <Input
-                    type="number"
-                    value={receiptForm.qtyReceived}
-                    onChange={(e) => setReceiptForm((f) => ({ ...f, qtyReceived: e.target.value }))}
-                    placeholder="0"
-                  />
-                </div>
-                <div>
-                  <Label>Unit Cost</Label>
-                  <Input
-                    type="number"
-                    value={receiptForm.unitCost}
-                    onChange={(e) => setReceiptForm((f) => ({ ...f, unitCost: e.target.value }))}
-                    placeholder="0"
-                  />
-                </div>
-                <div>
-                  <Label>Condition</Label>
-                  <select
-                    className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
-                    value={receiptForm.condition}
-                    onChange={(e) => setReceiptForm((f) => ({ ...f, condition: e.target.value }))}
-                  >
-                    <option value="Good">✅ Good</option>
-                    <option value="Partial">⚠️ Partial</option>
-                    <option value="Damaged">❌ Damaged</option>
-                  </select>
-                </div>
-                <div className="md:col-span-2">
-                  <Label>Notes</Label>
-                  <Input
-                    value={receiptForm.notes}
-                    onChange={(e) => setReceiptForm((f) => ({ ...f, notes: e.target.value }))}
-                    placeholder="Catatan penerimaan..."
-                  />
-                </div>
-                <div className="flex items-end">
-                  <Button onClick={handleConfirmReceipt} disabled={actionLoading} className="gap-2 w-full">
-                    <CheckCircle className="w-4 h-4" /> Confirm Receipt
-                  </Button>
-                </div>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <ShoppingCart className="h-5 w-5" />
+                  Purchase Orders
+                </CardTitle>
+                <CardDescription>
+                  {fmtNum(allPOs.length)} pending PO — {rupiah(pendingPOs?.totalValue || 0)} total value
+                </CardDescription>
               </div>
-            </CardContent>
-          </Card>
-
-          {/* All POs */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Purchase Orders</CardTitle>
-              <CardDescription>Semua purchase order dan statusnya</CardDescription>
+              <Button onClick={() => setShowCreatePO(true)} size="sm">
+                <Plus className="h-4 w-4 mr-1" /> Buat PO
+              </Button>
             </CardHeader>
             <CardContent>
               {allPOs.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  <ShoppingCart className="w-10 h-10 mx-auto mb-2 opacity-50" />
-                  <p>Belum ada purchase order</p>
-                </div>
+                <EmptyState
+                  icon={<ShoppingCart className="h-8 w-8" />}
+                  title="Belum ada Purchase Orders"
+                  description="Buat PO manual atau generate dari reorder alerts."
+                />
               ) : (
                 <div className="overflow-x-auto">
                   <Table>
@@ -578,9 +1073,12 @@ export default function ReorderPage() {
                         <TableHead>Date</TableHead>
                         <TableHead>Supplier</TableHead>
                         <TableHead>Item</TableHead>
-                        <TableHead>Qty</TableHead>
-                        <TableHead>Total</TableHead>
+                        <TableHead className="text-right">Qty</TableHead>
+                        <TableHead className="text-right">Unit Cost</TableHead>
+                        <TableHead className="text-right">Total</TableHead>
                         <TableHead>Status</TableHead>
+                        <TableHead>Expected</TableHead>
+                        <TableHead className="text-right">Action</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -588,11 +1086,49 @@ export default function ReorderPage() {
                         <TableRow key={po.id}>
                           <TableCell className="font-mono text-xs">{po.id}</TableCell>
                           <TableCell>{po.date}</TableCell>
-                          <TableCell>{po.supplierName}</TableCell>
-                          <TableCell>{po.itemName}</TableCell>
-                          <TableCell>{fmtNum(po.quantity)} {po.unit}</TableCell>
-                          <TableCell>{rupiah(po.total)}</TableCell>
-                          <TableCell>{statusBadge(po.status)}</TableCell>
+                          <TableCell>
+                            <div>
+                              <p className="text-sm">{po.supplierName}</p>
+                              <p className="text-xs text-muted-foreground">{po.supplierId}</p>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div>
+                              <p className="font-medium text-sm">{po.itemName}</p>
+                              <p className="text-xs text-muted-foreground">{po.itemId}</p>
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right font-mono">{fmtNum(po.quantity)} {po.unit}</TableCell>
+                          <TableCell className="text-right font-mono">{rupiah(po.unitCost)}</TableCell>
+                          <TableCell className="text-right font-mono font-medium">{rupiah(po.total)}</TableCell>
+                          <TableCell>{poStatusBadge(po.status)}</TableCell>
+                          <TableCell>{po.expectedDate || "—"}</TableCell>
+                          <TableCell className="text-right">
+                            {["ordered", "partial", "draft"].includes(po.status) && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  setSelectedPO(po);
+                                  setReceiveForm({
+                                    poNumber: po.id,
+                                    itemId: po.itemId,
+                                    itemName: po.itemName,
+                                    qtyReceived: po.quantity,
+                                    unitCost: po.unitCost,
+                                    condition: "Good",
+                                    notes: "",
+                                  });
+                                  setShowReceiveItems(true);
+                                }}
+                              >
+                                <Truck className="h-3 w-3 mr-1" /> Receive
+                              </Button>
+                            )}
+                            {po.status === "received" && (
+                              <CheckCircle className="h-4 w-4 text-green-600 inline" />
+                            )}
+                          </TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
@@ -602,107 +1138,147 @@ export default function ReorderPage() {
             </CardContent>
           </Card>
 
-          {/* Recent Receipts */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <ClipboardCheck className="w-5 h-5 text-green-500" /> Recent Goods Receipts
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {receipts.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  <ClipboardCheck className="w-10 h-10 mx-auto mb-2 opacity-50" />
-                  <p>Belum ada goods receipt</p>
-                </div>
-              ) : (
+          {/* Receipts History */}
+          {receipts.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  <ClipboardList className="h-5 w-5" />
+                  Goods Receipts ({receipts.length})
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
                 <div className="overflow-x-auto">
                   <Table>
                     <TableHeader>
                       <TableRow>
                         <TableHead>Receipt ID</TableHead>
+                        <TableHead>Date</TableHead>
                         <TableHead>PO Number</TableHead>
                         <TableHead>Item</TableHead>
-                        <TableHead>Qty</TableHead>
+                        <TableHead className="text-right">Qty</TableHead>
+                        <TableHead className="text-right">Total Cost</TableHead>
                         <TableHead>Condition</TableHead>
-                        <TableHead>Date</TableHead>
+                        <TableHead>Notes</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {receipts.slice(0, 10).map((r) => (
+                      {receipts.map((r) => (
                         <TableRow key={r.receiptId}>
                           <TableCell className="font-mono text-xs">{r.receiptId}</TableCell>
+                          <TableCell>{r.date}</TableCell>
                           <TableCell className="font-mono text-xs">{r.poNumber}</TableCell>
                           <TableCell>{r.itemName}</TableCell>
-                          <TableCell>{fmtNum(r.qtyReceived)}</TableCell>
-                          <TableCell>{statusBadge(r.condition)}</TableCell>
-                          <TableCell>{r.date}</TableCell>
+                          <TableCell className="text-right font-mono">{fmtNum(r.qtyReceived)}</TableCell>
+                          <TableCell className="text-right font-mono">{rupiah(r.totalCost)}</TableCell>
+                          <TableCell>{conditionBadge(r.condition)}</TableCell>
+                          <TableCell className="text-sm text-muted-foreground">{r.notes || "—"}</TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
                   </Table>
                 </div>
-              )}
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
 
         {/* ── Tab: Inventory Status ── */}
         <TabsContent value="inventory" className="space-y-4">
+          {/* Summary */}
+          <div className="grid gap-3 sm:grid-cols-3">
+            <Card className="border-green-200">
+              <CardHeader className="pb-2">
+                <CardDescription>✅ OK</CardDescription>
+                <CardTitle className="text-2xl text-green-700">{fmtNum(okItems.length)}</CardTitle>
+              </CardHeader>
+              <CardContent><p className="text-xs text-muted-foreground">di atas minimum</p></CardContent>
+            </Card>
+            <Card className="border-yellow-200">
+              <CardHeader className="pb-2">
+                <CardDescription>⚠️ Low</CardDescription>
+                <CardTitle className="text-2xl text-yellow-700">{fmtNum(lowItems.length)}</CardTitle>
+              </CardHeader>
+              <CardContent><p className="text-xs text-muted-foreground">di bawah minimum</p></CardContent>
+            </Card>
+            <Card className="border-red-200">
+              <CardHeader className="pb-2">
+                <CardDescription>🔴 Critical</CardDescription>
+                <CardTitle className="text-2xl text-red-700">{fmtNum(criticalItems.length)}</CardTitle>
+              </CardHeader>
+              <CardContent><p className="text-xs text-muted-foreground">&lt; 50% minimum</p></CardContent>
+            </Card>
+          </div>
+
+          {/* Full Inventory Table */}
           <Card>
             <CardHeader>
-              <CardTitle>Inventory Status</CardTitle>
-              <CardDescription>
-                Semua item inventory dengan color-coded status
-              </CardDescription>
+              <CardTitle className="flex items-center gap-2">
+                <Package className="h-5 w-5" />
+                Full Inventory Status
+              </CardTitle>
+              <CardDescription>{fmtNum(inventory.length)} items dari Inventory_Master</CardDescription>
             </CardHeader>
             <CardContent>
-              {allInventory.length === 0 ? (
-                <div className="text-center py-12 text-muted-foreground">
-                  <Package className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                  <p>Tidak ada data inventory</p>
-                </div>
+              {inventory.length === 0 ? (
+                <EmptyState
+                  icon={<Package className="h-8 w-8" />}
+                  title="Belum ada inventory data"
+                  description="Data inventory akan muncul dari Google Sheets Inventory_Master."
+                />
               ) : (
                 <div className="overflow-x-auto">
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>ID</TableHead>
                         <TableHead>SKU</TableHead>
                         <TableHead>Name</TableHead>
                         <TableHead>Category</TableHead>
-                        <TableHead>Qty</TableHead>
-                        <TableHead>Min Qty</TableHead>
-                        <TableHead>Reorder Qty</TableHead>
-                        <TableHead>Unit Cost</TableHead>
+                        <TableHead className="text-right">Qty</TableHead>
+                        <TableHead className="text-right">Min</TableHead>
+                        <TableHead className="text-right">Reorder Qty</TableHead>
+                        <TableHead className="text-right">Unit Cost</TableHead>
                         <TableHead>Supplier</TableHead>
                         <TableHead>Location</TableHead>
                         <TableHead>Status</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {allInventory.slice(0, 50).map((item) => (
-                        <TableRow key={item.id} className={stockColor(item.status)}>
-                          <TableCell className="text-xs font-mono">{item.id}</TableCell>
-                          <TableCell className="text-xs">{item.sku}</TableCell>
-                          <TableCell className="font-medium text-sm">{item.name}</TableCell>
-                          <TableCell className="text-xs">{item.category}</TableCell>
-                          <TableCell className="font-bold">{fmtNum(item.qty)}</TableCell>
-                          <TableCell>{fmtNum(item.minimumQty)}</TableCell>
-                          <TableCell>{fmtNum(item.reorderQty)}</TableCell>
-                          <TableCell>{rupiah(item.unitCost)}</TableCell>
-                          <TableCell className="text-xs">{item.supplier}</TableCell>
-                          <TableCell className="text-xs">{item.location}</TableCell>
-                          <TableCell>{statusBadge(item.status)}</TableCell>
-                        </TableRow>
-                      ))}
+                      {inventory.map((item) => {
+                        const s = item.qty <= 0 ? "empty"
+                          : item.qty <= item.minimumQty * 0.5 ? "critical"
+                          : item.qty <= item.minimumQty ? "low"
+                          : "ok";
+                        return (
+                          <TableRow
+                            key={item.id}
+                            className={
+                              s === "empty" ? "bg-red-50" :
+                              s === "critical" ? "bg-orange-50" :
+                              s === "low" ? "bg-yellow-50" : ""
+                            }
+                          >
+                            <TableCell className="font-mono text-xs">{item.sku}</TableCell>
+                            <TableCell className="font-medium text-sm">{item.name}</TableCell>
+                            <TableCell className="text-sm">{item.category}</TableCell>
+                            <TableCell className={`text-right font-mono ${s !== "ok" ? "font-bold text-red-600" : ""}`}>
+                              {fmtNum(item.qty)}
+                            </TableCell>
+                            <TableCell className="text-right font-mono text-muted-foreground">
+                              {fmtNum(item.minimumQty)}
+                            </TableCell>
+                            <TableCell className="text-right font-mono">
+                              {fmtNum(item.reorderQty)}
+                            </TableCell>
+                            <TableCell className="text-right font-mono">{rupiah(item.unitCost)}</TableCell>
+                            <TableCell className="text-sm">{item.supplier}</TableCell>
+                            <TableCell className="text-sm">{item.location}</TableCell>
+                            <TableCell>{stockStatusBadge(s)}</TableCell>
+                          </TableRow>
+                        );
+                      })}
                     </TableBody>
                   </Table>
-                  {allInventory.length > 50 && (
-                    <p className="text-center text-sm text-muted-foreground mt-4">
-                      Menampilkan 50 dari {allInventory.length} item
-                    </p>
-                  )}
                 </div>
               )}
             </CardContent>
