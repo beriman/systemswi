@@ -93,7 +93,7 @@ function isUpcoming(task: Task): boolean {
   if (!task.dueDate) return false;
   const today = todayStr();
   const due = task.dueDate;
-  return due > today && due <= today;
+  return due > today;
 }
 
 function formatDate(d: string): string {
