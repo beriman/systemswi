@@ -95,11 +95,15 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    // Dashboard stats
+    // Dashboard stats — match UI field names
     const byStatus: Record<string, number> = {};
     for (const t of tasks) {
       byStatus[t.status] = (byStatus[t.status] || 0) + 1;
     }
+    const todoCount = byStatus["Todo"] || byStatus["To Do"] || 0;
+    const inProgressCount = byStatus["In Progress"] || 0;
+    const reviewCount = byStatus["Review"] || 0;
+    const doneCount = byStatus["Done"] || 0;
     const overdueTasks = tasks.filter(
       (t) => t.dueDate && t.dueDate < today() && t.status !== "Done"
     );
@@ -112,6 +116,10 @@ export async function GET(req: NextRequest) {
       stats: {
         total: tasks.length,
         byStatus,
+        todoCount,
+        inProgressCount,
+        reviewCount,
+        doneCount,
         overdueCount: overdueTasks.length,
         todayCount: todayTasks.length,
       },
