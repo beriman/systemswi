@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import {
   ensureSalesSheetsInitialized,
+  getSalesTargets,
+  getSalesActuals,
   createTarget,
   createActual,
 } from "@/lib/sheets/sales-sheets";
 
-export const runtime = "nodejs";
-
-// ── Seed data ──────────────────────────────────────────────────────
+// ── Seed data definitions ──────────────────────────────────────────
 
 const BRANDS = [
   { id: "brand-larc-en-scent", name: "L'Arc~en~Scent" },
@@ -16,110 +16,110 @@ const BRANDS = [
 ];
 
 // Targets: 3 brands × 6 months (Jan-Jun 2026)
-const TARGETS = [
-  // L'Arc~en~Scent: Rp 5-8jt/bulan
-  { brandId: "brand-larc-en-scent", brandName: "L'Arc~en~Scent", year: 2026, month: 1, targetAmount: 5000000 },
-  { brandId: "brand-larc-en-scent", brandName: "L'Arc~en~Scent", year: 2026, month: 2, targetAmount: 5500000 },
-  { brandId: "brand-larc-en-scent", brandName: "L'Arc~en~Scent", year: 2026, month: 3, targetAmount: 6000000 },
-  { brandId: "brand-larc-en-scent", brandName: "L'Arc~en~Scent", year: 2026, month: 4, targetAmount: 7000000 },
-  { brandId: "brand-larc-en-scent", brandName: "L'Arc~en~Scent", year: 2026, month: 5, targetAmount: 7500000 },
-  { brandId: "brand-larc-en-scent", brandName: "L'Arc~en~Scent", year: 2026, month: 6, targetAmount: 8000000 },
+const TARGET_DATA: { brandId: string; brandName: string; month: number; targetAmount: number }[] = [];
 
-  // Pixel Potion: Rp 3-5jt/bulan
-  { brandId: "brand-pixel-potion", brandName: "Pixel Potion", year: 2026, month: 1, targetAmount: 3000000 },
-  { brandId: "brand-pixel-potion", brandName: "Pixel Potion", year: 2026, month: 2, targetAmount: 3200000 },
-  { brandId: "brand-pixel-potion", brandName: "Pixel Potion", year: 2026, month: 3, targetAmount: 3500000 },
-  { brandId: "brand-pixel-potion", brandName: "Pixel Potion", year: 2026, month: 4, targetAmount: 4000000 },
-  { brandId: "brand-pixel-potion", brandName: "Pixel Potion", year: 2026, month: 5, targetAmount: 4500000 },
-  { brandId: "brand-pixel-potion", brandName: "Pixel Potion", year: 2026, month: 6, targetAmount: 5000000 },
+// L'Arc~en~Scent: Rp 5-8jt/bulan
+const larcTargets = [5_000_000, 6_000_000, 7_500_000, 5_500_000, 8_000_000, 6_500_000];
+larcTargets.forEach((amount, i) => {
+  TARGET_DATA.push({ brandId: "brand-larc-en-scent", brandName: "L'Arc~en~Scent", month: i + 1, targetAmount: amount });
+});
 
-  // Nuscentza: Rp 4-6jt/bulan
-  { brandId: "brand-nuscentza", brandName: "Nuscentza", year: 2026, month: 1, targetAmount: 4000000 },
-  { brandId: "brand-nuscentza", brandName: "Nuscentza", year: 2026, month: 2, targetAmount: 4200000 },
-  { brandId: "brand-nuscentza", brandName: "Nuscentza", year: 2026, month: 3, targetAmount: 4500000 },
-  { brandId: "brand-nuscentza", brandName: "Nuscentza", year: 2026, month: 4, targetAmount: 5000000 },
-  { brandId: "brand-nuscentza", brandName: "Nuscentza", year: 2026, month: 5, targetAmount: 5500000 },
-  { brandId: "brand-nuscentza", brandName: "Nuscentza", year: 2026, month: 6, targetAmount: 6000000 },
-];
+// Pixel Potion: Rp 3-5jt/bulan
+const pixelTargets = [3_000_000, 4_500_000, 3_500_000, 5_000_000, 4_000_000, 3_200_000];
+pixelTargets.forEach((amount, i) => {
+  TARGET_DATA.push({ brandId: "brand-pixel-potion", brandName: "Pixel Potion", month: i + 1, targetAmount: amount });
+});
+
+// Nuscentza: Rp 4-6jt/bulan
+const nuscentzaTargets = [4_000_000, 5_500_000, 4_500_000, 6_000_000, 5_000_000, 4_800_000];
+nuscentzaTargets.forEach((amount, i) => {
+  TARGET_DATA.push({ brandId: "brand-nuscentza", brandName: "Nuscentza", month: i + 1, targetAmount: amount });
+});
 
 // 20 sample actual sales transactions
-const ACTUALS = [
+const ACTUAL_DATA: {
+  date: string; brandId: string; brandName: string; productSku: string;
+  qtySold: number; unitPrice: number; channel: string; notes: string;
+}[] = [
   // L'Arc~en~Scent
-  { date: "2026-01-05", brandId: "brand-larc-en-scent", brandName: "L'Arc~en~Scent", productSku: "L'Arc EDP 30ml", qtySold: 15, unitPrice: 185000, channel: "Direct" },
-  { date: "2026-01-18", brandId: "brand-larc-en-scent", brandName: "L'Arc~en~Scent", productSku: "L'Arc EDP 50ml", qtySold: 8, unitPrice: 280000, channel: "Shopee" },
-  { date: "2026-02-10", brandId: "brand-larc-en-scent", brandName: "L'Arc~en~Scent", productSku: "L'Arc EDP 30ml", qtySold: 20, unitPrice: 185000, channel: "TikTok" },
-  { date: "2026-02-22", brandId: "brand-larc-en-scent", brandName: "L'Arc~en~Scent", productSku: "L'Arc Travel Set", qtySold: 5, unitPrice: 450000, channel: "Event" },
-  { date: "2026-03-15", brandId: "brand-larc-en-scent", brandName: "L'Arc~en~Scent", productSku: "L'Arc EDP 50ml", qtySold: 12, unitPrice: 280000, channel: "Tokopedia" },
-  { date: "2026-04-08", brandId: "brand-larc-en-scent", brandName: "L'Arc~en~Scent", productSku: "L'Arc EDP 30ml", qtySold: 25, unitPrice: 185000, channel: "Instagram" },
-  { date: "2026-05-20", brandId: "brand-larc-en-scent", brandName: "L'Arc~en~Scent", productSku: "L'Arc Gift Box", qtySold: 10, unitPrice: 550000, channel: "Direct" },
-  { date: "2026-06-12", brandId: "brand-larc-en-scent", brandName: "L'Arc~en~Scent", productSku: "L'Arc EDP 30ml", qtySold: 18, unitPrice: 185000, channel: "Shopee" },
-
+  { date: "2026-01-05", brandId: "brand-larc-en-scent", brandName: "L'Arc~en~Scent", productSku: "LARC-EDP-001", qtySold: 15, unitPrice: 350_000, channel: "Shopee", notes: "Promo awal tahun" },
+  { date: "2026-01-18", brandId: "brand-larc-en-scent", brandName: "L'Arc~en~Scent", productSku: "LARC-EDP-002", qtySold: 8, unitPrice: 450_000, channel: "Direct", notes: "Corporate gift" },
+  { date: "2026-02-10", brandId: "brand-larc-en-scent", brandName: "L'Arc~en~Scent", productSku: "LARC-EDP-001", qtySold: 12, unitPrice: 350_000, channel: "Tokopedia", notes: "" },
+  { date: "2026-02-25", brandId: "brand-larc-en-scent", brandName: "L'Arc~en~Scent", productSku: "LARC-EDT-003", qtySold: 10, unitPrice: 280_000, channel: "TikTok", notes: "Flash sale" },
+  { date: "2026-03-08", brandId: "brand-larc-en-scent", brandName: "L'Arc~en~Scent", productSku: "LARC-EDP-001", qtySold: 20, unitPrice: 350_000, channel: "Shopee", notes: "Harbolnas" },
+  { date: "2026-04-12", brandId: "brand-larc-en-scent", brandName: "L'Arc~en~Scent", productSku: "LARC-EDP-002", qtySold: 14, unitPrice: 450_000, channel: "Event", notes: "Pop-up store" },
+  { date: "2026-05-20", brandId: "brand-larc-en-scent", brandName: "L'Arc~en~Scent", productSku: "LARC-EDT-003", qtySold: 18, unitPrice: 280_000, channel: "Instagram", notes: "" },
+  { date: "2026-06-05", brandId: "brand-larc-en-scent", brandName: "L'Arc~en~Scent", productSku: "LARC-EDP-001", qtySold: 11, unitPrice: 350_000, channel: "Direct", notes: "" },
   // Pixel Potion
-  { date: "2026-01-12", brandId: "brand-pixel-potion", brandName: "Pixel Potion", productSku: "Pixel Mist 100ml", qtySold: 20, unitPrice: 95000, channel: "Shopee" },
-  { date: "2026-02-05", brandId: "brand-pixel-potion", brandName: "Pixel Potion", productSku: "Pixel Mist 100ml", qtySold: 18, unitPrice: 95000, channel: "TikTok" },
-  { date: "2026-03-20", brandId: "brand-pixel-potion", brandName: "Pixel Potion", productSku: "Pixel Roll-On 10ml", qtySold: 30, unitPrice: 65000, channel: "Tokopedia" },
-  { date: "2026-04-15", brandId: "brand-pixel-potion", brandName: "Pixel Potion", productSku: "Pixel Mist 100ml", qtySold: 22, unitPrice: 95000, channel: "Direct" },
-  { date: "2026-05-08", brandId: "brand-pixel-potion", brandName: "Pixel Potion", productSku: "Pixel Discovery Kit", qtySold: 8, unitPrice: 350000, channel: "Event" },
-  { date: "2026-06-25", brandId: "brand-pixel-potion", brandName: "Pixel Potion", productSku: "Pixel Roll-On 10ml", qtySold: 25, unitPrice: 65000, channel: "Instagram" },
-
+  { date: "2026-01-12", brandId: "brand-pixel-potion", brandName: "Pixel Potion", productSku: "PXP-BODY-001", qtySold: 20, unitPrice: 180_000, channel: "Shopee", notes: "" },
+  { date: "2026-01-28", brandId: "brand-pixel-potion", brandName: "Pixel Potion", productSku: "PXP-PERF-002", qtySold: 10, unitPrice: 250_000, channel: "Tokopedia", notes: "" },
+  { date: "2026-02-14", brandId: "brand-pixel-potion", brandName: "Pixel Potion", productSku: "PXP-BODY-001", qtySold: 18, unitPrice: 180_000, channel: "TikTok", notes: "Valentine promo" },
+  { date: "2026-03-22", brandId: "brand-pixel-potion", brandName: "Pixel Potion", productSku: "PXP-PERF-002", qtySold: 15, unitPrice: 250_000, channel: "Direct", notes: "" },
+  { date: "2026-04-08", brandId: "brand-pixel-potion", brandName: "Pixel Potion", productSku: "PXP-BODY-001", qtySold: 25, unitPrice: 180_000, channel: "Shopee", notes: "Sale 12.12" },
+  { date: "2026-05-15", brandId: "brand-pixel-potion", brandName: "Pixel Potion", productSku: "PXP-PERF-002", qtySold: 12, unitPrice: 250_000, channel: "Instagram", notes: "" },
+  { date: "2026-06-10", brandId: "brand-pixel-potion", brandName: "Pixel Potion", productSku: "PXP-BODY-001", qtySold: 22, unitPrice: 180_000, channel: "Lazada", notes: "" },
   // Nuscentza
-  { date: "2026-01-25", brandId: "brand-nuscentza", brandName: "Nuscentza", productSku: "Nuscentza EDT 50ml", qtySold: 12, unitPrice: 150000, channel: "Direct" },
-  { date: "2026-02-14", brandId: "brand-nuscentza", brandName: "Nuscentza", productSku: "Nuscentza EDT 50ml", qtySold: 15, unitPrice: 150000, channel: "Shopee" },
-  { date: "2026-03-10", brandId: "brand-nuscentza", brandName: "Nuscentza", productSku: "Nuscentza Body Mist", qtySold: 20, unitPrice: 85000, channel: "TikTok" },
-  { date: "2026-04-22", brandId: "brand-nuscentza", brandName: "Nuscentza", productSku: "Nuscentza EDT 50ml", qtySold: 18, unitPrice: 150000, channel: "Tokopedia" },
-  { date: "2026-05-15", brandId: "brand-nuscentza", brandName: "Nuscentza", productSku: "Nuscentza Gift Set", qtySold: 6, unitPrice: 400000, channel: "Event" },
-  { date: "2026-06-30", brandId: "brand-nuscentza", brandName: "Nuscentza", productSku: "Nuscentza Body Mist", qtySold: 22, unitPrice: 85000, channel: "Instagram" },
+  { date: "2026-01-20", brandId: "brand-nuscentza", brandName: "Nuscentza", productSku: "NUS-EDP-001", qtySold: 12, unitPrice: 320_000, channel: "Shopee", notes: "" },
+  { date: "2026-02-28", brandId: "brand-nuscentza", brandName: "Nuscentza", productSku: "NUS-EDP-001", qtySold: 16, unitPrice: 320_000, channel: "Tokopedia", notes: "" },
+  { date: "2026-03-15", brandId: "brand-nuscentza", brandName: "Nuscentza", productSku: "NUS-EDT-002", qtySold: 10, unitPrice: 250_000, channel: "Direct", notes: "Reseller order" },
+  { date: "2026-04-25", brandId: "brand-nuscentza", brandName: "Nuscentza", productSku: "NUS-EDP-001", qtySold: 20, unitPrice: 320_000, channel: "Event", notes: "Exhibition" },
+  { date: "2026-05-30", brandId: "brand-nuscentza", brandName: "Nuscentza", productSku: "NUS-EDT-002", qtySold: 14, unitPrice: 250_000, channel: "Instagram", notes: "" },
 ];
 
 export async function POST() {
   try {
     await ensureSalesSheetsInitialized();
 
-    const results = {
-      targetsCreated: 0,
-      actualsCreated: 0,
-      errors: [] as string[],
-    };
+    // Check if data already exists
+    const existingTargets = await getSalesTargets(2026);
+    const existingActuals = await getSalesActuals(2026);
 
-    // Seed targets
-    for (const t of TARGETS) {
-      try {
-        await createTarget(t);
-        results.targetsCreated++;
-      } catch (err) {
-        results.errors.push(`Target ${t.brandName} ${t.month}/${t.year}: ${String(err)}`);
+    let targetsCreated = 0;
+    let actualsCreated = 0;
+
+    // Seed targets if none exist for 2026
+    if (existingTargets.length === 0) {
+      for (const t of TARGET_DATA) {
+        await createTarget({
+          brandId: t.brandId,
+          brandName: t.brandName,
+          year: 2026,
+          month: t.month,
+          targetAmount: t.targetAmount,
+          notes: `Target ${t.brandName} 2026`,
+        });
+        targetsCreated++;
       }
     }
 
-    // Seed actuals
-    for (const a of ACTUALS) {
-      try {
-        await createActual(a);
-        results.actualsCreated++;
-      } catch (err) {
-        results.errors.push(`Actual ${a.brandName} ${a.date}: ${String(err)}`);
+    // Seed actuals if none exist for 2026
+    if (existingActuals.length === 0) {
+      for (const a of ACTUAL_DATA) {
+        await createActual({
+          date: a.date,
+          brandId: a.brandId,
+          brandName: a.brandName,
+          productSku: a.productSku,
+          qtySold: a.qtySold,
+          unitPrice: a.unitPrice,
+          channel: a.channel,
+          notes: a.notes,
+        });
+        actualsCreated++;
       }
     }
 
     return NextResponse.json({
-      success: true,
-      message: `Seeded ${results.targetsCreated} targets and ${results.actualsCreated} actuals`,
-      ...results,
-      syncedSheets: ["Sales_Targets", "Sales_Actuals"],
+      message: `Seed selesai: ${targetsCreated} targets, ${actualsCreated} actuals ditambahkan. ${existingTargets.length > 0 ? "(Targets sudah ada, diskip)" : ""} ${existingActuals.length > 0 ? "(Actuals sudah ada, diskip)" : ""}`,
+      targetsCreated,
+      actualsCreated,
+      targetsSkipped: existingTargets.length > 0,
+      actualsSkipped: existingActuals.length > 0,
     });
-  } catch (error) {
+  } catch (error: any) {
     return NextResponse.json(
-      { error: "Gagal seed data", details: String(error) },
+      { error: error.message || "Failed to seed data" },
       { status: 500 }
     );
   }
-}
-
-export async function GET() {
-  return NextResponse.json({
-    info: "POST to this endpoint to seed sales target & actual data",
-    targetsCount: TARGETS.length,
-    actualsCount: ACTUALS.length,
-    brands: BRANDS.map((b) => b.name),
-  });
 }

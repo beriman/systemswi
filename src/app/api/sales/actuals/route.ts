@@ -1,11 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import {
-  getSalesActuals,
-  createActual,
-  ensureSalesSheetsInitialized,
-} from "@/lib/sheets/sales-sheets";
-
-export const runtime = "nodejs";
+import { getSalesActuals, createActual, recalculateAchievement } from "@/lib/sheets/sales-sheets";
 
 export async function GET(request: NextRequest) {
   try {
@@ -13,17 +7,11 @@ export async function GET(request: NextRequest) {
     const year = searchParams.get("year") ? Number(searchParams.get("year")) : undefined;
     const brandId = searchParams.get("brandId") || undefined;
 
-    await ensureSalesSheetsInitialized();
     const actuals = await getSalesActuals(year, brandId);
-
-    return NextResponse.json({
-      source: "Google Sheets: Sales_Actuals",
-      actuals,
-      count: actuals.length,
-    });
-  } catch (error) {
+    return NextResponse.json({ actuals });
+  } catch (error: any) {
     return NextResponse.json(
-      { error: "Gagal membaca sales actuals", details: String(error) },
+      { error: error.message || "Failed to fetch actuals" },
       { status: 500 }
     );
   }
@@ -34,33 +22,38 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { date, brandId, brandName, productSku, qtySold, unitPrice, channel, notes } = body;
 
-    if (!date) return NextResponse.json({ error: "date wajib diisi" }, { status: 400 });
-    if (!brandId) return NextResponse.json({ error: "brandId wajib diisi" }, { status: 400 });
-    if (!brandName) return NextResponse.json({ error: "brandName wajib diisi" }, { status: 400 });
-    if (!qtySold || Number(qtySold) <= 0)
-      return NextResponse.json({ error: "qtySold wajib lebih dari 0" }, { status: 400 });
-    if (!unitPrice || Number(unitPrice) <= 0)
-      return NextResponse.json({ error: "unitPrice wajib lebih dari 0" }, { status: 400 });
+    if (!date || !brandId || !productSku || !qtySold || !unitPrice) {
+      return NextResponse.json(
+        { error: "date, brandId, productSku, qtySold, and unitPrice are required" },
+        { status: 400 }
+      );
+    }
 
-    await ensureSalesSheetsInitialized();
-    const actual = await createActual({
-      date: String(date),
-      brandId: String(brandId),
-      brandName: String(brandName),
-      productSku: String(productSku || ""),
+    const result = await createActual({
+      date,
+      brandId,
+      brandName: brandName || brandId,
+      productSku,
       qtySold: Number(qtySold),
       unitPrice: Number(unitPrice),
-      channel: String(channel || "Direct"),
-      notes: notes ? String(notes) : undefined,
+      channel: channel || "Direct",
+      notes,
     });
 
+    // Recalculate achievement for the target month
+    try {
+      const d = new Date(date);
+      const year = d.getFullYear();
+      const month = d.getMonth() + 1;
+      await recalculateAchievement(brandId, year, month);
+    } catch {
+      // Non-blocking: achievement recalculation failure shouldn't fail the request
+    }
+
+    return NextResponse.json({ actual: result }, { status: 201 });
+  } catch (error: any) {
     return NextResponse.json(
-      { success: true, actual, syncedSheets: ["Sales_Actuals"] },
-      { status: 201 }
-    );
-  } catch (error) {
-    return NextResponse.json(
-      { error: "Gagal menyimpan sales actual", details: String(error) },
+      { error: error.message || "Failed to create actual sale" },
       { status: 500 }
     );
   }
