@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
         if (!r[0]) continue;
         const y = Number(r[3]);
         if (y !== Number(year)) continue;
-        const key = `${r[1]}_${r[3]}_${r[4]}`; // brandId_year_month
+        const key = `${r[1]}_${r[3]}_${String(r[4]).padStart(2, "0")}`; // brandId_year_month (zero-padded)
         targets[key] = {
           brandId: r[1] || "",
           brandName: r[2] || "",
