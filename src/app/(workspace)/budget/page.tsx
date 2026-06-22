@@ -438,7 +438,7 @@ export default function BudgetPage() {
                     <div className="flex items-center justify-between mb-1">
                       <span className="text-sm font-medium">{cat.category}</span>
                       <span className="text-sm text-muted-foreground">
-                        {formatShortRp(cat.actual)} / {formatShortRp(cat.budget)} ({cat.percentUsed}%)
+                        {formatShortRp(cat.totalActual)} / {formatShortRp(cat.totalBudget)} ({cat.percentUsed}%)
                       </span>
                     </div>
                     <div className="h-3 bg-gray-200 rounded-full overflow-hidden">
