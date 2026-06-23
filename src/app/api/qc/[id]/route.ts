@@ -1,100 +1,91 @@
+// GET /api/qc/[id] — Get QC result detail
+// PUT /api/qc/[id] — Update QC result
 import { NextRequest, NextResponse } from "next/server";
-import { readSheet, writeRange } from "@/lib/sheets/sheets-real";
-import { isGoogleWorkspaceAuthError, googleWorkspaceDegradedSource, googleWorkspaceWriteBlockedSource } from "@/lib/api/google-workspace-error";
+import {
+  readQcSheet,
+  parseQcRows,
+  updateQcRow,
+  calcOverallScore,
+  calcStatus,
+  type QcResult,
+} from "@/lib/qc/sheets";
+import { googleWorkspaceDegradedSource, isGoogleWorkspaceAuthError } from "@/lib/api/google-workspace-error";
 
-export const runtime = "nodejs";
+const SOURCE = "Google Sheets: QC_Results";
 
-const text = (value: unknown) => String(value ?? "").trim();
-const numberValue = (value: unknown) => {
-  if (typeof value === "number") return value;
-  if (typeof value === "string") return Number(value.replace(/[^\d.-]/g, "")) || 0;
-  return 0;
-};
-
-function calcOverall(scores: number[]) {
-  if (scores.length === 0) return 0;
-  return Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 100) / 100;
-}
-
-function calcStatus(overall: number) {
-  if (overall >= 7) return "Pass";
-  if (overall >= 5) return "Conditional";
-  return "Fail";
-}
-
-function parseQcRows(rows: string[][]) {
-  if (!rows || rows.length <= 1) return [];
-  return rows.slice(1).filter((row) => row.some(Boolean)).map((row, index) => ({
-    id: text(row[0]),
-    batchCode: text(row[1]),
-    productionId: text(row[2]),
-    date: text(row[3]),
-    inspector: text(row[4]),
-    aromaScore: numberValue(row[5]),
-    warnaScore: numberValue(row[6]),
-    kejernihanScore: numberValue(row[7]),
-    packagingScore: numberValue(row[8]),
-    sealIntegrityScore: numberValue(row[9]),
-    overallScore: numberValue(row[10]),
-    status: text(row[11]),
-    notes: text(row[12]),
-    followUpRequired: text(row[13]),
-    rowNumber: index + 2,
-  }));
-}
-
-export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
   try {
     const { id } = await params;
-    const rows = await readSheet("QC_Results");
+    const rows = await readQcSheet();
     const results = parseQcRows(rows);
-    const found = results.find((r) => r.id.toLowerCase() === id.toLowerCase());
+    const result = results.find((r) => r.id === id);
 
-    if (!found) {
-      return NextResponse.json({ error: `QC result dengan ID ${id} tidak ditemukan` }, { status: 404 });
+    if (!result) {
+      return NextResponse.json({ error: "QC result not found" }, { status: 404 });
     }
 
-    return NextResponse.json({
-      source: "Google Sheets: QC_Results",
-      result: found,
-    });
+    return NextResponse.json({ source: SOURCE, sourceStatus: "live", result });
   } catch (error) {
     if (isGoogleWorkspaceAuthError(error)) {
       return NextResponse.json({
-        ...googleWorkspaceDegradedSource("Google Sheets: QC_Results", error),
+        ...googleWorkspaceDegradedSource(SOURCE, error),
+        result: null,
       });
     }
-    return NextResponse.json({ error: "Gagal membaca QC detail", details: String(error) }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to fetch QC detail", details: String(error) },
+      { status: 500 }
+    );
   }
 }
 
-export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function PUT(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
   try {
     const { id } = await params;
-    const body = await request.json();
+    const body = await req.json();
 
-    const rows = await readSheet("QC_Results");
+    const rows = await readQcSheet();
     const results = parseQcRows(rows);
-    const found = results.find((r) => r.id.toLowerCase() === id.toLowerCase());
+    const existing = results.find((r) => r.id === id);
 
-    if (!found) {
-      return NextResponse.json({ error: `QC result dengan ID ${id} tidak ditemukan` }, { status: 404 });
+    if (!existing) {
+      return NextResponse.json({ error: "QC result not found" }, { status: 404 });
     }
 
-    const aromaScore = body.aromaScore !== undefined ? numberValue(body.aromaScore) : found.aromaScore;
-    const warnaScore = body.warnaScore !== undefined ? numberValue(body.warnaScore) : found.warnaScore;
-    const kejernihanScore = body.kejernihanScore !== undefined ? numberValue(body.kejernihanScore) : found.kejernihanScore;
-    const packagingScore = body.packagingScore !== undefined ? numberValue(body.packagingScore) : found.packagingScore;
-    const sealIntegrityScore = body.sealIntegrityScore !== undefined ? numberValue(body.sealIntegrityScore) : found.sealIntegrityScore;
-    const overallScore = calcOverall([aromaScore, warnaScore, kejernihanScore, packagingScore, sealIntegrityScore]);
-    const status = calcStatus(overallScore);
+    const aromaScore = body.aromaScore !== undefined
+      ? Math.min(10, Math.max(1, Number(body.aromaScore)))
+      : existing.aromaScore;
+    const warnaScore = body.warnaScore !== undefined
+      ? Math.min(10, Math.max(1, Number(body.warnaScore)))
+      : existing.warnaScore;
+    const kejernihanScore = body.kejernihanScore !== undefined
+      ? Math.min(10, Math.max(1, Number(body.kejernihanScore)))
+      : existing.kejernihanScore;
+    const packagingScore = body.packagingScore !== undefined
+      ? Math.min(10, Math.max(1, Number(body.packagingScore)))
+      : existing.packagingScore;
+    const sealIntegrityScore = body.sealIntegrityScore !== undefined
+      ? Math.min(10, Math.max(1, Number(body.sealIntegrityScore)))
+      : existing.sealIntegrityScore;
 
-    const row = [
-      found.id,
-      text(body.batchCode) || found.batchCode,
-      text(body.productionId) || found.productionId,
-      text(body.date) || found.date,
-      text(body.inspector) || found.inspector,
+    const overallScore = calcOverallScore(
+      aromaScore, warnaScore, kejernihanScore, packagingScore, sealIntegrityScore
+    );
+    const status = calcStatus(overallScore);
+    const followUpRequired: "Yes" | "No" = status !== "Pass" ? "Yes" : "No";
+
+    const updated: Omit<QcResult, "row"> = {
+      id,
+      batchCode: body.batchCode || existing.batchCode,
+      productionId: body.productionId || existing.productionId,
+      date: body.date || existing.date,
+      inspector: body.inspector || existing.inspector,
       aromaScore,
       warnaScore,
       kejernihanScore,
@@ -102,24 +93,29 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       sealIntegrityScore,
       overallScore,
       status,
-      text(body.notes) || found.notes,
-      status !== "Pass" ? "Yes" : "No",
-    ];
+      notes: body.notes !== undefined ? body.notes : existing.notes,
+      followUpRequired,
+    };
 
-    await writeRange(`QC_Results!A${found.rowNumber}:N${found.rowNumber}`, [row]);
+    await updateQcRow(existing.row, updated);
 
     return NextResponse.json({
       success: true,
-      result: { id: found.id, overallScore, status },
-      syncedSheets: ["QC_Results"],
+      result: { ...updated, row: existing.row },
+      message: "QC result updated successfully.",
     });
   } catch (error) {
     if (isGoogleWorkspaceAuthError(error)) {
       return NextResponse.json({
-        ...googleWorkspaceWriteBlockedSource("Google Sheets: QC_Results", error),
-        error: "Google Workspace OAuth perlu re-auth sebelum bisa update QC result.",
+        sourceStatus: "blocked",
+        source: SOURCE,
+        error: "Google Workspace OAuth perlu re-auth sebelum bisa update QC",
+        details: String(error),
       }, { status: 503 });
     }
-    return NextResponse.json({ error: "Gagal update QC result", details: String(error) }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to update QC result", details: String(error) },
+      { status: 500 }
+    );
   }
 }
