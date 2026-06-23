@@ -1,49 +1,75 @@
-// GET /api/buku-kas/saldo — Current saldo
-import { NextRequest, NextResponse } from "next/server";
-import {
-  readBukuKasSheet,
-  parseBukuKasRows,
-  calculateRunningBalance,
-} from "@/lib/buku-kas/sheets";
+import { NextResponse } from "next/server";
 import { googleWorkspaceDegradedSource, isGoogleWorkspaceAuthError } from "@/lib/api/google-workspace-error";
+import { readRange } from "@/lib/sheets/sheets-real";
 
-const SOURCE = "Google Sheets: Buku_Kas";
+export const runtime = "nodejs";
 
-export async function GET(req: NextRequest) {
+const money = (value: unknown): number => {
+  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+  if (typeof value !== "string") return 0;
+  const parsed = Number(value.replace(/[^\d.-]/g, ""));
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+// ── GET /api/buku-kas/saldo ──
+// Returns current saldo (running balance) from Buku_Kas
+export async function GET() {
   try {
-    const rows = await readBukuKasSheet();
-    const entries = parseBukuKasRows(rows);
-    const balanced = calculateRunningBalance(entries);
+    const rows = await readRange("Buku_Kas!A1:H1000");
+    const dataRows = rows.slice(1).filter((row) => row.some(Boolean));
 
-    const saldo = balanced.length > 0 ? balanced[balanced.length - 1].saldo : 0;
+    let saldo = 0;
+    let totalDebit = 0;
+    let totalKredit = 0;
 
-    // Current month totals
-    const now = new Date();
-    const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-    const monthEntries = balanced.filter((e) => e.date.startsWith(currentMonth));
-    const totalDebit = monthEntries.filter((e) => e.type === "D").reduce((s, e) => s + e.amount, 0);
-    const totalKredit = monthEntries.filter((e) => e.type === "K").reduce((s, e) => s + e.amount, 0);
+    for (const row of dataRows) {
+      const debit = money(row[4]);
+      const kredit = money(row[5]);
+      saldo += debit - kredit;
+      totalDebit += debit;
+      totalKredit += kredit;
+    }
+
+    // Current month stats
+    const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
+    let monthDebit = 0;
+    let monthKredit = 0;
+    for (const row of dataRows) {
+      const tgl = row[0] || "";
+      if (tgl.startsWith(currentMonth)) {
+        monthDebit += money(row[4]);
+        monthKredit += money(row[5]);
+      }
+    }
 
     return NextResponse.json({
-      source: SOURCE,
+      source: "Google Sheets: Buku_Kas",
       sourceStatus: "live",
       saldo,
-      currentMonth,
       totalDebit,
       totalKredit,
-      entryCount: balanced.length,
+      totalEntries: dataRows.length,
+      currentMonth: {
+        month: currentMonth,
+        debit: monthDebit,
+        kredit: monthKredit,
+        net: monthDebit - monthKredit,
+      },
     });
   } catch (error) {
     if (isGoogleWorkspaceAuthError(error)) {
       return NextResponse.json({
-        ...googleWorkspaceDegradedSource(SOURCE, error),
+        ...googleWorkspaceDegradedSource("Google Sheets: Buku_Kas", error),
         saldo: 0,
-        currentMonth: "",
         totalDebit: 0,
         totalKredit: 0,
-        entryCount: 0,
+        totalEntries: 0,
+        currentMonth: { month: "", debit: 0, kredit: 0, net: 0 },
       });
     }
-    return NextResponse.json({ error: "Failed to fetch saldo", details: String(error) }, { status: 500 });
+    return NextResponse.json(
+      { error: "Gagal membaca saldo Buku Kas", details: String(error) },
+      { status: 500 }
+    );
   }
 }

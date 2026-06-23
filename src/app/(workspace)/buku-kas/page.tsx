@@ -1,55 +1,60 @@
 "use client";
 
 import { useState, useEffect, type FormEvent } from "react";
-import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Skeleton } from "@/components/ui/skeleton";
+import { RoleGate } from "@/components/auth/role-gate";
 
 // ── Types ──
 interface BukuKasEntry {
   id: string;
-  date: string;
-  type: "D" | "K";
-  category: string;
-  amount: number;
-  description: string;
-  reference: string;
+  tanggal: string;
+  kodeAkun: string;
+  kategori: string;
+  deskripsi: string;
+  debit: number;
+  kredit: number;
+  referensi: string;
+  divisi: string;
   saldo: number;
-  row: number;
+}
+
+interface BukuKasSummary {
+  totalEntries: number;
+  totalDebit: number;
+  totalKredit: number;
+  currentSaldo: number;
 }
 
 interface SaldoData {
   saldo: number;
-  currentMonth: string;
   totalDebit: number;
   totalKredit: number;
-  entryCount: number;
+  totalEntries: number;
+  currentMonth: {
+    month: string;
+    debit: number;
+    kredit: number;
+    net: number;
+  };
 }
 
 interface RekapData {
-  totalDebit: number;
-  totalKredit: number;
-  netChange: number;
-  byCategory: Record<string, { debit: number; kredit: number; net: number }>;
-  monthlySummary: Array<{ period: string; debit: number; kredit: number; net: number }>;
+  summary: {
+    totalDebit: number;
+    totalKredit: number;
+    net: number;
+    totalEntries: number;
+  };
+  byCategory: Record<string, { debit: number; kredit: number; count: number }>;
+  byMonth: Record<string, { debit: number; kredit: number; count: number }>;
+  byDivisi: Record<string, { debit: number; kredit: number; count: number }>;
 }
-
-const CATEGORIES = ["Sales", "Purchase", "Operating", "Salary", "Transport"];
-
-const CATEGORY_EMOJI: Record<string, string> = {
-  Sales: "💰",
-  Purchase: "🛒",
-  Operating: "⚙️",
-  Salary: "👤",
-  Transport: "🚚",
-};
 
 // ── Helpers ──
 function formatCurrency(amount: number): string {
@@ -63,222 +68,202 @@ function formatCurrency(amount: number): string {
 
 function formatDate(dateStr: string): string {
   if (!dateStr) return "-";
-  const d = new Date(dateStr);
-  if (isNaN(d.getTime())) return dateStr;
-  return d.toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" });
+  try {
+    const d = new Date(dateStr);
+    return d.toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" });
+  } catch {
+    return dateStr;
+  }
 }
 
-function getMonthName(period: string): string {
-  const [year, month] = period.split("-");
-  const months = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
-  return `${months[parseInt(month, 10) - 1]} ${year}`;
+const CATEGORIES = ["Sales", "Purchase", "Operating", "Salary", "Transport"];
+const DIVISI = ["Holding", "Produksi", "Store", "Event", "Ecommerse", "Digital"];
+
+// ── Stat Card ──
+function StatCard({ title, value, sub, color }: { title: string; value: string; sub?: string; color?: string }) {
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-medium text-muted-foreground">{title}</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className={`text-2xl font-bold ${color || ""}`}>{value}</div>
+        {sub && <p className="text-xs text-muted-foreground mt-1">{sub}</p>}
+      </CardContent>
+    </Card>
+  );
 }
 
-// ── Main Component ──
+// ── Main Page ──
 export default function BukuKasPage() {
-  const [activeTab, setActiveTab] = useState("dashboard");
   const [entries, setEntries] = useState<BukuKasEntry[]>([]);
-  const [saldoData, setSaldoData] = useState<SaldoData | null>(null);
-  const [rekapData, setRekapData] = useState<RekapData | null>(null);
+  const [summary, setSummary] = useState<BukuKasSummary | null>(null);
+  const [saldoSaldo, setSaldoSaldo] = useState<SaldoData | null>(null);
+  const [rekap, setRekap] = useState<RekapData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [formMessage, setFormMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Form state
-  const [formDate, setFormDate] = useState(new Date().toISOString().slice(0, 10));
-  const [formType, setFormType] = useState<"D" | "K">("D");
-  const [formCategory, setFormCategory] = useState("Sales");
-  const [formAmount, setFormAmount] = useState("");
-  const [formDescription, setFormDescription] = useState("");
-  const [formReference, setFormReference] = useState("");
-  const [formSubmitting, setFormSubmitting] = useState(false);
-  const [formMessage, setFormMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
-
-  // Table filters
-  const [filterDateFrom, setFilterDateFrom] = useState("");
-  const [filterDateTo, setFilterDateTo] = useState("");
   const [filterCategory, setFilterCategory] = useState("");
+  const [filterDivisi, setFilterDivisi] = useState("");
 
-  // Reap filters
-  const [rekapYear, setRekapYear] = useState(String(new Date().getFullYear()));
+  async function fetchEntries() {
+    const params = new URLSearchParams();
+    if (filterCategory) params.set("category", filterCategory);
+    if (filterDivisi) params.set("divisi", filterDivisi);
+    const res = await fetch(`/api/buku-kas?${params}`, { cache: "no-store" });
+    if (!res.ok) throw new Error("Gagal fetch entries");
+    const json = await res.json();
+    setEntries(json.entries || []);
+    setSummary(json.summary || null);
+  }
 
-  const fetchData = async () => {
-    try {
-      setLoading(true);
-      setError(null);
+  async function fetchSaldo() {
+    const res = await fetch("/api/buku-kas/saldo", { cache: "no-store" });
+    if (!res.ok) throw new Error("Gagal fetch saldo");
+    const json = await res.json();
+    setSaldoSaldo(json);
+  }
 
-      const [entriesRes, saldoRes] = await Promise.all([
-        fetch("/api/buku-kas"),
-        fetch("/api/buku-kas/saldo"),
-      ]);
-
-      const entriesJson = await entriesRes.json();
-      const saldoJson = await saldoRes.json();
-
-      if (entriesJson.entries) {
-        setEntries(entriesJson.entries);
-      }
-      if (saldoJson.saldo !== undefined) {
-        setSaldoData(saldoJson);
-      }
-    } catch (err) {
-      setError("Gagal memuat data buku kas");
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchRekap = async () => {
-    try {
-      const res = await fetch(`/api/buku-kas/rekap?period=monthly&year=${rekapYear}`);
-      const json = await res.json();
-      if (json.totalDebit !== undefined || json.entryCount !== undefined) {
-        setRekapData(json);
-      }
-    } catch (err) {
-      console.error("Failed to fetch rekap:", err);
-    }
-  };
+  async function fetchRekap() {
+    const res = await fetch("/api/buku-kas/rekap", { cache: "no-store" });
+    if (!res.ok) throw new Error("Gagal fetch rekap");
+    const json = await res.json();
+    setRekap(json);
+  }
 
   useEffect(() => {
-    fetchData();
-  }, []);
-
-  useEffect(() => {
-    if (activeTab === "rekap") {
-      fetchRekap();
+    async function loadAll() {
+      try {
+        setLoading(true);
+        await Promise.all([fetchEntries(), fetchSaldo(), fetchRekap()]);
+        setError(null);
+      } catch (err) {
+        setError(String(err));
+      } finally {
+        setLoading(false);
+      }
     }
-  }, [activeTab, rekapYear]);
+    loadAll();
+  }, [filterCategory, filterDivisi]);
 
-  const handleSubmit = async (e: FormEvent) => {
-    e.preventDefault();
-    setFormSubmitting(true);
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSubmitting(true);
     setFormMessage(null);
+    const form = new FormData(event.currentTarget);
+    const payload = {
+      tanggal: String(form.get("tanggal") || ""),
+      type: String(form.get("type") || "debit"),
+      kodeAkun: String(form.get("kodeAkun") || ""),
+      kategori: String(form.get("kategori") || "Operating"),
+      deskripsi: String(form.get("deskripsi") || ""),
+      amount: Number(form.get("amount") || 0),
+      referensi: String(form.get("referensi") || ""),
+      divisi: String(form.get("divisi") || "Holding"),
+    };
 
     try {
       const res = await fetch("/api/buku-kas", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          date: formDate,
-          type: formType,
-          category: formCategory,
-          amount: Number(formAmount),
-          description: formDescription,
-          reference: formReference,
-        }),
+        body: JSON.stringify(payload),
       });
-
       const json = await res.json();
-
-      if (res.ok) {
-        setFormMessage({ type: "success", text: "✅ Transaksi berhasil ditambahkan!" });
-        // Reset form
-        setFormAmount("");
-        setFormDescription("");
-        setFormReference("");
-        // Refresh data
-        await fetchData();
-      } else {
-        setFormMessage({ type: "error", text: `❌ ${json.error || "Gagal menambahkan transaksi"}` });
-      }
-    } catch {
-      setFormMessage({ type: "error", text: "❌ Gagal menghubungi server" });
+      if (!res.ok) throw new Error(json.error || json.details || "Gagal menyimpan");
+      setFormMessage("✅ Transaksi tersimpan ke Buku Kas.");
+      event.currentTarget.reset();
+      await Promise.all([fetchEntries(), fetchSaldo(), fetchRekap()]);
+    } catch (err) {
+      setFormMessage(`❌ ${String(err).replace(/^Error:\s*/, "")}`);
     } finally {
-      setFormSubmitting(false);
+      setSubmitting(false);
     }
-  };
+  }
 
-  const filteredEntries = entries.filter((e) => {
-    if (filterDateFrom && e.date < filterDateFrom) return false;
-    if (filterDateTo && e.date > filterDateTo) return false;
-    if (filterCategory && e.category.toLowerCase() !== filterCategory.toLowerCase()) return false;
-    return true;
-  });
-
-  const last10 = entries.slice(-10).reverse();
+  // ── Last 10 entries for dashboard ──
+  const lastTen = [...entries].reverse().slice(0, 10);
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold">📒 Buku Kas</h1>
-        <p className="text-muted-foreground">Pencatatan transaksi kas harian dengan saldo berjalan otomatis</p>
+        <h2 className="text-2xl font-bold">📒 Buku Kas</h2>
+        <p className="text-muted-foreground">
+          Cash book PT Sensasi Wangi Indonesia — real-time dari Google Sheets
+        </p>
       </div>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="dashboard">📊 Dashboard</TabsTrigger>
-          <TabsTrigger value="input">➕ Input Transaksi</TabsTrigger>
-          <TabsTrigger value="table">📋 Buku Kas</TabsTrigger>
-          <TabsTrigger value="rekap">📈 Rekap</TabsTrigger>
-        </TabsList>
+      <RoleGate feature="dashboard:overview">
+        {loading ? (
+          <div className="grid gap-4 md:grid-cols-4">
+            {[1, 2, 3, 4].map((i) => (
+              <Card key={i}>
+                <CardHeader className="pb-2"><Skeleton className="h-4 w-24" /></CardHeader>
+                <CardContent><Skeleton className="h-8 w-32" /></CardContent>
+              </Card>
+            ))}
+          </div>
+        ) : error ? (
+          <Card>
+            <CardContent className="py-8 text-center text-destructive">
+              <p>Gagal memuat data: {error}</p>
+              <p className="text-sm text-muted-foreground mt-2">
+                Pastikan Google Sheets terhubung dan environment variables sudah di-set.
+              </p>
+            </CardContent>
+          </Card>
+        ) : (
+          <Tabs defaultValue="dashboard" className="space-y-4">
+            <TabsList>
+              <TabsTrigger value="dashboard">📊 Dashboard</TabsTrigger>
+              <TabsTrigger value="input">➕ Input Transaksi</TabsTrigger>
+              <TabsTrigger value="ledger">📒 Buku Kas</TabsTrigger>
+              <TabsTrigger value="rekap">📈 Rekap</TabsTrigger>
+            </TabsList>
 
-        {/* ─── Tab 1: Dashboard ─── */}
-        <TabsContent value="dashboard" className="space-y-4">
-          {loading ? (
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              {[1, 2, 3, 4].map((i) => (
-                <Skeleton key={i} className="h-32" />
-              ))}
-            </div>
-          ) : error ? (
-            <Card>
-              <CardContent className="p-6">
-                <p className="text-red-500">{error}</p>
-                <Button onClick={fetchData} className="mt-2">Coba Lagi</Button>
-              </CardContent>
-            </Card>
-          ) : (
-            <>
-              {/* Saldo Cards */}
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <Card>
-                  <CardContent className="p-6">
-                    <p className="text-sm text-muted-foreground">Saldo Saat Ini</p>
-                    <p className={`text-2xl font-bold ${(saldoData?.saldo || 0) >= 0 ? "text-green-600" : "text-red-600"}`}>
-                      {formatCurrency(saldoData?.saldo || 0)}
-                    </p>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardContent className="p-6">
-                    <p className="text-sm text-muted-foreground">Total Masuk Bulan Ini</p>
-                    <p className="text-2xl font-bold text-green-600">
-                      {formatCurrency(saldoData?.totalDebit || 0)}
-                    </p>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardContent className="p-6">
-                    <p className="text-sm text-muted-foreground">Total Keluar Bulan Ini</p>
-                    <p className="text-2xl font-bold text-red-600">
-                      {formatCurrency(saldoData?.totalKredit || 0)}
-                    </p>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardContent className="p-6">
-                    <p className="text-sm text-muted-foreground">Total Transaksi</p>
-                    <p className="text-2xl font-bold">{saldoData?.entryCount || 0}</p>
-                  </CardContent>
-                </Card>
+            {/* ── TAB: Dashboard ── */}
+            <TabsContent value="dashboard" className="space-y-4">
+              <div className="grid gap-4 md:grid-cols-4">
+                <StatCard
+                  title="Saldo Saat Ini"
+                  value={formatCurrency(saldoSaldo?.saldo ?? 0)}
+                  sub={`${saldoSaldo?.totalEntries ?? 0} transaksi`}
+                  color="text-blue-700"
+                />
+                <StatCard
+                  title="Total Masuk (Bulan Ini)"
+                  value={formatCurrency(saldoSaldo?.currentMonth?.debit ?? 0)}
+                  sub={saldoSaldo?.currentMonth?.month || "-"}
+                  color="text-green-700"
+                />
+                <StatCard
+                  title="Total Keluar (Bulan Ini)"
+                  value={formatCurrency(saldoSaldo?.currentMonth?.kredit ?? 0)}
+                  sub={saldoSaldo?.currentMonth?.month || "-"}
+                  color="text-red-700"
+                />
+                <StatCard
+                  title="Net Bulan Ini"
+                  value={formatCurrency(saldoSaldo?.currentMonth?.net ?? 0)}
+                  sub="Debit - Kredit"
+                  color={(saldoSaldo?.currentMonth?.net ?? 0) >= 0 ? "text-green-700" : "text-red-700"}
+                />
               </div>
 
-              {/* Last 10 Transactions */}
               <Card>
                 <CardHeader>
                   <CardTitle>10 Transaksi Terakhir</CardTitle>
+                  <CardDescription>Transaksi terbaru di Buku Kas</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  {last10.length === 0 ? (
-                    <p className="text-muted-foreground text-center py-8">Belum ada transaksi</p>
-                  ) : (
+                  <div className="rounded-md border overflow-auto">
                     <Table>
                       <TableHeader>
                         <TableRow>
                           <TableHead>Tanggal</TableHead>
-                          <TableHead>Keterangan</TableHead>
+                          <TableHead>Deskripsi</TableHead>
                           <TableHead>Kategori</TableHead>
                           <TableHead className="text-right">Debit</TableHead>
                           <TableHead className="text-right">Kredit</TableHead>
@@ -286,384 +271,378 @@ export default function BukuKasPage() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {last10.map((entry) => (
-                          <TableRow key={entry.id}>
-                            <TableCell>{formatDate(entry.date)}</TableCell>
-                            <TableCell>
-                              <div>
-                                <span className="font-medium">{entry.description}</span>
-                                {entry.reference && (
-                                  <span className="text-xs text-muted-foreground ml-2">#{entry.reference}</span>
-                                )}
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              <Badge variant="outline">
-                                {CATEGORY_EMOJI[entry.category] || "📁"} {entry.category}
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="text-right text-green-600 font-medium">
-                              {entry.type === "D" ? formatCurrency(entry.amount) : "-"}
-                            </TableCell>
-                            <TableCell className="text-right text-red-600 font-medium">
-                              {entry.type === "K" ? formatCurrency(entry.amount) : "-"}
-                            </TableCell>
-                            <TableCell className="text-right font-bold">
-                              {formatCurrency(entry.saldo)}
+                        {lastTen.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={6} className="text-center text-muted-foreground">
+                              Belum ada transaksi di Buku Kas.
                             </TableCell>
                           </TableRow>
-                        ))}
+                        ) : (
+                          lastTen.map((tx) => (
+                            <TableRow key={tx.id}>
+                              <TableCell>{formatDate(tx.tanggal)}</TableCell>
+                              <TableCell className="max-w-[280px] truncate">{tx.deskripsi}</TableCell>
+                              <TableCell>{tx.kategori}</TableCell>
+                              <TableCell className="text-right text-green-700">
+                                {tx.debit ? formatCurrency(tx.debit) : "-"}
+                              </TableCell>
+                              <TableCell className="text-right text-red-700">
+                                {tx.kredit ? formatCurrency(tx.kredit) : "-"}
+                              </TableCell>
+                              <TableCell className="text-right font-medium">
+                                {formatCurrency(tx.saldo)}
+                              </TableCell>
+                            </TableRow>
+                          ))
+                        )}
                       </TableBody>
                     </Table>
-                  )}
+                  </div>
                 </CardContent>
               </Card>
-            </>
-          )}
-        </TabsContent>
+            </TabsContent>
 
-        {/* ─── Tab 2: Input Transaksi ─── */}
-        <TabsContent value="input">
-          <Card>
-            <CardHeader>
-              <CardTitle>Input Transaksi Baru</CardTitle>
-              <CardDescription>Tambahkan transaksi kas baru</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="date">Tanggal</Label>
-                    <Input
-                      id="date"
-                      type="date"
-                      value={formDate}
-                      onChange={(e) => setFormDate(e.target.value)}
-                      required
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="type">Tipe</Label>
-                    <div className="flex gap-4 mt-1">
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="radio"
-                          name="type"
-                          value="D"
-                          checked={formType === "D"}
-                          onChange={() => setFormType("D")}
-                          className="w-4 h-4"
-                        />
-                        <span className="text-green-600 font-medium">💰 Debit (Masuk)</span>
-                      </label>
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="radio"
-                          name="type"
-                          value="K"
-                          checked={formType === "K"}
-                          onChange={() => setFormType("K")}
-                          className="w-4 h-4"
-                        />
-                        <span className="text-red-600 font-medium">💸 Kredit (Keluar)</span>
-                      </label>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="category">Kategori</Label>
-                    <div className="flex flex-wrap gap-2 mt-1">
-                      {CATEGORIES.map((cat) => (
-                        <button
-                          key={cat}
-                          type="button"
-                          onClick={() => setFormCategory(cat)}
-                          className={`px-3 py-1 rounded-full text-sm border transition-colors ${
-                            formCategory === cat
-                              ? "bg-primary text-primary-foreground border-primary"
-                              : "bg-background hover:bg-accent border-border"
-                          }`}
-                        >
-                          {CATEGORY_EMOJI[cat]} {cat}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <div>
-                    <Label htmlFor="amount">Jumlah (Rp)</Label>
-                    <Input
-                      id="amount"
-                      type="number"
-                      min="0"
-                      step="1000"
-                      placeholder="0"
-                      value={formAmount}
-                      onChange={(e) => setFormAmount(e.target.value)}
-                      required
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <Label htmlFor="description">Keterangan</Label>
-                  <Input
-                    id="description"
-                    placeholder="Deskripsi transaksi..."
-                    value={formDescription}
-                    onChange={(e) => setFormDescription(e.target.value)}
-                    required
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="reference">Referensi (opsional)</Label>
-                  <Input
-                    id="reference"
-                    placeholder="No. invoice, no. PO, dll."
-                    value={formReference}
-                    onChange={(e) => setFormReference(e.target.value)}
-                  />
-                </div>
-
-                {formMessage && (
-                  <div className={`p-3 rounded-md text-sm ${
-                    formMessage.type === "success"
-                      ? "bg-green-50 text-green-700 border border-green-200"
-                      : "bg-red-50 text-red-700 border border-red-200"
-                  }`}>
-                    {formMessage.text}
-                  </div>
-                )}
-
-                <Button type="submit" disabled={formSubmitting} className="w-full">
-                  {formSubmitting ? "Menyimpan..." : "💾 Simpan Transaksi"}
-                </Button>
-              </form>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* ─── Tab 3: Buku Kas Table ─── */}
-        <TabsContent value="table" className="space-y-4">
-          {/* Filters */}
-          <Card>
-            <CardContent className="p-4">
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
-                <div>
-                  <Label className="text-xs">Dari Tanggal</Label>
-                  <Input type="date" value={filterDateFrom} onChange={(e) => setFilterDateFrom(e.target.value)} />
-                </div>
-                <div>
-                  <Label className="text-xs">Sampai Tanggal</Label>
-                  <Input type="date" value={filterDateTo} onChange={(e) => setFilterDateTo(e.target.value)} />
-                </div>
-                <div>
-                  <Label className="text-xs">Kategori</Label>
-                  <select
-                    value={filterCategory}
-                    onChange={(e) => setFilterCategory(e.target.value)}
-                    className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
-                  >
-                    <option value="">Semua</option>
-                    {CATEGORIES.map((cat) => (
-                      <option key={cat} value={cat}>{cat}</option>
-                    ))}
-                  </select>
-                </div>
-                <Button
-                  variant="outline"
-                  onClick={() => { setFilterDateFrom(""); setFilterDateTo(""); setFilterCategory(""); }}
-                >
-                  Reset Filter
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Running Balance Table */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Buku Kas — Saldo Berjalan</CardTitle>
-              <CardDescription>
-                {filteredEntries.length} transaksi
-                {filterDateFrom && ` dari ${filterDateFrom}`}
-                {filterDateTo && ` s/d ${filterDateTo}`}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {filteredEntries.length === 0 ? (
-                <p className="text-muted-foreground text-center py-8">
-                  {loading ? "Memuat data..." : "Tidak ada transaksi sesuai filter"}
-                </p>
-              ) : (
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Tanggal</TableHead>
-                        <TableHead>Keterangan</TableHead>
-                        <TableHead>Kategori</TableHead>
-                        <TableHead className="text-right">Debit</TableHead>
-                        <TableHead className="text-right">Kredit</TableHead>
-                        <TableHead className="text-right">Saldo</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {filteredEntries.map((entry) => (
-                        <TableRow key={entry.id}>
-                          <TableCell className="whitespace-nowrap">{formatDate(entry.date)}</TableCell>
-                          <TableCell>
-                            <div>
-                              <span>{entry.description}</span>
-                              {entry.reference && (
-                                <span className="text-xs text-muted-foreground ml-2">#{entry.reference}</span>
-                              )}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="outline">
-                              {CATEGORY_EMOJI[entry.category] || "📁"} {entry.category}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-right text-green-600 font-medium">
-                            {entry.type === "D" ? formatCurrency(entry.amount) : "-"}
-                          </TableCell>
-                          <TableCell className="text-right text-red-600 font-medium">
-                            {entry.type === "K" ? formatCurrency(entry.amount) : "-"}
-                          </TableCell>
-                          <TableCell className={`text-right font-bold ${entry.saldo >= 0 ? "" : "text-red-600"}`}>
-                            {formatCurrency(entry.saldo)}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* ─── Tab 4: Rekap ─── */}
-        <TabsContent value="rekap" className="space-y-4">
-          <div className="flex items-center gap-4">
-            <Label>Tahun:</Label>
-            <select
-              value={rekapYear}
-              onChange={(e) => setRekapYear(e.target.value)}
-              className="h-10 rounded-md border border-input bg-background px-3 text-sm w-32"
-            >
-              {["2024", "2025", "2026", "2027"].map((y) => (
-                <option key={y} value={y}>{y}</option>
-              ))}
-            </select>
-          </div>
-
-          {rekapData ? (
-            <>
-              {/* Summary Cards */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <Card>
-                  <CardContent className="p-6">
-                    <p className="text-sm text-muted-foreground">Total Debit ({rekapYear})</p>
-                    <p className="text-2xl font-bold text-green-600">{formatCurrency(rekapData.totalDebit)}</p>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardContent className="p-6">
-                    <p className="text-sm text-muted-foreground">Total Kredit ({rekapYear})</p>
-                    <p className="text-2xl font-bold text-red-600">{formatCurrency(rekapData.totalKredit)}</p>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardContent className="p-6">
-                    <p className="text-sm text-muted-foreground">Net Change ({rekapYear})</p>
-                    <p className={`text-2xl font-bold ${rekapData.netChange >= 0 ? "text-green-600" : "text-red-600"}`}>
-                      {formatCurrency(rekapData.netChange)}
-                    </p>
-                  </CardContent>
-                </Card>
-              </div>
-
-              {/* Monthly Summary */}
-              <Card>
+            {/* ── TAB: Input Transaksi ── */}
+            <TabsContent value="input">
+              <Card className="border-emerald-200 bg-emerald-50/30">
                 <CardHeader>
-                  <CardTitle>Rekap Bulanan</CardTitle>
+                  <CardTitle>Input Transaksi Baru</CardTitle>
+                  <CardDescription>
+                    Tambah transaksi debit/kredit ke Buku Kas — tersimpan otomatis ke Google Sheets
+                  </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  {rekapData.monthlySummary.length === 0 ? (
-                    <p className="text-muted-foreground text-center py-8">Tidak ada data untuk tahun {rekapYear}</p>
-                  ) : (
+                  <form onSubmit={handleSubmit} className="grid gap-4 md:grid-cols-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="bk-tanggal">Tanggal</Label>
+                      <Input
+                        id="bk-tanggal"
+                        name="tanggal"
+                        type="date"
+                        defaultValue={new Date().toISOString().slice(0, 10)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="bk-type">Tipe</Label>
+                      <select
+                        id="bk-type"
+                        name="type"
+                        className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                      >
+                        <option value="debit">Debit (Masuk)</option>
+                        <option value="credit">Credit (Keluar)</option>
+                      </select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="bk-kategori">Kategori</Label>
+                      <select
+                        id="bk-kategori"
+                        name="kategori"
+                        className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                        defaultValue="Operating"
+                      >
+                        {CATEGORIES.map((c) => (
+                          <option key={c} value={c}>{c}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="bk-amount">Jumlah (Rp)</Label>
+                      <Input id="bk-amount" name="amount" type="number" min="1" step="1" placeholder="100000" required />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="bk-deskripsi">Deskripsi</Label>
+                      <Input id="bk-deskripsi" name="deskripsi" placeholder="Contoh: Penjualan parfum Wangi Mawar" required />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="bk-divisi">Divisi</Label>
+                      <select
+                        id="bk-divisi"
+                        name="divisi"
+                        className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                        defaultValue="Holding"
+                      >
+                        {DIVISI.map((d) => (
+                          <option key={d} value={d}>{d}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="bk-kodeAkun">Kode Akun</Label>
+                      <Input id="bk-kodeAkun" name="kodeAkun" placeholder="401 / 501" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="bk-referensi">Referensi</Label>
+                      <Input id="bk-referensi" name="referensi" placeholder="INV-2026-001" />
+                    </div>
+                    <div className="md:col-span-4 flex items-center gap-3">
+                      <Button type="submit" disabled={submitting}>
+                        {submitting ? "Menyimpan..." : "Simpan Transaksi"}
+                      </Button>
+                      {formMessage && (
+                        <p className={`text-sm ${formMessage.startsWith("✅") ? "text-green-700" : "text-red-700"}`}>
+                          {formMessage}
+                        </p>
+                      )}
+                    </div>
+                  </form>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* ── TAB: Buku Kas Table (Ledger) ── */}
+            <TabsContent value="ledger" className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Buku Kas — Running Balance</CardTitle>
+                  <CardDescription>Semua transaksi dengan saldo berjalan</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {/* Filters */}
+                  <div className="flex flex-wrap gap-3 mb-4">
+                    <div className="space-y-1">
+                      <Label className="text-xs">Kategori</Label>
+                      <select
+                        value={filterCategory}
+                        onChange={(e) => setFilterCategory(e.target.value)}
+                        className="h-9 rounded-md border bg-background px-3 text-sm"
+                      >
+                        <option value="">Semua</option>
+                        {CATEGORIES.map((c) => (
+                          <option key={c} value={c}>{c}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Divisi</Label>
+                      <select
+                        value={filterDivisi}
+                        onChange={(e) => setFilterDivisi(e.target.value)}
+                        className="h-9 rounded-md border bg-background px-3 text-sm"
+                      >
+                        <option value="">Semua</option>
+                        {DIVISI.map((d) => (
+                          <option key={d} value={d}>{d}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="rounded-md border overflow-auto max-h-[600px]">
                     <Table>
-                      <TableHeader>
+                      <TableHeader className="sticky top-0 bg-background">
                         <TableRow>
-                          <TableHead>Bulan</TableHead>
+                          <TableHead>Tanggal</TableHead>
+                          <TableHead>Deskripsi</TableHead>
+                          <TableHead>Kategori</TableHead>
+                          <TableHead>Divisi</TableHead>
                           <TableHead className="text-right">Debit</TableHead>
                           <TableHead className="text-right">Kredit</TableHead>
-                          <TableHead className="text-right">Net</TableHead>
+                          <TableHead className="text-right">Saldo</TableHead>
+                          <TableHead>Ref</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {rekapData.monthlySummary.map((m) => (
-                          <TableRow key={m.period}>
-                            <TableCell className="font-medium">{getMonthName(m.period)}</TableCell>
-                            <TableCell className="text-right text-green-600">{formatCurrency(m.debit)}</TableCell>
-                            <TableCell className="text-right text-red-600">{formatCurrency(m.kredit)}</TableCell>
-                            <TableCell className={`text-right font-bold ${m.net >= 0 ? "text-green-600" : "text-red-600"}`}>
-                              {formatCurrency(m.net)}
+                        {entries.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={8} className="text-center text-muted-foreground">
+                              Belum ada transaksi di Buku Kas.
                             </TableCell>
                           </TableRow>
-                        ))}
+                        ) : (
+                          entries.map((tx) => (
+                            <TableRow key={tx.id}>
+                              <TableCell>{formatDate(tx.tanggal)}</TableCell>
+                              <TableCell className="max-w-[250px] truncate">{tx.deskripsi}</TableCell>
+                              <TableCell>
+                                <span className="inline-flex items-center rounded-full bg-secondary px-2 py-0.5 text-xs">
+                                  {tx.kategori}
+                                </span>
+                              </TableCell>
+                              <TableCell>{tx.divisi}</TableCell>
+                              <TableCell className="text-right text-green-700">
+                                {tx.debit ? formatCurrency(tx.debit) : "-"}
+                              </TableCell>
+                              <TableCell className="text-right text-red-700">
+                                {tx.kredit ? formatCurrency(tx.kredit) : "-"}
+                              </TableCell>
+                              <TableCell className="text-right font-medium">
+                                {formatCurrency(tx.saldo)}
+                              </TableCell>
+                              <TableCell className="text-xs text-muted-foreground max-w-[120px] truncate">
+                                {tx.referensi || "-"}
+                              </TableCell>
+                            </TableRow>
+                          ))
+                        )}
                       </TableBody>
                     </Table>
-                  )}
+                  </div>
                 </CardContent>
               </Card>
+            </TabsContent>
 
-              {/* By Category */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Rekap per Kategori</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Kategori</TableHead>
-                        <TableHead className="text-right">Debit</TableHead>
-                        <TableHead className="text-right">Kredit</TableHead>
-                        <TableHead className="text-right">Net</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {Object.entries(rekapData.byCategory)
-                        .filter(([, v]) => v.debit > 0 || v.kredit > 0)
-                        .map(([cat, data]) => (
-                          <TableRow key={cat}>
-                            <TableCell>{CATEGORY_EMOJI[cat] || "📁"} {cat}</TableCell>
-                            <TableCell className="text-right text-green-600">{formatCurrency(data.debit)}</TableCell>
-                            <TableCell className="text-right text-red-600">{formatCurrency(data.kredit)}</TableCell>
-                            <TableCell className={`text-right font-bold ${data.net >= 0 ? "text-green-600" : "text-red-600"}`}>
-                              {formatCurrency(data.net)}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                    </TableBody>
-                  </Table>
-                </CardContent>
-              </Card>
-            </>
-          ) : (
-            <Card>
-              <CardContent className="p-6">
-                <p className="text-muted-foreground">Memuat data rekap...</p>
-              </CardContent>
-            </Card>
-          )}
-        </TabsContent>
-      </Tabs>
+            {/* ── TAB: Rekap ── */}
+            <TabsContent value="rekap" className="space-y-4">
+              {rekap ? (
+                <>
+                  {/* Monthly Summary */}
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Rekap Bulanan</CardTitle>
+                      <CardDescription>Ringkasan debit/kredit per bulan</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="rounded-md border overflow-auto max-h-[400px]">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Bulan</TableHead>
+                              <TableHead className="text-right">Debit</TableHead>
+                              <TableHead className="text-right">Kredit</TableHead>
+                              <TableHead className="text-right">Net</TableHead>
+                              <TableHead className="text-right">Jumlah Tx</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {Object.entries(rekap.byMonth).length === 0 ? (
+                              <TableRow>
+                                <TableCell colSpan={5} className="text-center text-muted-foreground">
+                                  Belum ada data bulanan.
+                                </TableCell>
+                              </TableRow>
+                            ) : (
+                              Object.entries(rekap.byMonth)
+                                .sort(([a], [b]) => a.localeCompare(b))
+                                .map(([month, data]) => (
+                                  <TableRow key={month}>
+                                    <TableCell className="font-medium">{month}</TableCell>
+                                    <TableCell className="text-right text-green-700">
+                                      {formatCurrency(data.debit)}
+                                    </TableCell>
+                                    <TableCell className="text-right text-red-700">
+                                      {formatCurrency(data.kredit)}
+                                    </TableCell>
+                                    <TableCell className="text-right font-medium">
+                                      {formatCurrency(data.debit - data.kredit)}
+                                    </TableCell>
+                                    <TableCell className="text-right text-muted-foreground">
+                                      {data.count}
+                                    </TableCell>
+                                  </TableRow>
+                                ))
+                            )}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <div className="grid gap-4 md:grid-cols-2">
+                    {/* By Category */}
+                    <Card>
+                      <CardHeader>
+                        <CardTitle>Per Kategori</CardTitle>
+                        <CardDescription>Debit & kredit per kategori</CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="rounded-md border overflow-auto">
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead>Kategori</TableHead>
+                                <TableHead className="text-right">Debit</TableHead>
+                                <TableHead className="text-right">Kredit</TableHead>
+                                <TableHead className="text-right">Net</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {Object.entries(rekap.byCategory).length === 0 ? (
+                                <TableRow>
+                                  <TableCell colSpan={4} className="text-center text-muted-foreground">
+                                    Belum ada data.
+                                  </TableCell>
+                                </TableRow>
+                              ) : (
+                                Object.entries(rekap.byCategory).map(([cat, data]) => (
+                                  <TableRow key={cat}>
+                                    <TableCell className="font-medium">{cat}</TableCell>
+                                    <TableCell className="text-right text-green-700">
+                                      {formatCurrency(data.debit)}
+                                    </TableCell>
+                                    <TableCell className="text-right text-red-700">
+                                      {formatCurrency(data.kredit)}
+                                    </TableCell>
+                                    <TableCell className="text-right">
+                                      {formatCurrency(data.debit - data.kredit)}
+                                    </TableCell>
+                                  </TableRow>
+                                ))
+                              )}
+                            </TableBody>
+                          </Table>
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    {/* By Divisi */}
+                    <Card>
+                      <CardHeader>
+                        <CardTitle>Per Divisi</CardTitle>
+                        <CardDescription>Debit & kredit per divisi</CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="rounded-md border overflow-auto">
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead>Divisi</TableHead>
+                                <TableHead className="text-right">Debit</TableHead>
+                                <TableHead className="text-right">Kredit</TableHead>
+                                <TableHead className="text-right">Net</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {Object.entries(rekap.byDivisi).length === 0 ? (
+                                <TableRow>
+                                  <TableCell colSpan={4} className="text-center text-muted-foreground">
+                                    Belum ada data.
+                                  </TableCell>
+                                </TableRow>
+                              ) : (
+                                Object.entries(rekap.byDivisi).map(([div, data]) => (
+                                  <TableRow key={div}>
+                                    <TableCell className="font-medium">{div}</TableCell>
+                                    <TableCell className="text-right text-green-700">
+                                      {formatCurrency(data.debit)}
+                                    </TableCell>
+                                    <TableCell className="text-right text-red-700">
+                                      {formatCurrency(data.kredit)}
+                                    </TableCell>
+                                    <TableCell className="text-right">
+                                      {formatCurrency(data.debit - data.kredit)}
+                                    </TableCell>
+                                  </TableRow>
+                                ))
+                              )}
+                            </TableBody>
+                          </Table>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </div>
+                </>
+              ) : (
+                <Card>
+                  <CardContent className="py-8 text-center text-muted-foreground">
+                    Memuat rekap...
+                  </CardContent>
+                </Card>
+              )}
+            </TabsContent>
+          </Tabs>
+        )}
+      </RoleGate>
     </div>
   );
 }

@@ -57,6 +57,8 @@ const NAV_ITEMS: NavItem[] = [
     { label: "Agent Dashboard", href: "/agent-dashboard", icon: "🦉", feature: "ai-features" },
     { label: "Users", href: "/users", icon: "👥", feature: "user-management" },
     { label: "Tasks", href: "/tasks", icon: "✅", feature: "dashboard:overview" },
+    { label: "Buku Kas", href: "/buku-kas", icon: "📒", feature: "dashboard:overview" },
+    { label: "BEP Analysis", href: "/bep", icon: "📐", feature: "dashboard:overview" },
     { label: "Settings", href: "/settings", icon: "⚙️", feature: "settings" },
 ];
 
