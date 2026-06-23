@@ -1,16 +1,12 @@
-// GET /api/bep/summary — Overall profitability summary
-import { NextResponse } from "next/server";
-import {
-  getBEPSummary,
-  seedBEPData,
-} from "@/lib/sheets/bep-sheets";
+// GET /api/bep/summary — Get overall profitability summary
+import { NextRequest, NextResponse } from "next/server";
+import { getBEPSummary } from "@/lib/sheets/bep-sheets";
 import { isGoogleWorkspaceAuthError, googleWorkspaceDegradedSource } from "@/lib/api/google-workspace-error";
 
 export const runtime = "nodejs";
 
 export async function GET() {
   try {
-    await seedBEPData();
     const summary = await getBEPSummary();
 
     return NextResponse.json({

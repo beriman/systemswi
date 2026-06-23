@@ -1,9 +1,6 @@
-// GET /api/bep/[brand] — Get BEP detail per brand
+// GET /api/bep/[brand] — Get BEP detail for a specific brand
 import { NextRequest, NextResponse } from "next/server";
-import {
-  getBEPByBrand,
-  seedBEPData,
-} from "@/lib/sheets/bep-sheets";
+import { getBEPByBrand } from "@/lib/sheets/bep-sheets";
 import { isGoogleWorkspaceAuthError, googleWorkspaceDegradedSource } from "@/lib/api/google-workspace-error";
 
 export const runtime = "nodejs";
@@ -13,42 +10,36 @@ export async function GET(
   { params }: { params: Promise<{ brand: string }> }
 ) {
   try {
-    await seedBEPData();
-    const { brand: brandParam } = await params;
-    const brand = decodeURIComponent(brandParam);
-    const calculations = await getBEPByBrand(brand);
+    const { brand } = await params;
+    const decodedBrand = decodeURIComponent(brand);
+
+    const calculations = await getBEPByBrand(decodedBrand);
 
     if (calculations.length === 0) {
-      return NextResponse.json(
-        { error: `No BEP calculations found for brand: ${brand}` },
-        { status: 404 }
-      );
+      return NextResponse.json({
+        source: "Google Sheets: BEP_Calculations",
+        sourceStatus: "live",
+        generatedAt: new Date().toISOString(),
+        brand: decodedBrand,
+        count: 0,
+        calculations: [],
+        message: `No BEP calculations found for brand: ${decodedBrand}`,
+      });
     }
-
-    // Aggregate brand totals
-    const totalFixedCost = calculations.reduce((s, c) => s + c.fixedCost, 0);
-    const totalCurrentSales = calculations.reduce((s, c) => s + c.currentSales, 0);
-    const totalProfitLoss = calculations.reduce((s, c) => s + c.profitLoss, 0);
 
     return NextResponse.json({
       source: "Google Sheets: BEP_Calculations",
       sourceStatus: "live",
       generatedAt: new Date().toISOString(),
-      brand,
-      products: calculations,
-      summary: {
-        totalFixedCost,
-        totalCurrentSales,
-        totalProfitLoss,
-        productCount: calculations.length,
-      },
+      brand: decodedBrand,
+      count: calculations.length,
+      calculations,
     });
   } catch (error) {
     if (isGoogleWorkspaceAuthError(error)) {
       return NextResponse.json({
         ...googleWorkspaceDegradedSource("Google Sheets: BEP_Calculations", error),
-        brand: params.brand,
-        products: [],
+        calculations: [],
       });
     }
     return NextResponse.json(
