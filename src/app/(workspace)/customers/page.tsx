@@ -119,23 +119,23 @@ export default function CustomersPage() {
   const [query, setQuery] = useState("");
   const [segmentFilter, setSegmentFilter] = useState<"all" | "vip" | "loyal" | "regular" | "new">("all");
 
-  // Filtered customers
+  // Filtered customers (server-side filtering via API; this is just a pass-through)
   const filteredCustomers = useMemo(() => {
-    const needle = query.toLowerCase();
-    return (data?.customers || []).filter((c) => {
-      if (segmentFilter !== "all" && c.segment !== segmentFilter) return false;
-      return [c.name, c.whatsapp, c.interest, c.source, c.segment]
-        .join(" ").toLowerCase().includes(needle);
-    });
-  }, [data, query, segmentFilter]);
+    return data?.customers || [];
+  }, [data]);
 
   // ── Data Loading ──
 
   async function loadAll() {
     setLoading(true);
     try {
+      const params = new URLSearchParams();
+      if (query) params.set("q", query);
+      if (segmentFilter !== "all") params.set("segment", segmentFilter);
+      const qs = params.toString();
+      
       const [crmRes, segRes] = await Promise.all([
-        fetch("/api/customers", { cache: "no-store" }),
+        fetch(`/api/customers${qs ? `?${qs}` : ""}`, { cache: "no-store" }),
         fetch("/api/customers/segments", { cache: "no-store" }),
       ]);
       const crm: CustomerPayload = await crmRes.json();
@@ -143,7 +143,10 @@ export default function CustomersPage() {
       setData(crm);
       setSegments(seg);
       const src = crm.source || "SQLite + Google Sheets";
-      setStatus(crm.warning || `Customer 360 siap — source: ${src}`);
+      const filterNote = crm.totalBeforeFilter !== undefined && crm.totalBeforeFilter !== crm.customers.length
+        ? ` (${crm.customers.length} dari ${crm.totalBeforeFilter} customer)` 
+        : "";
+      setStatus(crm.warning || `Customer 360 siap — source: ${src}${filterNote}`);
     } catch (error) {
       setStatus(`Gagal memuat: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
@@ -152,6 +155,12 @@ export default function CustomersPage() {
   }
 
   useEffect(() => { loadAll(); }, []);
+
+  // Reload when search/filter changes (debounced)
+  useEffect(() => {
+    const timer = setTimeout(() => { loadAll(); }, 300);
+    return () => clearTimeout(timer);
+  }, [query, segmentFilter]);
 
   // ── Customer Detail ──
 
