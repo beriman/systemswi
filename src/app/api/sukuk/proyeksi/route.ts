@@ -1,22 +1,18 @@
-// GET /api/sukuk/proyeksi — Return projections
+// GET /api/sukuk/proyeksi — List projections from SukukStore!A29:O44
 import { NextRequest, NextResponse } from "next/server";
 import { readRange } from "@/lib/sheets/sheets-real";
 
-// SukukProyeksi: SukukStore!A29:O44
-const PROYEKSI_RANGE = "SukukStore!A29:O44";
-
 export async function GET() {
   try {
-    const rows = await readRange(PROYEKSI_RANGE);
-    if (!rows || rows.length <= 1) {
+    const rows = await readRange("SukukStore!A29:O44");
+    if (!rows || rows.length === 0) {
       return NextResponse.json({ proyeksi: [], source: "sheets" });
     }
-    const proyeksi = [];
-    for (let i = 1; i < rows.length; i++) {
-      const r = rows[i];
-      if (!r[0] && !r[1]) continue;
-      proyeksi.push({
-        id: r[0] || String(i),
+    const dataRows = rows[0]?.[0] === "ID" ? rows.slice(1) : rows;
+    const proyeksi = dataRows
+      .filter((r) => r && r[0])
+      .map((r) => ({
+        id: r[0] || "",
         brand: r[1] || "",
         product_id: r[2] || "",
         product_name: r[3] || "",
@@ -28,12 +24,14 @@ export async function GET() {
         payback_bulan: Number(r[9]) || 0,
         npv: Number(r[10]) || 0,
         irr: Number(r[11]) || 0,
-        status: r[12] || "aktif",
+        status: r[12] || "",
         catatan: r[13] || "",
-      });
-    }
+      }));
     return NextResponse.json({ proyeksi, source: "sheets" });
   } catch (error) {
-    return NextResponse.json({ proyeksi: [], source: "error", error: String(error) });
+    return NextResponse.json(
+      { error: "Failed to fetch proyeksi", details: String(error) },
+      { status: 500 }
+    );
   }
 }
