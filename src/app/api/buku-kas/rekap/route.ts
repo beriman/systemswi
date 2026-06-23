@@ -1,106 +1,96 @@
+// GET /api/buku-kas/rekap — Period rekap
+// Query: ?period=monthly|weekly&year=2025&month=06
 import { NextRequest, NextResponse } from "next/server";
+import {
+  readBukuKasSheet,
+  parseBukuKasRows,
+  calculateRunningBalance,
+  CATEGORIES,
+} from "@/lib/buku-kas/sheets";
 import { googleWorkspaceDegradedSource, isGoogleWorkspaceAuthError } from "@/lib/api/google-workspace-error";
-import { readRange } from "@/lib/sheets/sheets-real";
 
-export const runtime = "nodejs";
+const SOURCE = "Google Sheets: Buku_Kas";
 
-const money = (value: unknown): number => {
-  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
-  if (typeof value !== "string") return 0;
-  const parsed = Number(value.replace(/[^\d.-]/g, ""));
-  return Number.isFinite(parsed) ? parsed : 0;
-};
-
-// ── GET /api/buku-kas/rekap ──
-// Returns period rekap: monthly/weekly summary, by category
 export async function GET(req: NextRequest) {
   try {
     const url = new URL(req.url);
-    const period = url.searchParams.get("period") || "monthly"; // monthly | weekly | yearly
-    const month = url.searchParams.get("month"); // YYYY-MM
-    const year = url.searchParams.get("year"); // YYYY
+    const period = url.searchParams.get("period") || "monthly";
+    const year = url.searchParams.get("year") || String(new Date().getFullYear());
+    const month = url.searchParams.get("month") || "";
 
-    const rows = await readRange("Buku_Kas!A1:H1000");
-    const dataRows = rows.slice(1).filter((row) => row.some(Boolean));
+    const rows = await readBukuKasSheet();
+    const entries = parseBukuKasRows(rows);
+    const balanced = calculateRunningBalance(entries);
 
-    // Filter by year/month if specified
-    let filteredRows = dataRows;
+    // Filter by year/month
+    let filtered = balanced.filter((e) => e.date.startsWith(year));
     if (month) {
-      filteredRows = filteredRows.filter((row) => (row[0] || "").startsWith(month));
-    } else if (year) {
-      filteredRows = filteredRows.filter((row) => (row[0] || "").startsWith(year));
+      const monthStr = `${year}-${month.padStart(2, "0")}`;
+      filtered = filtered.filter((e) => e.date.startsWith(monthStr));
     }
 
-    // ── By Category ──
-    const byCategory: Record<string, { debit: number; kredit: number; count: number }> = {};
-    for (const row of filteredRows) {
-      const kategori = row[2] || "Tanpa Kategori";
-      if (!byCategory[kategori]) {
-        byCategory[kategori] = { debit: 0, kredit: 0, count: 0 };
+    // Category breakdown
+    const byCategory: Record<string, { debit: number; kredit: number; net: number }> = {};
+    for (const cat of CATEGORIES) {
+      byCategory[cat] = { debit: 0, kredit: 0, net: 0 };
+    }
+    for (const entry of filtered) {
+      const cat = byCategory[entry.category] || (byCategory[entry.category] = { debit: 0, kredit: 0, net: 0 });
+      if (entry.type === "D") {
+        cat.debit += entry.amount;
+        cat.net += entry.amount;
+      } else {
+        cat.kredit += entry.amount;
+        cat.net -= entry.amount;
       }
-      byCategory[kategori].debit += money(row[4]);
-      byCategory[kategori].kredit += money(row[5]);
-      byCategory[kategori].count += 1;
     }
 
-    // ── By Month ──
-    const byMonth: Record<string, { debit: number; kredit: number; count: number }> = {};
-    for (const row of dataRows) {
-      const tgl = row[0] || "";
-      const ym = tgl.slice(0, 7); // YYYY-MM
-      if (!ym) continue;
-      if (!byMonth[ym]) {
-        byMonth[ym] = { debit: 0, kredit: 0, count: 0 };
+    // Monthly summary
+    const monthlyMap: Record<string, { debit: number; kredit: number; net: number }> = {};
+    for (const entry of filtered) {
+      const key = entry.date.slice(0, 7); // YYYY-MM
+      if (!monthlyMap[key]) monthlyMap[key] = { debit: 0, kredit: 0, net: 0 };
+      if (entry.type === "D") {
+        monthlyMap[key].debit += entry.amount;
+        monthlyMap[key].net += entry.amount;
+      } else {
+        monthlyMap[key].kredit += entry.amount;
+        monthlyMap[key].net -= entry.amount;
       }
-      byMonth[ym].debit += money(row[4]);
-      byMonth[ym].kredit += money(row[5]);
-      byMonth[ym].count += 1;
     }
 
-    // ── By Divisi ──
-    const byDivisi: Record<string, { debit: number; kredit: number; count: number }> = {};
-    for (const row of filteredRows) {
-      const divisi = row[7] || "Tanpa Divisi";
-      if (!byDivisi[divisi]) {
-        byDivisi[divisi] = { debit: 0, kredit: 0, count: 0 };
-      }
-      byDivisi[divisi].debit += money(row[4]);
-      byDivisi[divisi].kredit += money(row[5]);
-      byDivisi[divisi].count += 1;
-    }
+    const monthlySummary = Object.entries(monthlyMap)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([periodKey, data]) => ({ period: periodKey, ...data }));
 
-    // Summary
-    const totalDebit = filteredRows.reduce((s, r) => s + money(r[4]), 0);
-    const totalKredit = filteredRows.reduce((s, r) => s + money(r[5]), 0);
+    const totalDebit = filtered.filter((e) => e.type === "D").reduce((s, e) => s + e.amount, 0);
+    const totalKredit = filtered.filter((e) => e.type === "K").reduce((s, e) => s + e.amount, 0);
 
     return NextResponse.json({
-      source: "Google Sheets: Buku_Kas",
+      source: SOURCE,
       sourceStatus: "live",
       period,
-      filteredBy: { month, year },
-      summary: {
-        totalDebit,
-        totalKredit,
-        net: totalDebit - totalKredit,
-        totalEntries: filteredRows.length,
-      },
+      year,
+      month,
+      totalDebit,
+      totalKredit,
+      netChange: totalDebit - totalKredit,
       byCategory,
-      byMonth,
-      byDivisi,
+      monthlySummary,
+      entryCount: filtered.length,
     });
   } catch (error) {
     if (isGoogleWorkspaceAuthError(error)) {
       return NextResponse.json({
-        ...googleWorkspaceDegradedSource("Google Sheets: Buku_Kas", error),
-        summary: { totalDebit: 0, totalKredit: 0, net: 0, totalEntries: 0 },
+        ...googleWorkspaceDegradedSource(SOURCE, error),
+        totalDebit: 0,
+        totalKredit: 0,
+        netChange: 0,
         byCategory: {},
-        byMonth: {},
-        byDivisi: {},
+        monthlySummary: [],
+        entryCount: 0,
       });
     }
-    return NextResponse.json(
-      { error: "Gagal membaca rekap Buku Kas", details: String(error) },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Failed to fetch rekap", details: String(error) }, { status: 500 });
   }
 }
