@@ -10,8 +10,8 @@ const SHEET_NAME = "BukuKas";
 
 // Columns: EntryId | Date | Type | Category | Description | Debit | Credit | Saldo
 function rowToEntry(row: string[], rowNumber: number) {
-  const rawType = row[2] || "Debit";
-  const type = rawType === "K" || rawType === "Kredit" ? "K" : "D";
+  const rawType = row[2] || "D";
+  const type = rawType === "K" || rawType === "Kredit" || rawType === "k" ? "K" : "D";
   return {
     entryId: row[0] || "",
     date: row[1] || "",
@@ -53,7 +53,10 @@ export async function GET(request: NextRequest) {
     if (startDate) entries = entries.filter((e) => e.date >= startDate);
     if (endDate) entries = entries.filter((e) => e.date <= endDate);
     if (category) entries = entries.filter((e) => e.category === category);
-    if (type) entries = entries.filter((e) => e.type === type);
+    if (type) {
+      const normalizedType = type === "Kredit" || type === "K" ? "K" : "D";
+      entries = entries.filter((e) => e.type === normalizedType);
+    }
 
     // Sort by date ascending, then by entryId
     entries.sort((a, b) => {
@@ -97,7 +100,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Normalize type: accept "D"/"Debit" and "K"/"Kredit"
-    const normalizedType = (type === "K" || type === "Kredit") ? "K" : "D";
+    const normalizedType = (type === "K" || type === "Kredit" || type === "k") ? "K" : "D";
 
     // Generate entry ID
     const entryId = `BK-${Date.now()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
@@ -115,6 +118,7 @@ export async function POST(request: NextRequest) {
     const credit = normalizedType === "K" ? parsedAmount : 0;
     const newSaldo = lastSaldo + debit - credit;
 
+    // Column order: EntryId | Date | Type | Category | Description | Debit | Credit | Saldo
     const newRow = [
       entryId,
       date,
