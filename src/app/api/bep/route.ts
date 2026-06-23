@@ -1,68 +1,33 @@
 // GET /api/bep — List all BEP calculations
-// POST /api/bep — Calculate and store BEP
+// POST /api/bep — Calculate and store a new BEP
 import { NextRequest, NextResponse } from "next/server";
-import { readRange, appendRows } from "@/lib/sheets/sheets-real";
+import {
+  getAllBEPCalculations,
+  createBEPCalculation,
+  seedBEPData,
+} from "@/lib/sheets/bep-sheets";
+import { isGoogleWorkspaceAuthError, googleWorkspaceDegradedSource } from "@/lib/api/google-workspace-error";
 
 export const runtime = "nodejs";
 
-const SHEET_NAME = "BEP_Calculations";
-const RANGE = "BEP_Calculations!A1:L1000";
-
-// Column order:
-// Calculation ID | Brand | Product | Fixed Cost | Variable Cost/Unit |
-// Selling Price/Unit | Contribution Margin | BEP (units) | BEP (revenue) |
-// Current Sales | Margin of Safety | Profit/Loss
-
-function parseNum(v: unknown): number {
-  if (typeof v === "number") return Number.isFinite(v) ? v : 0;
-  if (typeof v !== "string") return 0;
-  const n = Number(v.replace(/[^\d.-]/g, ""));
-  return Number.isFinite(n) ? n : 0;
-}
-
-function calcBEP(fixedCost: number, variableCost: number, sellingPrice: number, currentSales: number) {
-  const contributionMargin = sellingPrice - variableCost;
-  const bepUnits = contributionMargin > 0 ? fixedCost / contributionMargin : 0;
-  const bepRevenue = bepUnits * sellingPrice;
-  const marginOfSafety = currentSales > 0 ? ((currentSales - bepUnits) / currentSales) * 100 : 0;
-  const profit = (currentSales * contributionMargin) - fixedCost;
-  return { contributionMargin, bepUnits, bepRevenue, marginOfSafety, profit };
-}
-
-function rowToBEP(row: string[]) {
-  const fixedCost = parseNum(row[3]);
-  const variableCost = parseNum(row[4]);
-  const sellingPrice = parseNum(row[5]);
-  const currentSales = parseNum(row[9]);
-  const calc = calcBEP(fixedCost, variableCost, sellingPrice, currentSales);
-  return {
-    calculationId: row[0] || "",
-    brand: row[1] || "",
-    product: row[2] || "",
-    fixedCost,
-    variableCost,
-    sellingPrice,
-    contributionMargin: parseNum(row[6]) || calc.contributionMargin,
-    bepUnits: parseNum(row[7]) || calc.bepUnits,
-    bepRevenue: parseNum(row[8]) || calc.bepRevenue,
-    currentSales,
-    marginOfSafety: parseNum(row[10]) || calc.marginOfSafety,
-    profit: parseNum(row[11]) || calc.profit,
-  };
-}
-
 export async function GET() {
   try {
-    const rows = await readRange(RANGE);
-    if (!rows || rows.length === 0) {
-      return NextResponse.json({ bep: [], source: "sheets" });
-    }
-    const dataRows = rows[0]?.[0] === "Calculation ID" ? rows.slice(1) : rows;
-    const bep = dataRows
-      .filter((r) => r && r[0])
-      .map(rowToBEP);
-    return NextResponse.json({ bep, source: "sheets" });
+    await seedBEPData(); // Auto-seed if empty
+    const calculations = await getAllBEPCalculations();
+    return NextResponse.json({
+      source: "Google Sheets: BEP_Calculations",
+      sourceStatus: "live",
+      generatedAt: new Date().toISOString(),
+      count: calculations.length,
+      calculations,
+    });
   } catch (error) {
+    if (isGoogleWorkspaceAuthError(error)) {
+      return NextResponse.json({
+        ...googleWorkspaceDegradedSource("Google Sheets: BEP_Calculations", error),
+        calculations: [],
+      });
+    }
     return NextResponse.json(
       { error: "Failed to fetch BEP calculations", details: String(error) },
       { status: 500 }
@@ -70,66 +35,65 @@ export async function GET() {
   }
 }
 
-export async function POST(request: NextRequest) {
+export async function POST(req: NextRequest) {
   try {
-    const body = await request.json();
-    const { brand, product, fixedCost: fc, variableCost: vc, sellingPrice: sp, currentSales: cs } = body;
+    const body = await req.json();
+    const brand = String(body.brand || "").trim();
+    const product = String(body.product || "").trim();
+    const fixedCost = Number(body.fixedCost) || 0;
+    const variableCostPerUnit = Number(body.variableCostPerUnit) || 0;
+    const sellingPricePerUnit = Number(body.sellingPricePerUnit) || 0;
+    const currentSales = Number(body.currentSales) || 0;
 
-    if (!brand || !product || fc == null || vc == null || sp == null) {
+    if (!brand || !product) {
       return NextResponse.json(
-        { error: "Missing required fields: brand, product, fixedCost, variableCost, sellingPrice" },
+        { error: "brand and product are required" },
+        { status: 400 }
+      );
+    }
+    if (fixedCost <= 0) {
+      return NextResponse.json(
+        { error: "fixedCost must be greater than 0" },
+        { status: 400 }
+      );
+    }
+    if (variableCostPerUnit <= 0) {
+      return NextResponse.json(
+        { error: "variableCostPerUnit must be greater than 0" },
+        { status: 400 }
+      );
+    }
+    if (sellingPricePerUnit <= variableCostPerUnit) {
+      return NextResponse.json(
+        { error: "sellingPricePerUnit must be greater than variableCostPerUnit" },
         { status: 400 }
       );
     }
 
-    const fixedCost = parseNum(fc);
-    const variableCost = parseNum(vc);
-    const sellingPrice = parseNum(sp);
-    const currentSales = parseNum(cs) || 0;
-
-    if (sellingPrice <= variableCost) {
-      return NextResponse.json(
-        { error: "Selling price must be greater than variable cost per unit" },
-        { status: 400 }
-      );
-    }
-
-    const calc = calcBEP(fixedCost, variableCost, sellingPrice, currentSales);
-    const calculationId = `BEP-${Date.now()}`;
-
-    const row = [
-      calculationId,
+    const result = await createBEPCalculation({
       brand,
       product,
       fixedCost,
-      variableCost,
-      sellingPrice,
-      calc.contributionMargin,
-      Math.round(calc.bepUnits * 100) / 100,
-      Math.round(calc.bepRevenue),
+      variableCostPerUnit,
+      sellingPricePerUnit,
       currentSales,
-      Math.round(calc.marginOfSafety * 100) / 100,
-      Math.round(calc.profit),
-    ];
+    });
 
-    await appendRows(SHEET_NAME, [row]);
-
-    return NextResponse.json({
-      bep: {
-        calculationId,
-        brand,
-        product,
-        fixedCost,
-        variableCost,
-        sellingPrice,
-        ...calc,
-        currentSales,
-      },
-      source: "sheets",
-    }, { status: 201 });
+    return NextResponse.json({ success: true, calculation: result }, { status: 201 });
   } catch (error) {
+    if (isGoogleWorkspaceAuthError(error)) {
+      return NextResponse.json(
+        {
+          sourceStatus: "blocked",
+          source: "Google Sheets: BEP_Calculations",
+          error: "Google Workspace OAuth perlu re-auth sebelum bisa menambah kalkulasi BEP",
+          details: String(error),
+        },
+        { status: 503 }
+      );
+    }
     return NextResponse.json(
-      { error: "Failed to calculate BEP", details: String(error) },
+      { error: "Failed to create BEP calculation", details: String(error) },
       { status: 500 }
     );
   }

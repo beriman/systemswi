@@ -3,16 +3,13 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Calculator, TrendingUp, TrendingDown, AlertTriangle, CheckCircle,
-  RefreshCw, Plus, Sliders, BarChart3, DollarSign, Package, Target
+  RefreshCw, Plus, Sliders, BarChart3, DollarSign, Package, Target,
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -20,68 +17,62 @@ import { Slider } from "@/components/ui/slider";
 
 // ── Types ──────────────────────────────────────────────────────────
 
-interface BEPItem {
+interface BEPCalculation {
   calculationId: string;
   brand: string;
   product: string;
   fixedCost: number;
-  variableCost: number;
-  sellingPrice: number;
+  variableCostPerUnit: number;
+  sellingPricePerUnit: number;
   contributionMargin: number;
   bepUnits: number;
   bepRevenue: number;
   currentSales: number;
   marginOfSafety: number;
-  profit: number;
+  profitLoss: number;
+  createdAt: string;
+  updatedAt: string;
 }
 
-interface BrandSummary {
+interface BEPSummaryBrand {
   brand: string;
-  productCount: number;
-  totalFixedCosts: number;
-  totalProfit: number;
-  avgMarginOfSafety: number;
-  totalBEPRevenue: number;
-  totalCurrentRevenue: number;
-  profitable: boolean;
-  products: BEPItem[];
+  product: string;
+  fixedCost: number;
+  variableCostPerUnit: number;
+  sellingPricePerUnit: number;
+  contributionMargin: number;
+  bepUnits: number;
+  bepRevenue: number;
+  currentSales: number;
+  marginOfSafety: number;
+  profitLoss: number;
+  status: "profit" | "loss" | "break-even";
 }
 
 interface SummaryData {
-  totalBrands: number;
-  totalProducts: number;
+  brands: BEPSummaryBrand[];
   totalFixedCosts: number;
-  totalProfit: number;
-  avgMarginOfSafety: number;
-  profitableBrands: number;
-  lossBrands: number;
+  totalProfitLoss: number;
+  profitableCount: number;
+  lossCount: number;
 }
 
-interface WhatIfResult {
-  base: {
-    contributionMargin: number;
-    bepUnits: number;
-    bepRevenue: number;
-    marginOfSafety: number;
-    profit: number;
-  };
-  scenario: {
-    sellingPrice: number;
-    variableCost: number;
-    fixedCost: number;
-    currentSales: number;
-    contributionMargin: number;
-    bepUnits: number;
-    bepRevenue: number;
-    marginOfSafety: number;
-    profit: number;
-  };
-  delta: {
-    bepUnits: number;
-    bepRevenue: number;
-    marginOfSafety: number;
-    profit: number;
-  };
+interface WhatIfScenario {
+  scenarioId: string;
+  brand: string;
+  product: string;
+  fixedCost: number;
+  variableCostPerUnit: number;
+  sellingPricePerUnit: number;
+  currentSales: number;
+  contributionMargin: number;
+  bepUnits: number;
+  bepRevenue: number;
+  marginOfSafety: number;
+  profitLoss: number;
+  priceChange: number;
+  volumeChange: number;
+  costChange: number;
 }
 
 // ── Helpers ────────────────────────────────────────────────────────
@@ -97,9 +88,9 @@ const fmtNum = (v: number) =>
 const fmtPct = (v: number) =>
   `${(v || 0).toFixed(1)}%`;
 
-function ProfitBadge({ profit }: { profit: number }) {
-  if (profit > 0) return <Badge className="bg-emerald-600">Untung</Badge>;
-  if (profit < 0) return <Badge className="bg-red-500">Rugi</Badge>;
+function StatusBadge({ status }: { status: string }) {
+  if (status === "profit") return <Badge className="bg-emerald-600">Untung</Badge>;
+  if (status === "loss") return <Badge className="bg-red-500">Rugi</Badge>;
   return <Badge variant="outline">BEP</Badge>;
 }
 
@@ -113,9 +104,8 @@ function MoSBadge({ mos }: { mos: number }) {
 // ── Main Component ────────────────────────────────────────────────
 
 export default function BEPAnalysisPage() {
-  const [bepItems, setBepItems] = useState<BEPItem[]>([]);
+  const [calculations, setCalculations] = useState<BEPCalculation[]>([]);
   const [summary, setSummary] = useState<SummaryData | null>(null);
-  const [brands, setBrands] = useState<BrandSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState("overview");
@@ -128,19 +118,18 @@ export default function BEPAnalysisPage() {
   const [calcVariableCost, setCalcVariableCost] = useState("");
   const [calcSellingPrice, setCalcSellingPrice] = useState("");
   const [calcCurrentSales, setCalcCurrentSales] = useState("");
-  const [calcResult, setCalcResult] = useState<BEPItem | null>(null);
+  const [calcSaved, setCalcSaved] = useState<BEPCalculation | null>(null);
   const [calcSaving, setCalcSaving] = useState(false);
 
   // What-if state
-  const [wiFixedCost, setWiFixedCost] = useState("50000000");
-  const [wiVariableCost, setWiVariableCost] = useState("15000");
-  const [wiSellingPrice, setWiSellingPrice] = useState("35000");
-  const [wiCurrentSales, setWiCurrentSales] = useState("5000");
+  const [wiFixedCost, setWiFixedCost] = useState("150000000");
+  const [wiVariableCost, setWiVariableCost] = useState("45000");
+  const [wiSellingPrice, setWiSellingPrice] = useState("120000");
+  const [wiCurrentSales, setWiCurrentSales] = useState("2500");
   const [wiPriceAdj, setWiPriceAdj] = useState(0);
   const [wiVolumeAdj, setWiVolumeAdj] = useState(0);
   const [wiCostAdj, setWiCostAdj] = useState(0);
-  const [wiFixedAdj, setWiFixedAdj] = useState(0);
-  const [wiResult, setWiResult] = useState<WhatIfResult | null>(null);
+  const [wiResult, setWiResult] = useState<{ base: BEPCalculation; scenario: WhatIfScenario } | null>(null);
   const [wiRunning, setWiRunning] = useState(false);
 
   // ── Data Loading ─────────────────────────────────────────────────
@@ -156,13 +145,10 @@ export default function BEPAnalysisPage() {
       const bepData = await bepRes.json();
       const summaryData = await summaryRes.json();
 
-      if (bepRes.ok) setBepItems(bepData.bep || []);
-      if (summaryRes.ok) {
-        setSummary(summaryData.summary || null);
-        setBrands(summaryData.brands || []);
-      }
+      if (bepRes.ok) setCalculations(bepData.calculations || []);
+      if (summaryRes.ok) setSummary(summaryData);
 
-      setStatus(`Source: sheets | ${bepData.bep?.length || 0} calculations, ${summaryData.summary?.totalBrands || 0} brands`);
+      setStatus(`Source: Google Sheets | ${bepData.calculations?.length || 0} calculations, ${summaryData?.brands?.length || 0} brands`);
     } catch (err) {
       setStatus(`Error: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
@@ -173,7 +159,7 @@ export default function BEPAnalysisPage() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  // ── Calculator (live preview) ────────────────────────────────────
+  // ── Live Calculator ───────────────────────────────────────────────
 
   const liveCalc = useMemo(() => {
     const fc = Number(calcFixedCost) || 0;
@@ -182,12 +168,37 @@ export default function BEPAnalysisPage() {
     const cs = Number(calcCurrentSales) || 0;
     if (fc <= 0 || sp <= vc) return null;
     const cm = sp - vc;
-    const bepU = fc / cm;
+    const bepU = Math.ceil(fc / cm);
     const bepR = bepU * sp;
-    const mos = cs > 0 ? ((cs - bepU) / cs) * 100 : 0;
-    const profit = (cs * cm) - fc;
-    return { contributionMargin: cm, bepUnits: bepU, bepRevenue: bepR, marginOfSafety: mos, profit };
+    const mos = cs > 0 ? Math.round(((cs - bepU) / cs) * 100 * 100) / 100 : 0;
+    const profitLoss = cs * cm - fc;
+    return { contributionMargin: cm, bepUnits: bepU, bepRevenue: bepR, marginOfSafety: mos, profitLoss };
   }, [calcFixedCost, calcVariableCost, calcSellingPrice, calcCurrentSales]);
+
+  // ── What-if live preview ─────────────────────────────────────────
+
+  const whatIfPreview = useMemo(() => {
+    const fc = Number(wiFixedCost) || 0;
+    const vc = Number(wiVariableCost) || 0;
+    const sp = Number(wiSellingPrice) || 0;
+    const cs = Number(wiCurrentSales) || 0;
+    if (fc <= 0 || sp <= 0) return null;
+
+    const base = calcBEP(fc, vc, sp, cs);
+
+    const priceMult = 1 + wiPriceAdj / 100;
+    const volMult = 1 + wiVolumeAdj / 100;
+    const costMult = 1 + wiCostAdj / 100;
+
+    const scenario = calcBEP(
+      fc * costMult,
+      vc * costMult,
+      sp * priceMult,
+      cs * volMult,
+    );
+
+    return { base, scenario };
+  }, [wiFixedCost, wiVariableCost, wiSellingPrice, wiCurrentSales, wiPriceAdj, wiVolumeAdj, wiCostAdj]);
 
   // ── Handlers ─────────────────────────────────────────────────────
 
@@ -195,6 +206,7 @@ export default function BEPAnalysisPage() {
     e.preventDefault();
     if (!calcBrand || !calcProduct || !calcFixedCost || !calcVariableCost || !calcSellingPrice) return;
     setCalcSaving(true);
+    setCalcSaved(null);
     try {
       const res = await fetch("/api/bep", {
         method: "POST",
@@ -203,15 +215,15 @@ export default function BEPAnalysisPage() {
           brand: calcBrand,
           product: calcProduct,
           fixedCost: Number(calcFixedCost),
-          variableCost: Number(calcVariableCost),
-          sellingPrice: Number(calcSellingPrice),
+          variableCostPerUnit: Number(calcVariableCost),
+          sellingPricePerUnit: Number(calcSellingPrice),
           currentSales: Number(calcCurrentSales) || 0,
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Gagal menghitung BEP");
-      setCalcResult(data.bep);
-      setStatus(`BEP calculated: ${data.bep.brand} - ${data.bep.product}`);
+      setCalcSaved(data.calculation);
+      setStatus(`BEP tersimpan: ${data.calculation.brand} — ${data.calculation.product}`);
       // Reset form
       setCalcBrand("");
       setCalcProduct("");
@@ -221,7 +233,7 @@ export default function BEPAnalysisPage() {
       setCalcCurrentSales("");
       await loadData();
     } catch (err) {
-      setStatus(`${err instanceof Error ? err.message : String(err)}`);
+      setStatus(`Error: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setCalcSaving(false);
     }
@@ -234,21 +246,40 @@ export default function BEPAnalysisPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          brand: "WhatIf",
+          product: "Scenario",
           fixedCost: Number(wiFixedCost) || 0,
-          variableCost: Number(wiVariableCost) || 0,
-          sellingPrice: Number(wiSellingPrice) || 0,
+          variableCostPerUnit: Number(wiVariableCost) || 0,
+          sellingPricePerUnit: Number(wiSellingPrice) || 0,
           currentSales: Number(wiCurrentSales) || 0,
-          priceAdjustment: wiPriceAdj,
-          volumeAdjustment: wiVolumeAdj,
-          costAdjustment: wiCostAdj,
-          fixedCostAdjustment: wiFixedAdj,
+          priceChange: wiPriceAdj,
+          volumeChange: wiVolumeAdj,
+          costChange: wiCostAdj,
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Gagal what-if");
-      setWiResult(data);
+
+      // Build base from input values
+      const fc = Number(wiFixedCost) || 0;
+      const vc = Number(wiVariableCost) || 0;
+      const sp = Number(wiSellingPrice) || 0;
+      const cs = Number(wiCurrentSales) || 0;
+      const base = {
+        calculationId: "live-base",
+        brand: "WhatIf",
+        product: "Base",
+        fixedCost: fc,
+        variableCostPerUnit: vc,
+        sellingPricePerUnit: sp,
+        currentSales: cs,
+        ...calcBEP(fc, vc, sp, cs),
+        createdAt: "",
+        updatedAt: "",
+      };
+      setWiResult({ base, scenario: data.scenario });
     } catch (err) {
-      setStatus(`${err instanceof Error ? err.message : String(err)}`);
+      setStatus(`Error: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setWiRunning(false);
     }
@@ -264,7 +295,7 @@ export default function BEPAnalysisPage() {
           <h1 className="text-2xl font-bold flex items-center gap-2">
             📐 Break-Even Analysis
             <Badge variant="outline" className="text-xs">
-              {loading ? "Loading..." : `${bepItems.length} calculations`}
+              {loading ? "Loading..." : `${calculations.length} calculations`}
             </Badge>
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
@@ -302,10 +333,10 @@ export default function BEPAnalysisPage() {
                     <CardDescription className="flex items-center gap-1">
                       <Package className="h-3 w-3" /> Total Brands
                     </CardDescription>
-                    <CardTitle className="text-2xl">{summary?.totalBrands || 0}</CardTitle>
+                    <CardTitle className="text-2xl">{summary?.brands?.length || 0}</CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <p className="text-xs text-muted-foreground">{summary?.totalProducts || 0} products analyzed</p>
+                    <p className="text-xs text-muted-foreground">{calculations.length} products analyzed</p>
                   </CardContent>
                 </Card>
                 <Card>
@@ -319,25 +350,29 @@ export default function BEPAnalysisPage() {
                 <Card>
                   <CardHeader className="pb-2">
                     <CardDescription className="flex items-center gap-1">
-                      {summary && summary.totalProfit >= 0 ? <TrendingUp className="h-3 w-3 text-emerald-500" /> : <TrendingDown className="h-3 w-3 text-red-500" />}
+                      {summary && summary.totalProfitLoss >= 0
+                        ? <TrendingUp className="h-3 w-3 text-emerald-500" />
+                        : <TrendingDown className="h-3 w-3 text-red-500" />}
                       Total Profit/Loss
                     </CardDescription>
-                    <CardTitle className={`text-2xl ${(summary?.totalProfit || 0) >= 0 ? "text-emerald-600" : "text-red-600"}`}>
-                      {fmt(summary?.totalProfit || 0)}
+                    <CardTitle className={`text-2xl ${(summary?.totalProfitLoss || 0) >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                      {fmt(summary?.totalProfitLoss || 0)}
                     </CardTitle>
                   </CardHeader>
                 </Card>
                 <Card>
                   <CardHeader className="pb-2">
                     <CardDescription className="flex items-center gap-1">
-                      <Target className="h-3 w-3" /> Avg Margin of Safety
+                      <Target className="h-3 w-3" /> Profitability
                     </CardDescription>
-                    <CardTitle className="text-2xl">{fmtPct(summary?.avgMarginOfSafety || 0)}</CardTitle>
+                    <CardTitle className="text-2xl">
+                      {summary?.profitableCount || 0}/{summary?.brands?.length || 0}
+                    </CardTitle>
                   </CardHeader>
                   <CardContent>
                     <div className="flex gap-2 text-xs">
-                      <span className="text-emerald-600">{summary?.profitableBrands || 0} profitable</span>
-                      <span className="text-red-600">{summary?.lossBrands || 0} loss</span>
+                      <span className="text-emerald-600">{summary?.profitableCount || 0} profitable</span>
+                      <span className="text-red-600">{summary?.lossCount || 0} loss</span>
                     </div>
                   </CardContent>
                 </Card>
@@ -345,7 +380,7 @@ export default function BEPAnalysisPage() {
 
               {/* Brand Cards */}
               <h2 className="text-lg font-semibold">BEP Summary per Brand</h2>
-              {brands.length === 0 ? (
+              {summary?.brands?.length === 0 ? (
                 <Card>
                   <CardContent className="py-12 text-center">
                     <div className="text-4xl mb-4">📐</div>
@@ -355,46 +390,49 @@ export default function BEPAnalysisPage() {
                 </Card>
               ) : (
                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                  {brands.map((b) => (
-                    <Card key={b.brand} className={`hover:shadow-md transition-shadow ${b.profitable ? "border-l-4 border-l-emerald-500" : "border-l-4 border-l-red-500"}`}>
+                  {(summary?.brands || []).map((b) => (
+                    <Card
+                      key={b.brand}
+                      className={`hover:shadow-md transition-shadow ${b.status === "profit" ? "border-l-4 border-l-emerald-500" : b.status === "loss" ? "border-l-4 border-l-red-500" : "border-l-4 border-l-yellow-500"}`}
+                    >
                       <CardHeader className="pb-2">
                         <div className="flex justify-between items-start">
                           <div>
                             <CardTitle className="text-base">🏷️ {b.brand}</CardTitle>
-                            <CardDescription>{b.productCount} product(s)</CardDescription>
+                            <CardDescription>{b.product}</CardDescription>
                           </div>
-                          <ProfitBadge profit={b.totalProfit} />
+                          <StatusBadge status={b.status} />
                         </div>
                       </CardHeader>
                       <CardContent className="space-y-2">
                         <div className="grid grid-cols-2 gap-2 text-xs">
                           <div>
                             <span className="text-muted-foreground">Fixed Costs:</span>
-                            <div className="font-medium">{fmt(b.totalFixedCosts)}</div>
+                            <div className="font-medium">{fmt(b.fixedCost)}</div>
                           </div>
                           <div>
                             <span className="text-muted-foreground">Profit/Loss:</span>
-                            <div className={`font-medium ${b.totalProfit >= 0 ? "text-emerald-600" : "text-red-600"}`}>
-                              {fmt(b.totalProfit)}
+                            <div className={`font-medium ${b.profitLoss >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                              {fmt(b.profitLoss)}
                             </div>
                           </div>
                           <div>
-                            <span className="text-muted-foreground">BEP Revenue:</span>
-                            <div className="font-medium">{fmt(b.totalBEPRevenue)}</div>
+                            <span className="text-muted-foreground">BEP (units):</span>
+                            <div className="font-medium">{fmtNum(Math.ceil(b.bepUnits))}</div>
                           </div>
                           <div>
-                            <span className="text-muted-foreground">Current Revenue:</span>
-                            <div className="font-medium">{fmt(b.totalCurrentRevenue)}</div>
+                            <span className="text-muted-foreground">Current Sales:</span>
+                            <div className="font-medium">{fmtNum(b.currentSales)}</div>
                           </div>
                         </div>
                         <div className="flex items-center justify-between pt-1">
                           <span className="text-xs text-muted-foreground">Margin of Safety</span>
-                          <MoSBadge mos={b.avgMarginOfSafety} />
+                          <MoSBadge mos={b.marginOfSafety} />
                         </div>
                         <div className="w-full bg-gray-200 rounded-full h-2">
                           <div
-                            className={`h-2 rounded-full transition-all ${b.avgMarginOfSafety >= 30 ? "bg-emerald-500" : b.avgMarginOfSafety >= 15 ? "bg-yellow-500" : "bg-red-500"}`}
-                            style={{ width: `${Math.min(Math.max(b.avgMarginOfSafety, 0), 100)}%` }}
+                            className={`h-2 rounded-full transition-all ${b.marginOfSafety >= 30 ? "bg-emerald-500" : b.marginOfSafety >= 15 ? "bg-yellow-500" : "bg-red-500"}`}
+                            style={{ width: `${Math.min(Math.max(b.marginOfSafety, 0), 100)}%` }}
                           />
                         </div>
                       </CardContent>
@@ -424,65 +462,32 @@ export default function BEPAnalysisPage() {
                   <div className="grid gap-4 md:grid-cols-2">
                     <div className="space-y-2">
                       <Label>Brand *</Label>
-                      <Input
-                        placeholder="e.g. Wangi Fresh"
-                        value={calcBrand}
-                        onChange={(e) => setCalcBrand(e.target.value)}
-                        required
-                      />
+                      <Input placeholder="e.g. MABRUK" value={calcBrand} onChange={(e) => setCalcBrand(e.target.value)} required />
                     </div>
                     <div className="space-y-2">
                       <Label>Product *</Label>
-                      <Input
-                        placeholder="e.g. Eau de Toilette 50ml"
-                        value={calcProduct}
-                        onChange={(e) => setCalcProduct(e.target.value)}
-                        required
-                      />
+                      <Input placeholder="e.g. Classic 100ml" value={calcProduct} onChange={(e) => setCalcProduct(e.target.value)} required />
                     </div>
                     <div className="space-y-2">
                       <Label>Fixed Cost (Rp) *</Label>
-                      <Input
-                        type="number"
-                        placeholder="50000000"
-                        value={calcFixedCost}
-                        onChange={(e) => setCalcFixedCost(e.target.value)}
-                        required
-                      />
+                      <Input type="number" placeholder="150000000" value={calcFixedCost} onChange={(e) => setCalcFixedCost(e.target.value)} required />
                     </div>
                     <div className="space-y-2">
                       <Label>Variable Cost/Unit (Rp) *</Label>
-                      <Input
-                        type="number"
-                        placeholder="15000"
-                        value={calcVariableCost}
-                        onChange={(e) => setCalcVariableCost(e.target.value)}
-                        required
-                      />
+                      <Input type="number" placeholder="45000" value={calcVariableCost} onChange={(e) => setCalcVariableCost(e.target.value)} required />
                     </div>
                     <div className="space-y-2">
                       <Label>Selling Price/Unit (Rp) *</Label>
-                      <Input
-                        type="number"
-                        placeholder="35000"
-                        value={calcSellingPrice}
-                        onChange={(e) => setCalcSellingPrice(e.target.value)}
-                        required
-                      />
+                      <Input type="number" placeholder="120000" value={calcSellingPrice} onChange={(e) => setCalcSellingPrice(e.target.value)} required />
                     </div>
                     <div className="space-y-2">
                       <Label>Current Sales (units)</Label>
-                      <Input
-                        type="number"
-                        placeholder="5000"
-                        value={calcCurrentSales}
-                        onChange={(e) => setCalcCurrentSales(e.target.value)}
-                      />
+                      <Input type="number" placeholder="2500" value={calcCurrentSales} onChange={(e) => setCalcCurrentSales(e.target.value)} />
                     </div>
                   </div>
                   <Button type="submit" disabled={calcSaving || !calcBrand || !calcProduct || !calcFixedCost || !calcVariableCost || !calcSellingPrice} className="w-full">
                     <Plus className="h-4 w-4 mr-2" />
-                    {calcSaving ? "Menghitung..." : "Hitung & Simpan BEP"}
+                    {calcSaving ? "Menyimpan..." : "Hitung & Simpan BEP"}
                   </Button>
                 </form>
               </CardContent>
@@ -506,7 +511,7 @@ export default function BEPAnalysisPage() {
                       </div>
                       <div className="p-3 bg-purple-50 rounded-lg">
                         <p className="text-xs text-purple-600 mb-1">BEP (units)</p>
-                        <p className="text-lg font-bold text-purple-700">{fmtNum(Math.ceil(liveCalc.bepUnits))}</p>
+                        <p className="text-lg font-bold text-purple-700">{fmtNum(liveCalc.bepUnits)}</p>
                       </div>
                       <div className="p-3 bg-amber-50 rounded-lg">
                         <p className="text-xs text-amber-600 mb-1">BEP (revenue)</p>
@@ -517,12 +522,12 @@ export default function BEPAnalysisPage() {
                         <p className="text-lg font-bold text-emerald-700">{fmtPct(liveCalc.marginOfSafety)}</p>
                       </div>
                     </div>
-                    <div className={`p-4 rounded-lg text-center ${liveCalc.profit >= 0 ? "bg-emerald-50" : "bg-red-50"}`}>
+                    <div className={`p-4 rounded-lg text-center ${liveCalc.profitLoss >= 0 ? "bg-emerald-50" : "bg-red-50"}`}>
                       <p className="text-xs text-muted-foreground mb-1">Projected Profit/Loss</p>
-                      <p className={`text-2xl font-bold ${liveCalc.profit >= 0 ? "text-emerald-600" : "text-red-600"}`}>
-                        {fmt(liveCalc.profit)}
+                      <p className={`text-2xl font-bold ${liveCalc.profitLoss >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                        {fmt(liveCalc.profitLoss)}
                       </p>
-                      {liveCalc.profit >= 0 ? (
+                      {liveCalc.profitLoss >= 0 ? (
                         <p className="text-xs text-emerald-600 mt-1 flex items-center justify-center gap-1">
                           <CheckCircle className="h-3 w-3" /> Profitable
                         </p>
@@ -540,11 +545,11 @@ export default function BEPAnalysisPage() {
                   </div>
                 )}
 
-                {calcResult && (
+                {calcSaved && (
                   <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg">
                     <p className="text-xs text-green-700 font-medium">✅ Tersimpan:</p>
                     <p className="text-sm text-green-800">
-                      {calcResult.brand} — {calcResult.product}: BEP {fmtNum(Math.ceil(calcResult.bepUnits))} units ({fmt(calcResult.bepRevenue)})
+                      {calcSaved.brand} — {calcSaved.product}: BEP {fmtNum(Math.ceil(calcSaved.bepUnits))} units ({fmt(calcSaved.bepRevenue)})
                     </p>
                   </div>
                 )}
@@ -560,7 +565,7 @@ export default function BEPAnalysisPage() {
             <div className="space-y-2">
               {[1, 2, 3, 4, 5].map((i) => <Skeleton key={i} className="h-12 rounded" />)}
             </div>
-          ) : bepItems.length === 0 ? (
+          ) : calculations.length === 0 ? (
             <Card>
               <CardContent className="py-12 text-center text-muted-foreground">
                 <p>Belum ada data BEP. Gunakan Calculator untuk menghitung.</p>
@@ -574,6 +579,10 @@ export default function BEPAnalysisPage() {
                     <TableRow>
                       <TableHead>Brand</TableHead>
                       <TableHead>Product</TableHead>
+                      <TableHead className="text-right">Fixed Cost</TableHead>
+                      <TableHead className="text-right">Var Cost/Unit</TableHead>
+                      <TableHead className="text-right">Sell Price/Unit</TableHead>
+                      <TableHead className="text-right">CM</TableHead>
                       <TableHead className="text-right">BEP (units)</TableHead>
                       <TableHead className="text-right">BEP (revenue)</TableHead>
                       <TableHead className="text-right">Current Sales</TableHead>
@@ -583,18 +592,28 @@ export default function BEPAnalysisPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {bepItems.map((item) => (
+                    {calculations.map((item) => (
                       <TableRow key={item.calculationId}>
                         <TableCell className="font-medium">{item.brand}</TableCell>
                         <TableCell>{item.product}</TableCell>
-                        <TableCell className="text-right">{fmtNum(Math.ceil(item.bepUnits))}</TableCell>
+                        <TableCell className="text-right">{fmt(item.fixedCost)}</TableCell>
+                        <TableCell className="text-right">{fmt(item.variableCostPerUnit)}</TableCell>
+                        <TableCell className="text-right">{fmt(item.sellingPricePerUnit)}</TableCell>
+                        <TableCell className="text-right font-medium text-blue-600">{fmt(item.contributionMargin)}</TableCell>
+                        <TableCell className="text-right font-medium text-purple-600">{fmtNum(Math.ceil(item.bepUnits))}</TableCell>
                         <TableCell className="text-right">{fmt(item.bepRevenue)}</TableCell>
                         <TableCell className="text-right">{fmtNum(item.currentSales)}</TableCell>
                         <TableCell className="text-right"><MoSBadge mos={item.marginOfSafety} /></TableCell>
-                        <TableCell className={`text-right font-medium ${item.profit >= 0 ? "text-emerald-600" : "text-red-600"}`}>
-                          {fmt(item.profit)}
+                        <TableCell className={`text-right font-medium ${item.profitLoss >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                          {fmt(item.profitLoss)}
                         </TableCell>
-                        <TableCell><ProfitBadge profit={item.profit} /></TableCell>
+                        <TableCell>
+                          {item.profitLoss > 0
+                            ? <Badge className="bg-emerald-600">Untung</Badge>
+                            : item.profitLoss < 0
+                              ? <Badge className="bg-red-500">Rugi</Badge>
+                              : <Badge variant="outline">BEP</Badge>}
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -663,22 +682,12 @@ export default function BEPAnalysisPage() {
 
                   <div className="space-y-2">
                     <div className="flex justify-between text-xs">
-                      <Label>Variable Cost Adjustment</Label>
+                      <Label>Cost Adjustment</Label>
                       <span className={wiCostAdj > 0 ? "text-red-600" : wiCostAdj < 0 ? "text-emerald-600" : ""}>
                         {wiCostAdj > 0 ? "+" : ""}{wiCostAdj}%
                       </span>
                     </div>
                     <Slider min={-30} max={50} step={1} value={[wiCostAdj]} onValueChange={([v]) => setWiCostAdj(v)} />
-                  </div>
-
-                  <div className="space-y-2">
-                    <div className="flex justify-between text-xs">
-                      <Label>Fixed Cost Adjustment</Label>
-                      <span className={wiFixedAdj > 0 ? "text-red-600" : wiFixedAdj < 0 ? "text-emerald-600" : ""}>
-                        {wiFixedAdj > 0 ? "+" : ""}{wiFixedAdj}%
-                      </span>
-                    </div>
-                    <Slider min={-30} max={50} step={1} value={[wiFixedAdj]} onValueChange={([v]) => setWiFixedAdj(v)} />
                   </div>
                 </div>
 
@@ -693,20 +702,24 @@ export default function BEPAnalysisPage() {
             <Card>
               <CardHeader>
                 <CardTitle>What-If Result</CardTitle>
-                <CardDescription>Perbandingan base vs scenario</CardDescription>
+                <CardDescription>Perbandingan base vs scenario (real-time)</CardDescription>
               </CardHeader>
               <CardContent>
-                {wiResult ? (
+                {whatIfPreview ? (
                   <div className="space-y-4">
-                    {/* Scenario values */}
+                    {/* Scenario adjusted values */}
                     <div className="grid grid-cols-2 gap-3">
                       <div className="p-3 bg-blue-50 rounded-lg">
                         <p className="text-xs text-blue-600 mb-1">New Selling Price</p>
-                        <p className="text-lg font-bold text-blue-700">{fmt(wiResult.scenario.sellingPrice)}</p>
+                        <p className="text-lg font-bold text-blue-700">
+                          {fmt(Number(wiSellingPrice) * (1 + wiPriceAdj / 100))}
+                        </p>
                       </div>
                       <div className="p-3 bg-orange-50 rounded-lg">
                         <p className="text-xs text-orange-600 mb-1">New Variable Cost</p>
-                        <p className="text-lg font-bold text-orange-700">{fmt(wiResult.scenario.variableCost)}</p>
+                        <p className="text-lg font-bold text-orange-700">
+                          {fmt(Number(wiVariableCost) * (1 + wiCostAdj / 100))}
+                        </p>
                       </div>
                     </div>
 
@@ -724,36 +737,36 @@ export default function BEPAnalysisPage() {
                         <tbody>
                           <tr className="border-t">
                             <td className="p-2 text-muted-foreground">BEP (units)</td>
-                            <td className="p-2 text-right">{fmtNum(Math.ceil(wiResult.base.bepUnits))}</td>
-                            <td className="p-2 text-right font-medium">{fmtNum(Math.ceil(wiResult.scenario.bepUnits))}</td>
-                            <td className={`p-2 text-right text-xs ${wiResult.delta.bepUnits <= 0 ? "text-emerald-600" : "text-red-600"}`}>
-                              {wiResult.delta.bepUnits > 0 ? "+" : ""}{fmtNum(Math.ceil(wiResult.delta.bepUnits))}
+                            <td className="p-2 text-right">{fmtNum(whatIfPreview.base.bepUnits)}</td>
+                            <td className="p-2 text-right font-medium">{fmtNum(whatIfPreview.scenario.bepUnits)}</td>
+                            <td className={`p-2 text-right text-xs ${whatIfPreview.scenario.bepUnits - whatIfPreview.base.bepUnits <= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                              {whatIfPreview.scenario.bepUnits - whatIfPreview.base.bepUnits > 0 ? "+" : ""}{fmtNum(whatIfPreview.scenario.bepUnits - whatIfPreview.base.bepUnits)}
                             </td>
                           </tr>
                           <tr className="border-t">
                             <td className="p-2 text-muted-foreground">BEP (revenue)</td>
-                            <td className="p-2 text-right">{fmt(wiResult.base.bepRevenue)}</td>
-                            <td className="p-2 text-right font-medium">{fmt(wiResult.scenario.bepRevenue)}</td>
-                            <td className={`p-2 text-right text-xs ${wiResult.delta.bepRevenue <= 0 ? "text-emerald-600" : "text-red-600"}`}>
-                              {wiResult.delta.bepRevenue > 0 ? "+" : ""}{fmt(wiResult.delta.bepRevenue)}
+                            <td className="p-2 text-right">{fmt(whatIfPreview.base.bepRevenue)}</td>
+                            <td className="p-2 text-right font-medium">{fmt(whatIfPreview.scenario.bepRevenue)}</td>
+                            <td className={`p-2 text-right text-xs ${whatIfPreview.scenario.bepRevenue - whatIfPreview.base.bepRevenue <= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                              {whatIfPreview.scenario.bepRevenue - whatIfPreview.base.bepRevenue > 0 ? "+" : ""}{fmt(whatIfPreview.scenario.bepRevenue - whatIfPreview.base.bepRevenue)}
                             </td>
                           </tr>
                           <tr className="border-t">
                             <td className="p-2 text-muted-foreground">Margin of Safety</td>
-                            <td className="p-2 text-right">{fmtPct(wiResult.base.marginOfSafety)}</td>
-                            <td className="p-2 text-right font-medium">{fmtPct(wiResult.scenario.marginOfSafety)}</td>
-                            <td className={`p-2 text-right text-xs ${wiResult.delta.marginOfSafety >= 0 ? "text-emerald-600" : "text-red-600"}`}>
-                              {wiResult.delta.marginOfSafety > 0 ? "+" : ""}{fmtPct(wiResult.delta.marginOfSafety)}
+                            <td className="p-2 text-right">{fmtPct(whatIfPreview.base.marginOfSafety)}</td>
+                            <td className="p-2 text-right font-medium">{fmtPct(whatIfPreview.scenario.marginOfSafety)}</td>
+                            <td className={`p-2 text-right text-xs ${whatIfPreview.scenario.marginOfSafety - whatIfPreview.base.marginOfSafety >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                              {whatIfPreview.scenario.marginOfSafety - whatIfPreview.base.marginOfSafety > 0 ? "+" : ""}{fmtPct(whatIfPreview.scenario.marginOfSafety - whatIfPreview.base.marginOfSafety)}
                             </td>
                           </tr>
                           <tr className="border-t">
                             <td className="p-2 text-muted-foreground">Profit/Loss</td>
-                            <td className="p-2 text-right">{fmt(wiResult.base.profit)}</td>
-                            <td className={`p-2 text-right font-medium ${wiResult.scenario.profit >= 0 ? "text-emerald-600" : "text-red-600"}`}>
-                              {fmt(wiResult.scenario.profit)}
+                            <td className="p-2 text-right">{fmt(whatIfPreview.base.profitLoss)}</td>
+                            <td className={`p-2 text-right font-medium ${whatIfPreview.scenario.profitLoss >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                              {fmt(whatIfPreview.scenario.profitLoss)}
                             </td>
-                            <td className={`p-2 text-right text-xs ${wiResult.delta.profit >= 0 ? "text-emerald-600" : "text-red-600"}`}>
-                              {wiResult.delta.profit > 0 ? "+" : ""}{fmt(wiResult.delta.profit)}
+                            <td className={`p-2 text-right text-xs ${whatIfPreview.scenario.profitLoss - whatIfPreview.base.profitLoss >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                              {whatIfPreview.scenario.profitLoss - whatIfPreview.base.profitLoss > 0 ? "+" : ""}{fmt(whatIfPreview.scenario.profitLoss - whatIfPreview.base.profitLoss)}
                             </td>
                           </tr>
                         </tbody>
@@ -761,14 +774,14 @@ export default function BEPAnalysisPage() {
                     </div>
 
                     {/* Verdict */}
-                    <div className={`p-4 rounded-lg text-center ${wiResult.scenario.profit >= 0 ? "bg-emerald-50" : "bg-red-50"}`}>
-                      {wiResult.delta.profit > 0 ? (
+                    <div className={`p-4 rounded-lg text-center ${whatIfPreview.scenario.profitLoss >= 0 ? "bg-emerald-50" : "bg-red-50"}`}>
+                      {whatIfPreview.scenario.profitLoss > whatIfPreview.base.profitLoss ? (
                         <p className="text-sm text-emerald-700 flex items-center justify-center gap-1">
-                          <TrendingUp className="h-4 w-4" /> Scenario improves profit by {fmt(wiResult.delta.profit)}
+                          <TrendingUp className="h-4 w-4" /> Scenario improves profit by {fmt(whatIfPreview.scenario.profitLoss - whatIfPreview.base.profitLoss)}
                         </p>
-                      ) : wiResult.delta.profit < 0 ? (
+                      ) : whatIfPreview.scenario.profitLoss < whatIfPreview.base.profitLoss ? (
                         <p className="text-sm text-red-700 flex items-center justify-center gap-1">
-                          <TrendingDown className="h-4 w-4" /> Scenario reduces profit by {fmt(Math.abs(wiResult.delta.profit))}
+                          <TrendingDown className="h-4 w-4" /> Scenario reduces profit by {fmt(Math.abs(whatIfPreview.scenario.profitLoss - whatIfPreview.base.profitLoss))}
                         </p>
                       ) : (
                         <p className="text-sm text-muted-foreground">No change in profit</p>
@@ -778,7 +791,7 @@ export default function BEPAnalysisPage() {
                 ) : (
                   <div className="py-12 text-center text-muted-foreground">
                     <Sliders className="h-12 w-12 mx-auto mb-3 opacity-30" />
-                    <p className="text-sm">Adjust sliders dan klik "Run What-If Analysis"</p>
+                    <p className="text-sm">Adjust sliders untuk melihat real-time what-if analysis</p>
                   </div>
                 )}
               </CardContent>
@@ -788,4 +801,23 @@ export default function BEPAnalysisPage() {
       </Tabs>
     </div>
   );
+}
+
+// ── Pure BEP calculation (client-side) ─────────────────────────────
+
+function calcBEP(
+  fixedCost: number,
+  variableCostPerUnit: number,
+  sellingPricePerUnit: number,
+  currentSales: number = 0,
+) {
+  const contributionMargin = sellingPricePerUnit - variableCostPerUnit;
+  const bepUnits = contributionMargin > 0 ? Math.ceil(fixedCost / contributionMargin) : 0;
+  const bepRevenue = bepUnits * sellingPricePerUnit;
+  const marginOfSafety =
+    currentSales > 0
+      ? Math.round(((currentSales - bepUnits) / currentSales) * 100 * 100) / 100
+      : 0;
+  const profitLoss = currentSales * contributionMargin - fixedCost;
+  return { contributionMargin, bepUnits, bepRevenue, marginOfSafety, profitLoss };
 }
