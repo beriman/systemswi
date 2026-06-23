@@ -49,16 +49,25 @@ export async function GET(request: NextRequest) {
     const totalKredit = filtered.reduce((s, r) => s + (Number(r[6]) || 0), 0);
     const netChange = totalDebit - totalKredit;
 
-    // Monthly summary
+    // Monthly summary — aggregate by YYYY-MM
+    const byMonth: Record<string, { debit: number; kredit: number; net: number }> = {};
+    for (const row of filtered) {
+      const dateKey = row[1] || "";
+      const monthKey = dateKey.slice(0, 7); // YYYY-MM
+      if (!byMonth[monthKey]) byMonth[monthKey] = { debit: 0, kredit: 0, net: 0 };
+      byMonth[monthKey].debit += Number(row[5]) || 0;
+      byMonth[monthKey].kredit += Number(row[6]) || 0;
+      byMonth[monthKey].net = byMonth[monthKey].debit - byMonth[monthKey].kredit;
+    }
     const monthlySummary: Array<{ period: string; debit: number; kredit: number; net: number }> = [];
-    const monthKeys = Object.keys(byDate).sort();
+    const monthKeys = Object.keys(byMonth).sort();
     for (const m of monthKeys) {
-      const d = byDate[m];
+      const d = byMonth[m];
       monthlySummary.push({
-        period: m.length === 7 ? m : m.slice(0, 7),
+        period: m,
         debit: d.debit,
-        kredit: d.credit,
-        net: d.debit - d.credit,
+        kredit: d.kredit,
+        net: d.net,
       });
     }
 
