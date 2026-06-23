@@ -231,6 +231,18 @@ export default function ProductionAnalyticsPage() {
   const totalWasteCost = wasteEvents.reduce((s, w) => s + w.costImpact, 0);
   const passedQc = batches.filter((b) => b.qcStatus.toLowerCase() === "passed").length;
 
+  // Brand summary for table (extracted to avoid Turbopack parse issue)
+  const brandSummaryMap = batches.reduce<Record<string, { count: number; qty: number; hppSum: number; qtySum: number; cost: number }>>((acc, b) => {
+    if (!acc[b.brand]) acc[b.brand] = { count: 0, qty: 0, hppSum: 0, qtySum: 0, cost: 0 };
+    acc[b.brand].count += 1;
+    acc[b.brand].qty += b.qty;
+    acc[b.brand].hppSum += b.hppPerUnit * b.qty;
+    acc[b.brand].qtySum += b.qty;
+    acc[b.brand].cost += b.totalProductionCost;
+    return acc;
+  }, {});
+  const brandSummaryEntries = Object.entries(brandSummaryMap);
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -341,17 +353,7 @@ export default function ProductionAnalyticsPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {Object.entries(
-                      batches.reduce<Record<string, { count: number; qty: number; hppSum: number; qtySum: number; cost: number }>>((acc, b) => {
-                        if (!acc[b.brand]) acc[b.brand] = { count: 0, qty: 0, hppSum: 0, qtySum: 0, cost: 0 };
-                        acc[b.brand].count += 1;
-                        acc[b.brand].qty += b.qty;
-                        acc[b.brand].hppSum += b.hppPerUnit * b.qty;
-                        acc[b.brand].qtySum += b.qty;
-                        acc[b.brand].cost += b.totalProductionCost;
-                        return acc;
-                      }, {})
-                  ).map(([brand, data]) => (
+                    {brandSummaryEntries.map(([brand, data]) => (
                     <TableRow key={brand}>
                       <TableCell className="font-medium">{brand}</TableCell>
                       <TableCell className="text-right">{data.count}</TableCell>
@@ -361,7 +363,8 @@ export default function ProductionAnalyticsPage() {
                       </TableCell>
                       <TableCell className="text-right">{formatCurrency(data.cost)}</TableCell>
                     </TableRow>
-                  )}
+                    ))}
+                  </TableBody>
                 </Table>
               )}
             </CardContent>
