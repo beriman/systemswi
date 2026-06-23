@@ -296,15 +296,35 @@ async function readCrm() {
 }
 
 // ── GET ─────────────────────────────────────────────────────────
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    const { searchParams } = new URL(request.url);
+    const q = text(searchParams.get("q")).toLowerCase();
+    const segmentParam = text(searchParams.get("segment")).toLowerCase();
+
     const { customers, interactions, sourceStatus, source } = await readCrm();
+
+    // Server-side search & filter
+    const filteredCustomers = customers.filter((c) => {
+      if (segmentParam && segmentParam !== "all" && c.segment !== segmentParam) return false;
+      if (q) {
+        const needle = [c.name, c.whatsapp, c.interest, c.source, c.segment, c.id, c.notes]
+          .join(" ")
+          .toLowerCase();
+        if (!needle.includes(q)) return false;
+      }
+      return true;
+    });
+
     return NextResponse.json({
       source,
       sourceStatus,
-      customers,
+      customers: filteredCustomers,
       interactions,
-      summary: summarize(customers, interactions),
+      summary: summarize(filteredCustomers, interactions),
+      query: q || null,
+      segmentFilter: segmentParam || "all",
+      totalBeforeFilter: customers.length,
     });
   } catch (error) {
     if (isGoogleWorkspaceAuthError(error)) {
