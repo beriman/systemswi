@@ -15,9 +15,9 @@ function parseAmount(value: unknown): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
+export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
   try {
-    const { id } = params;
     if (!id) {
       return NextResponse.json({ error: "Entry ID is required" }, { status: 400 });
     }
