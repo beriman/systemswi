@@ -1,102 +1,82 @@
 // POST /api/buku-kas/seed — Seed 20 sample transactions
 import { NextRequest, NextResponse } from "next/server";
-import {
-  readBukuKasSheet,
-  parseBukuKasRows,
-  calculateRunningBalance,
-  appendBukuKasRow,
-  recalculateAndWriteSaldo,
-  generateId,
-  CATEGORIES,
-  type BukuKasEntry,
-} from "@/lib/buku-kas/sheets";
+import { appendRows, readSheet, SHEETS } from "@/lib/sheets/sheets-real";
+import { googleWorkspaceWriteBlockedSource } from "@/lib/api/google-workspace-error";
 
-const SOURCE = "Google Sheets: Buku_Kas";
+export const runtime = "nodejs";
 
-const SEED_DATA: Array<{
-  date: string;
-  type: "D" | "K";
-  category: string;
-  amount: number;
-  description: string;
-  reference: string;
-}> = [
-  // Week 1
-  { date: "2026-06-01", type: "D", category: "Sales", amount: 15000000, description: "Penjualan parfum Aura 100ml batch #001", reference: "INV-001" },
-  { date: "2026-06-01", type: "K", category: "Purchase", amount: 3500000, description: "Pembelian bahan baku alcohol 96%", reference: "PO-001" },
-  { date: "2026-06-02", type: "D", category: "Sales", amount: 8500000, description: "Penjualan parfum Zen 50ml batch #002", reference: "INV-002" },
-  { date: "2026-06-03", type: "K", category: "Operating", amount: 1200000, description: "Biaya listrik pabrik bulan Mei", reference: "OPR-001" },
-  { date: "2026-06-04", type: "K", category: "Transport", amount: 750000, description: "Ongkos kirim barang ke distributor Jakarta", reference: "TRN-001" },
-  { date: "2026-06-05", type: "D", category: "Sales", amount: 22000000, description: "Penjualan parfum Ocean 100ml batch #003", reference: "INV-003" },
-  { date: "2026-06-05", type: "K", category: "Purchase", amount: 5000000, description: "Pembelian botol kaca 100ml (200 pcs)", reference: "PO-002" },
+const SHEET_NAME = "BukuKas";
 
-  // Week 2
-  { date: "2026-06-08", type: "K", category: "Salary", amount: 12000000, description: "Gaji karyawan produksi Mei 2026", reference: "SAL-001" },
-  { date: "2026-06-09", type: "D", category: "Sales", amount: 18500000, description: "Penjualan parfum Aura 50ml batch #004", reference: "INV-004" },
-  { date: "2026-06-10", type: "K", category: "Purchase", amount: 2800000, description: "Pembelian essential oil lavender", reference: "PO-003" },
-  { date: "2026-06-11", type: "K", category: "Operating", amount: 850000, description: "Biaya air dan kebersihan pabrik", reference: "OPR-002" },
-  { date: "2026-06-12", type: "D", category: "Sales", amount: 11000000, description: "Penjualan parfum Zen 100ml batch #005", reference: "INV-005" },
-  { date: "2026-06-12", type: "K", category: "Transport", amount: 1100000, description: "Ongkos kirim barang ke Surabaya", reference: "TRN-002" },
+function parseAmount(value: unknown): number {
+  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+  if (typeof value !== "string") return 0;
+  const normalized = value.replace(/[^\d.-]/g, "");
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
 
-  // Week 3
-  { date: "2026-06-15", type: "D", category: "Sales", amount: 25000000, description: "Penjualan parfum Ocean 50ml batch #006", reference: "INV-006" },
-  { date: "2026-06-16", type: "K", category: "Purchase", amount: 4200000, description: "Pembelian packaging box premium", reference: "PO-004" },
-  { date: "2026-06-17", type: "K", category: "Operating", amount: 1500000, description: "Biaya maintenance mesin filling", reference: "OPR-003" },
-  { date: "2026-06-18", type: "D", category: "Sales", amount: 9500000, description: "Penjualan parfum Aura 100ml batch #007", reference: "INV-007" },
-  { date: "2026-06-19", type: "K", category: "Salary", amount: 8000000, description: "Gaji karyawan admin & marketing Mei 2026", reference: "SAL-002" },
-
-  // Week 4
-  { date: "2026-06-22", type: "D", category: "Sales", amount: 16500000, description: "Penjualan parfum Zen 50ml batch #008", reference: "INV-008" },
-  { date: "2026-06-23", type: "K", category: "Purchase", amount: 3200000, description: "Pembelian bahan pengawet parfum", reference: "PO-005" },
-  { date: "2026-06-23", type: "K", category: "Transport", amount: 950000, description: "Ongkos kirim barang ke Bandung", reference: "TRN-003" },
+const SEED_DATA = [
+  // Date | Type | Category | Description | Debit | Credit
+  ["2026-06-01", "Debit", "Sales", "Modal awal kas", 50000000, 0],
+  ["2026-06-02", "Debit", "Sales", "Penjualan parfum A", 3500000, 0],
+  ["2026-06-03", "Kredit", "Purchase", "Beli bahan baku", 0, 2000000],
+  ["2026-06-04", "Debit", "Sales", "Penjualan parfum B", 2800000, 0],
+  ["2026-06-05", "Kredit", "Operating", "Listrik & air", 0, 850000],
+  ["2026-06-07", "Kredit", "Salary", "Gaji karyawan produksi", 0, 5000000],
+  ["2026-06-08", "Debit", "Sales", "Penjualan online", 4200000, 0],
+  ["2026-06-09", "Kredit", "Transport", "Ongkos kirim", 0, 350000],
+  ["2026-06-10", "Debit", "Sales", "Penjualan parfum C", 1500000, 0],
+  ["2026-06-11", "Kredit", "Purchase", "Beli packaging", 0, 1200000],
+  ["2026-06-12", "Debit", "Sales", "Penjualan grosir", 8000000, 0],
+  ["2026-06-13", "Kredit", "Operating", "Internet & telepon", 0, 500000],
+  ["2026-06-14", "Kredit", "Salary", "Gaji karyawan admin", 0, 4000000],
+  ["2026-06-15", "Debit", "Sales", "Penjualan retail", 2100000, 0],
+  ["2026-06-16", "Kredit", "Transport", "BBM & toll", 0, 450000],
+  ["2026-06-17", "Kredit", "Purchase", "Beli bahan baku 2", 0, 3500000],
+  ["2026-06-18", "Debit", "Sales", "Penjualan parfum D", 3200000, 0],
+  ["2026-06-19", "Kredit", "Operating", "Biaya maintenance", 0, 750000],
+  ["2026-06-20", "Debit", "Sales", "Penjualan event", 6500000, 0],
+  ["2026-06-21", "Kredit", "Salary", "Bonus karyawan", 0, 2000000],
 ];
 
-export async function POST(req: NextRequest) {
+export async function POST(request: NextRequest) {
   try {
     // Check if data already exists
-    const existingRows = await readBukuKasSheet();
-    const existing = parseBukuKasRows(existingRows);
-
-    if (existing.length > 0) {
+    const raw = await readSheet(SHEET_NAME);
+    const existingData = raw.slice(1).filter((row) => row && row[0]);
+    if (existingData.length > 0) {
       return NextResponse.json({
-        source: SOURCE,
-        sourceStatus: "skipped",
-        message: `Buku Kas already has ${existing.length} entries. Seed skipped to avoid duplicates.`,
-        existingCount: existing.length,
-      }, { status: 200 });
+        source: `Google Sheets: ${SHEET_NAME}`,
+        sourceStatus: "live",
+        message: "Data already exists. Skipping seed.",
+        existingCount: existingData.length,
+      });
     }
 
-    // Insert seed data
-    const entries: Omit<BukuKasEntry, "row">[] = [];
-    for (const data of SEED_DATA) {
-      const id = generateId();
-      entries.push({ id, ...data, saldo: 0 });
+    // Build rows with running balance
+    const rows: (string | number)[][] = [];
+    let runningSaldo = 0;
+
+    for (const [date, type, category, description, debit, credit] of SEED_DATA) {
+      const d = parseAmount(debit);
+      const c = parseAmount(credit);
+      runningSaldo += d - c;
+      const entryId = `BK-SEED-${String(rows.length + 1).padStart(3, "0")}`;
+      rows.push([entryId, date, type, category, description, d, c, runningSaldo]);
     }
 
-    // Append all rows
-    for (const entry of entries) {
-      await appendBukuKasRow(entry);
-    }
-
-    // Recalculate all saldo
-    const updatedRows = await readBukuKasSheet();
-    const updatedEntries = parseBukuKasRows(updatedRows);
-    await recalculateAndWriteSaldo(updatedEntries);
-
-    const balanced = calculateRunningBalance(updatedEntries);
-    const finalSaldo = balanced.length > 0 ? balanced[balanced.length - 1].saldo : 0;
+    await appendRows(SHEET_NAME, rows);
 
     return NextResponse.json({
-      source: SOURCE,
+      source: `Google Sheets: ${SHEET_NAME}`,
       sourceStatus: "live",
-      message: `Seeded ${SEED_DATA.length} transactions successfully.`,
-      count: SEED_DATA.length,
-      finalSaldo,
+      message: `Seeded ${rows.length} sample transactions`,
+      data: rows,
     }, { status: 201 });
   } catch (error) {
-    return NextResponse.json({
-      error: "Failed to seed data",
-      details: String(error),
-    }, { status: 500 });
+    return NextResponse.json(
+      googleWorkspaceWriteBlockedSource(SHEET_NAME, error),
+      { status: 500 }
+    );
   }
 }

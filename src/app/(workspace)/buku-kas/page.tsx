@@ -14,15 +14,18 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 // ── Types ──
 interface BukuKasEntry {
+  entryId: string;
   id: string;
   date: string;
   type: "D" | "K";
   category: string;
   amount: number;
+  debit: number;
+  credit: number;
   description: string;
   reference: string;
   saldo: number;
-  row: number;
+  rowNumber: number;
 }
 
 interface SaldoData {
@@ -30,6 +33,8 @@ interface SaldoData {
   currentMonth: string;
   totalDebit: number;
   totalKredit: number;
+  monthDebit: number;
+  monthKredit: number;
   entryCount: number;
 }
 
@@ -115,7 +120,12 @@ export default function BukuKasPage() {
       const saldoJson = await saldoRes.json();
 
       if (entriesJson.entries) {
-        setEntries(entriesJson.entries);
+        const mapped = entriesJson.entries.map((e: any) => ({
+          ...e,
+          id: e.entryId,
+          amount: e.debit || e.credit || 0,
+        }));
+        setEntries(mapped);
       }
       if (saldoJson.saldo !== undefined) {
         setSaldoData(saldoJson);
@@ -245,7 +255,7 @@ export default function BukuKasPage() {
                   <CardContent className="p-6">
                     <p className="text-sm text-muted-foreground">Total Masuk Bulan Ini</p>
                     <p className="text-2xl font-bold text-green-600">
-                      {formatCurrency(saldoData?.totalDebit || 0)}
+                      {formatCurrency(saldoData?.monthDebit || 0)}
                     </p>
                   </CardContent>
                 </Card>
@@ -253,7 +263,7 @@ export default function BukuKasPage() {
                   <CardContent className="p-6">
                     <p className="text-sm text-muted-foreground">Total Keluar Bulan Ini</p>
                     <p className="text-2xl font-bold text-red-600">
-                      {formatCurrency(saldoData?.totalKredit || 0)}
+                      {formatCurrency(saldoData?.monthKredit || 0)}
                     </p>
                   </CardContent>
                 </Card>

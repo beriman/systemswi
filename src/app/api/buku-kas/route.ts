@@ -1,121 +1,145 @@
-// GET /api/buku-kas — List entries (filter: dateFrom, dateTo, category)
-// POST /api/buku-kas — Create entry
+// GET /api/buku-kas — List buku kas entries with filters
+// POST /api/buku-kas — Create new entry
 import { NextRequest, NextResponse } from "next/server";
-import {
-  readBukuKasSheet,
-  parseBukuKasRows,
-  calculateRunningBalance,
-  appendBukuKasRow,
-  recalculateAndWriteSaldo,
-  generateId,
-  CATEGORIES,
-  type BukuKasEntry,
-} from "@/lib/buku-kas/sheets";
-import { googleWorkspaceDegradedSource, isGoogleWorkspaceAuthError } from "@/lib/api/google-workspace-error";
+import { readSheet, appendRows, SHEETS } from "@/lib/sheets/sheets-real";
+import { googleWorkspaceWriteBlockedSource } from "@/lib/api/google-workspace-error";
 
-const SOURCE = "Google Sheets: Buku_Kas";
+export const runtime = "nodejs";
 
-function today(): string {
-  return new Date().toISOString().slice(0, 10);
+const SHEET_NAME = "BukuKas";
+
+// Columns: EntryId | Date | Type | Category | Description | Debit | Credit | Saldo
+function rowToEntry(row: string[], rowNumber: number) {
+  const rawType = row[2] || "Debit";
+  const type = rawType === "K" || rawType === "Kredit" ? "K" : "D";
+  return {
+    entryId: row[0] || "",
+    date: row[1] || "",
+    type: type as "D" | "K",
+    category: row[3] || "",
+    description: row[4] || "",
+    debit: Number(row[5]) || 0,
+    credit: Number(row[6]) || 0,
+    saldo: Number(row[7]) || 0,
+    rowNumber,
+  };
 }
 
-export async function GET(req: NextRequest) {
+function parseAmount(value: unknown): number {
+  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+  if (typeof value !== "string") return 0;
+  const normalized = value.replace(/[^\d.-]/g, "");
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+export async function GET(request: NextRequest) {
   try {
-    const url = new URL(req.url);
-    const dateFrom = url.searchParams.get("dateFrom") || "";
-    const dateTo = url.searchParams.get("dateTo") || "";
-    const category = url.searchParams.get("category") || "";
+    const { searchParams } = new URL(request.url);
+    const startDate = searchParams.get("startDate") || "";
+    const endDate = searchParams.get("endDate") || "";
+    const category = searchParams.get("category") || "";
+    const type = searchParams.get("type") || "";
 
-    const rows = await readBukuKasSheet();
-    let entries = parseBukuKasRows(rows);
-    entries = calculateRunningBalance(entries);
+    const raw = await readSheet(SHEET_NAME);
+    // Data starts at row 6 (header at row 5 per range A5:H100)
+    const dataRows = raw.slice(1); // skip header row
 
-    // Apply filters
-    if (dateFrom) {
-      entries = entries.filter((e) => e.date >= dateFrom);
-    }
-    if (dateTo) {
-      entries = entries.filter((e) => e.date <= dateTo);
-    }
-    if (category) {
-      entries = entries.filter((e) => e.category.toLowerCase() === category.toLowerCase());
-    }
+    let entries = dataRows
+      .filter((row) => row && row[0])
+      .map((row, i) => rowToEntry(row, i + 6));
 
-    // Compute saldo
-    const saldo = entries.length > 0 ? entries[entries.length - 1].saldo : 0;
+    // Filters
+    if (startDate) entries = entries.filter((e) => e.date >= startDate);
+    if (endDate) entries = entries.filter((e) => e.date <= endDate);
+    if (category) entries = entries.filter((e) => e.category === category);
+    if (type) entries = entries.filter((e) => e.type === type);
+
+    // Sort by date ascending, then by entryId
+    entries.sort((a, b) => {
+      const dateCmp = a.date.localeCompare(b.date);
+      return dateCmp !== 0 ? dateCmp : a.entryId.localeCompare(b.entryId);
+    });
 
     return NextResponse.json({
-      source: SOURCE,
+      source: `Google Sheets: ${SHEET_NAME}`,
       sourceStatus: "live",
+      generatedAt: new Date().toISOString(),
+      count: entries.length,
       entries,
-      saldo,
-      total: entries.length,
     });
   } catch (error) {
-    if (isGoogleWorkspaceAuthError(error)) {
-      return NextResponse.json({
-        ...googleWorkspaceDegradedSource(SOURCE, error),
-        entries: [],
-        saldo: 0,
-        total: 0,
-      });
-    }
-    return NextResponse.json({ error: "Failed to fetch buku kas", details: String(error) }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to fetch buku kas entries", details: String(error) },
+      { status: 500 }
+    );
   }
 }
 
-export async function POST(req: NextRequest) {
+export async function POST(request: NextRequest) {
   try {
-    const body = await req.json();
-    const id = generateId();
-    const date = body.date || today();
-    const type: "D" | "K" = body.type === "K" ? "K" : "D";
-    const category = body.category || "Operating";
-    const validCategory = CATEGORIES.includes(category as typeof CATEGORIES[number]) ? category : "Operating";
-    const amount = Number(body.amount) || 0;
-    const description = body.description || "";
-    const reference = body.reference || "";
+    const body = await request.json();
+    const { date, type, category, description, amount, reference } = body;
 
-    // Read existing to calculate saldo
-    const rows = await readBukuKasSheet();
-    const existing = parseBukuKasRows(rows);
-    const balanced = calculateRunningBalance(existing);
+    if (!date || !type || !category || !amount) {
+      return NextResponse.json(
+        { error: "Missing required fields: date, type, category, amount" },
+        { status: 400 }
+      );
+    }
 
-    let saldo = balanced.length > 0 ? balanced[balanced.length - 1].saldo : 0;
-    saldo += type === "D" ? amount : -amount;
+    const parsedAmount = parseAmount(amount);
+    if (parsedAmount <= 0) {
+      return NextResponse.json(
+        { error: "Amount must be greater than 0" },
+        { status: 400 }
+      );
+    }
 
-    const entry: Omit<BukuKasEntry, "row"> = {
-      id,
+    // Normalize type: accept "D"/"Debit" and "K"/"Kredit"
+    const normalizedType = (type === "K" || type === "Kredit") ? "K" : "D";
+
+    // Generate entry ID
+    const entryId = `BK-${Date.now()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+
+    // Calculate saldo: read last entry's saldo
+    const raw = await readSheet(SHEET_NAME);
+    const dataRows = raw.slice(1).filter((row) => row && row[0]);
+    let lastSaldo = 0;
+    if (dataRows.length > 0) {
+      const lastRow = dataRows[dataRows.length - 1];
+      lastSaldo = Number(lastRow[7]) || 0;
+    }
+
+    const debit = normalizedType === "D" ? parsedAmount : 0;
+    const credit = normalizedType === "K" ? parsedAmount : 0;
+    const newSaldo = lastSaldo + debit - credit;
+
+    const newRow = [
+      entryId,
       date,
-      type,
-      category: validCategory,
-      amount,
-      description,
-      reference,
-      saldo,
-    };
+      normalizedType,
+      category,
+      description || reference || "",
+      debit,
+      credit,
+      newSaldo,
+    ];
 
-    const rowNum = await appendBukuKasRow(entry);
+    await appendRows(SHEET_NAME, [newRow]);
 
-    // Recalculate all saldo after insert
-    const updatedRows = await readBukuKasSheet();
-    const updatedEntries = parseBukuKasRows(updatedRows);
-    await recalculateAndWriteSaldo(updatedEntries);
-
+    const createdEntry = rowToEntry(newRow, 0);
     return NextResponse.json({
-      success: true,
-      entry: { ...entry, row: rowNum },
-      message: "Entry created successfully.",
+      source: `Google Sheets: ${SHEET_NAME}`,
+      sourceStatus: "live",
+      message: "Entry created successfully",
+      data: createdEntry,
+      entry: createdEntry,
     }, { status: 201 });
   } catch (error) {
-    if (isGoogleWorkspaceAuthError(error)) {
-      return NextResponse.json({
-        sourceStatus: "blocked",
-        source: SOURCE,
-        error: "Google Workspace OAuth perlu re-auth sebelum bisa membuat entry buku kas",
-        details: String(error),
-      }, { status: 503 });
-    }
-    return NextResponse.json({ error: "Failed to create entry", details: String(error) }, { status: 500 });
+    return NextResponse.json(
+      googleWorkspaceWriteBlockedSource(SHEET_NAME, error),
+      { status: 500 }
+    );
   }
 }

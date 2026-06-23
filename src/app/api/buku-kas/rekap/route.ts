@@ -1,96 +1,88 @@
-// GET /api/buku-kas/rekap — Period rekap
-// Query: ?period=monthly|weekly&year=2025&month=06
+// GET /api/buku-kas/rekap — Period rekap (monthly/weekly summary, by category)
 import { NextRequest, NextResponse } from "next/server";
-import {
-  readBukuKasSheet,
-  parseBukuKasRows,
-  calculateRunningBalance,
-  CATEGORIES,
-} from "@/lib/buku-kas/sheets";
-import { googleWorkspaceDegradedSource, isGoogleWorkspaceAuthError } from "@/lib/api/google-workspace-error";
+import { readSheet } from "@/lib/sheets/sheets-real";
 
-const SOURCE = "Google Sheets: Buku_Kas";
+export const runtime = "nodejs";
 
-export async function GET(req: NextRequest) {
+const SHEET_NAME = "BukuKas";
+
+export async function GET(request: NextRequest) {
   try {
-    const url = new URL(req.url);
-    const period = url.searchParams.get("period") || "monthly";
-    const year = url.searchParams.get("year") || String(new Date().getFullYear());
-    const month = url.searchParams.get("month") || "";
+    const { searchParams } = new URL(request.url);
+    const period = searchParams.get("period") || "monthly"; // monthly | weekly
+    const month = searchParams.get("month") || ""; // YYYY-MM
+    const year = searchParams.get("year") || ""; // YYYY
 
-    const rows = await readBukuKasSheet();
-    const entries = parseBukuKasRows(rows);
-    const balanced = calculateRunningBalance(entries);
+    const raw = await readSheet(SHEET_NAME);
+    const dataRows = raw.slice(1).filter((row) => row && row[0]);
 
-    // Filter by year/month
-    let filtered = balanced.filter((e) => e.date.startsWith(year));
+    // Filter by month/year
+    let filtered = dataRows;
     if (month) {
-      const monthStr = `${year}-${month.padStart(2, "0")}`;
-      filtered = filtered.filter((e) => e.date.startsWith(monthStr));
+      filtered = filtered.filter((row) => row[1]?.startsWith(month));
+    } else if (year) {
+      filtered = filtered.filter((row) => row[1]?.startsWith(year));
     }
 
-    // Category breakdown
-    const byCategory: Record<string, { debit: number; kredit: number; net: number }> = {};
-    for (const cat of CATEGORIES) {
-      byCategory[cat] = { debit: 0, kredit: 0, net: 0 };
+    // Summary by category
+    const byCategory: Record<string, { debit: number; credit: number; count: number }> = {};
+    for (const row of filtered) {
+      const cat = row[3] || "Lain-lain";
+      if (!byCategory[cat]) byCategory[cat] = { debit: 0, credit: 0, count: 0 };
+      byCategory[cat].debit += Number(row[5]) || 0;
+      byCategory[cat].credit += Number(row[6]) || 0;
+      byCategory[cat].count += 1;
     }
-    for (const entry of filtered) {
-      const cat = byCategory[entry.category] || (byCategory[entry.category] = { debit: 0, kredit: 0, net: 0 });
-      if (entry.type === "D") {
-        cat.debit += entry.amount;
-        cat.net += entry.amount;
-      } else {
-        cat.kredit += entry.amount;
-        cat.net -= entry.amount;
-      }
+
+    // Summary by date (for weekly/monthly grouping)
+    const byDate: Record<string, { debit: number; credit: number; count: number }> = {};
+    for (const row of filtered) {
+      const dateKey = row[1] || "";
+      if (!byDate[dateKey]) byDate[dateKey] = { debit: 0, credit: 0, count: 0 };
+      byDate[dateKey].debit += Number(row[5]) || 0;
+      byDate[dateKey].credit += Number(row[6]) || 0;
+      byDate[dateKey].count += 1;
     }
+
+    // Totals
+    const totalDebit = filtered.reduce((s, r) => s + (Number(r[5]) || 0), 0);
+    const totalKredit = filtered.reduce((s, r) => s + (Number(r[6]) || 0), 0);
+    const netChange = totalDebit - totalKredit;
 
     // Monthly summary
-    const monthlyMap: Record<string, { debit: number; kredit: number; net: number }> = {};
-    for (const entry of filtered) {
-      const key = entry.date.slice(0, 7); // YYYY-MM
-      if (!monthlyMap[key]) monthlyMap[key] = { debit: 0, kredit: 0, net: 0 };
-      if (entry.type === "D") {
-        monthlyMap[key].debit += entry.amount;
-        monthlyMap[key].net += entry.amount;
-      } else {
-        monthlyMap[key].kredit += entry.amount;
-        monthlyMap[key].net -= entry.amount;
-      }
-    }
-
-    const monthlySummary = Object.entries(monthlyMap)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([periodKey, data]) => ({ period: periodKey, ...data }));
-
-    const totalDebit = filtered.filter((e) => e.type === "D").reduce((s, e) => s + e.amount, 0);
-    const totalKredit = filtered.filter((e) => e.type === "K").reduce((s, e) => s + e.amount, 0);
-
-    return NextResponse.json({
-      source: SOURCE,
-      sourceStatus: "live",
-      period,
-      year,
-      month,
-      totalDebit,
-      totalKredit,
-      netChange: totalDebit - totalKredit,
-      byCategory,
-      monthlySummary,
-      entryCount: filtered.length,
-    });
-  } catch (error) {
-    if (isGoogleWorkspaceAuthError(error)) {
-      return NextResponse.json({
-        ...googleWorkspaceDegradedSource(SOURCE, error),
-        totalDebit: 0,
-        totalKredit: 0,
-        netChange: 0,
-        byCategory: {},
-        monthlySummary: [],
-        entryCount: 0,
+    const monthlySummary: Array<{ period: string; debit: number; kredit: number; net: number }> = [];
+    const monthKeys = Object.keys(byDate).sort();
+    for (const m of monthKeys) {
+      const d = byDate[m];
+      monthlySummary.push({
+        period: m.length === 7 ? m : m.slice(0, 7),
+        debit: d.debit,
+        kredit: d.credit,
+        net: d.debit - d.credit,
       });
     }
-    return NextResponse.json({ error: "Failed to fetch rekap", details: String(error) }, { status: 500 });
+
+    return NextResponse.json({
+      source: `Google Sheets: ${SHEET_NAME}`,
+      sourceStatus: "live",
+      generatedAt: new Date().toISOString(),
+      period,
+      filter: { month, year },
+      summary: {
+        totalDebit,
+        totalKredit,
+        netChange,
+        entryCount: filtered.length,
+      },
+      byCategory,
+      byDate,
+      monthlySummary,
+      netChange,
+    });
+  } catch (error) {
+    return NextResponse.json(
+      { error: "Failed to fetch rekap", details: String(error) },
+      { status: 500 }
+    );
   }
 }
