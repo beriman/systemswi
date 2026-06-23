@@ -6,6 +6,7 @@ export type Feature =
     | "dashboard"
     | "dashboard:overview"
     | "dashboard:quarterly"
+    | "qc"
     | "event-cde"
     | "events"
     | "documents"
@@ -38,6 +39,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
             "dashboard": "admin",
             "dashboard:overview": "admin",
             "dashboard:quarterly": "admin",
+            "qc": "admin",
             "event-cde": "admin",
             "events": "admin",
             "documents": "admin",
@@ -58,6 +60,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
             "dashboard": "admin",
             "dashboard:overview": "admin",
             "dashboard:quarterly": "admin",
+            "qc": "admin",
             "event-cde": "admin",
             "events": "admin",
             "documents": "admin",
@@ -78,6 +81,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
             "dashboard": "view",
             "dashboard:overview": "view",
             "dashboard:quarterly": "view",
+            "qc": "view",
             "event-cde": "view",
             "events": "view",
             "documents": "view",

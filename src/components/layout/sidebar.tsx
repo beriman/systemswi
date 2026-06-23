@@ -27,6 +27,7 @@ const NAV_ITEMS: NavItem[] = [
     { label: "E-Commerce", href: "/ecommerce", icon: "🛍️", feature: "dashboard:overview" },
     { label: "Merch TIM", href: "/merch", icon: "🏷️", feature: "dashboard:overview" },
     { label: "Compliance", href: "/compliance", icon: "✅", feature: "dashboard:overview" },
+    { label: "QC", href: "/qc", icon: "🔬", feature: "qc" },
     { label: "BPOM", href: "/bpom", icon: "🏛️", feature: "dashboard:overview" },
     { label: "Alerts", href: "/alerts", icon: "🔔", feature: "dashboard:overview" },
     { label: "CRM Hub", href: "/crm", icon: "🤝", feature: "dashboard:overview" },
