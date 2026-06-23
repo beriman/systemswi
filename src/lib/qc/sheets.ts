@@ -1,32 +1,36 @@
-// QC / Quality Control — Google Sheets helpers
-// QC_Results sheet: A1:N1000
-// Cols:
-//   A = Result ID
-//   B = Batch Code
-//   C = Production ID
-//   D = Date
-//   E = Inspector
-//   F = Aroma Score
-//   G = Warna Score
-//   H = Kejernihan Score
-//   I = Packaging Score
-//   J = Seal Integrity Score
-//   K = Overall Score
-//   L = Status (Pass / Conditional / Fail)
-//   M = Notes
-//   N = Follow-up Required (Yes / No)
-import { readRange, writeRange, appendRows } from "@/lib/sheets/sheets-real";
+// QC Sheets helper — read/write QC_Results sheet
+import { readRange, writeRange, appendRows, readSheet } from "@/lib/sheets/sheets-real";
 
-const SHEET_NAME = "QC_Results";
-const HEADER_ROW = 1;
-const DATA_START_ROW = 2;
-const RANGE = `${SHEET_NAME}!A1:N1000`;
+export const QC_SHEET = "QC_Results";
+export const QC_RANGE = "QC_Results!A1:N1000";
+
+// Column mapping (0-indexed in the row array):
+// 0 A: Result ID
+// 1 B: Batch Code
+// 2 C: Production ID
+// 3 D: Date
+// 4 E: Inspector
+// 5 F: Aroma Score
+// 6 G: Warna Score
+// 7 H: Kejernihan Score
+// 8 I: Packaging Score
+// 9 J: Seal Integrity Score
+// 10 K: Overall Score
+// 11 L: Status
+// 12 M: Notes
+// 13 N: Follow-up Required
+
+export const QC_HEADERS = [
+  "Result ID", "Batch Code", "Production ID", "Date", "Inspector",
+  "Aroma Score", "Warna Score", "Kejernihan Score", "Packaging Score",
+  "Seal Integrity Score", "Overall Score", "Status", "Notes", "Follow-up Required",
+];
 
 export interface QcResult {
   id: string;
   batchCode: string;
   productionId: string;
-  date: string;          // YYYY-MM-DD
+  date: string;
   inspector: string;
   aromaScore: number;
   warnaScore: number;
@@ -34,24 +38,32 @@ export interface QcResult {
   packagingScore: number;
   sealIntegrityScore: number;
   overallScore: number;
-  status: "Pass" | "Conditional" | "Fail";
+  status: string;
   notes: string;
-  followUpRequired: "Yes" | "No";
-  row: number;           // 1-indexed sheet row
+  followUpRequired: string;
+  row: number; // 1-indexed row number in the sheet
 }
 
-// ── Helpers ────────────────────────────────────────────────────────
-
-function s(row: string[], idx: number): string {
-  return row[idx] || "";
+export interface QcSummary {
+  total: number;
+  passed: number;
+  failed: number;
+  conditional: number;
+  passRate: number;
 }
 
-function n(value: unknown): number {
-  if (typeof value === "number") return value;
-  if (!value) return 0;
-  return Number(value) || 0;
+// ── ID generation ──────────────────────────────────────────────────
+let counter = 0;
+export function generateId(): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  counter += 1;
+  return `QC-${y}${m}${d}-${String(counter).padStart(4, "0")}`;
 }
 
+// ── Score calculations ─────────────────────────────────────────────
 export function calcOverallScore(
   aroma: number,
   warna: number,
@@ -69,60 +81,66 @@ export function calcStatus(overallScore: number): "Pass" | "Conditional" | "Fail
   return "Fail";
 }
 
-export function generateId(): string {
-  return `QC-${Date.now()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
-}
-
-// ── Read ──────────────────────────────────────────────────────────
-
+// ── Read ───────────────────────────────────────────────────────────
 export async function readQcSheet(): Promise<string[][]> {
-  return readRange(RANGE);
+  return readRange(QC_RANGE);
 }
 
 export function parseQcRows(rows: string[][]): QcResult[] {
-  // rows[0] is header row (row 1)
-  // data starts from rows[1] (row 2)
-  const dataRows = rows.slice(1);
   const results: QcResult[] = [];
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    // Skip header row
+    if (i === 0 && row[0] === "Result ID") continue;
+    if (!row[0]) continue; // skip empty rows
 
-  for (let i = 0; i < dataRows.length; i++) {
-    const row = dataRows[i];
-    const id = s(row, 0);
-    if (!id) continue;
-
-    const aromaScore = n(row[5]);
-    const warnaScore = n(row[6]);
-    const kejernihanScore = n(row[7]);
-    const packagingScore = n(row[8]);
-    const sealIntegrityScore = n(row[9]);
-    const overallScore = n(row[10]) || calcOverallScore(aromaScore, warnaScore, kejernihanScore, packagingScore, sealIntegrityScore);
-    const status = (s(row, 11) || calcStatus(overallScore)) as QcResult["status"];
+    const aroma = Number(row[5]) || 0;
+    const warna = Number(row[6]) || 0;
+    const kejernihan = Number(row[7]) || 0;
+    const packaging = Number(row[8]) || 0;
+    const seal = Number(row[9]) || 0;
+    const overall = Number(row[10]) || calcOverallScore(aroma, warna, kejernihan, packaging, seal);
 
     results.push({
-      id,
-      batchCode: s(row, 1),
-      productionId: s(row, 2),
-      date: s(row, 3),
-      inspector: s(row, 4),
-      aromaScore,
-      warnaScore,
-      kejernihanScore,
-      packagingScore,
-      sealIntegrityScore,
-      overallScore,
-      status,
-      notes: s(row, 12),
-      followUpRequired: s(row, 13) === "Yes" ? "Yes" : "No",
-      row: i + DATA_START_ROW,  // +2 because data starts at row 2
+      id: row[0] || "",
+      batchCode: row[1] || "",
+      productionId: row[2] || "",
+      date: row[3] || "",
+      inspector: row[4] || "",
+      aromaScore: aroma,
+      warnaScore: warna,
+      kejernihanScore: kejernihan,
+      packagingScore: packaging,
+      sealIntegrityScore: seal,
+      overallScore: overall,
+      status: row[11] || calcStatus(overall),
+      notes: row[12] || "",
+      followUpRequired: row[13] || "No",
+      row: i + 1, // 1-indexed
     });
   }
-
   return results;
 }
 
-// ── Write ─────────────────────────────────────────────────────────
+// ── Write ──────────────────────────────────────────────────────────
+export async function ensureQcHeaders(): Promise<void> {
+  try {
+    const existing = await readRange("QC_Results!A1:N1");
+    if (!existing || existing.length === 0 || !existing[0]?.[0]) {
+      await writeRange("QC_Results!A1:N1", [QC_HEADERS]);
+    }
+  } catch {
+    // Sheet may not exist yet — try to create headers
+    try {
+      await writeRange("QC_Results!A1:N1", [QC_HEADERS]);
+    } catch {
+      // ignore — sheet will be created on first append
+    }
+  }
+}
 
-export async function appendQcRow(result: Omit<QcResult, "row">): Promise<number> {
+export async function appendQcRow(result: Omit<QcResult, "row">): Promise<void> {
+  await ensureQcHeaders();
   const row = [
     result.id,
     result.batchCode,
@@ -139,12 +157,14 @@ export async function appendQcRow(result: Omit<QcResult, "row">): Promise<number
     result.notes,
     result.followUpRequired,
   ];
-  await appendRows(SHEET_NAME, [row]);
-  return 0; // row number unknown after append
+  await appendRows(QC_SHEET, [row]);
 }
 
-export async function updateQcRow(rowNumber: number, result: Omit<QcResult, "row">): Promise<void> {
-  const range = `${SHEET_NAME}!A${rowNumber}:N${rowNumber}`;
+export async function updateQcRow(
+  rowNumber: number,
+  result: Omit<QcResult, "row">
+): Promise<void> {
+  const range = `QC_Results!A${rowNumber}:N${rowNumber}`;
   const row = [
     result.id,
     result.batchCode,
@@ -164,120 +184,7 @@ export async function updateQcRow(rowNumber: number, result: Omit<QcResult, "row
   await writeRange(range, [row]);
 }
 
-// ── Seed data ─────────────────────────────────────────────────────
-
-export function buildSeedData(): Omit<QcResult, "row">[] {
-  const today = new Date().toISOString().slice(0, 10);
-  const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
-  const twoDaysAgo = new Date(Date.now() - 2 * 86400000).toISOString().slice(0, 10);
-
-  const seeds: Omit<QcResult, "row">[] = [
-    // 3 Pass
-    {
-      id: "QC-SEED-001",
-      batchCode: "BATCH-2026-001",
-      productionId: "PROD-001",
-      date: today,
-      inspector: "HemuHemu/OWL",
-      aromaScore: 9,
-      warnaScore: 8,
-      kejernihanScore: 9,
-      packagingScore: 8,
-      sealIntegrityScore: 9,
-      overallScore: 8.6,
-      status: "Pass",
-      notes: "Batch pertama — semua parameter excellent.",
-      followUpRequired: "No",
-    },
-    {
-      id: "QC-SEED-002",
-      batchCode: "BATCH-2026-002",
-      productionId: "PROD-002",
-      date: yesterday,
-      inspector: "HemuHemu/OWL",
-      aromaScore: 8,
-      warnaScore: 7,
-      kejernihanScore: 8,
-      packagingScore: 7,
-      sealIntegrityScore: 8,
-      overallScore: 7.6,
-      status: "Pass",
-      notes: "Konsistensi baik, minor deviation pada warna.",
-      followUpRequired: "No",
-    },
-    {
-      id: "QC-SEED-003",
-      batchCode: "BATCH-2026-003",
-      productionId: "PROD-003",
-      date: twoDaysAgo,
-      inspector: "HemuHemu/OWL",
-      aromaScore: 7,
-      warnaScore: 7,
-      kejernihanScore: 7,
-      packagingScore: 7,
-      sealIntegrityScore: 7,
-      overallScore: 7.0,
-      status: "Pass",
-      notes: "Pass dengan skor minimum. Monitor batch berikutnya.",
-      followUpRequired: "No",
-    },
-    // 1 Fail
-    {
-      id: "QC-SEED-004",
-      batchCode: "BATCH-2026-004",
-      productionId: "PROD-004",
-      date: yesterday,
-      inspector: "HemuHemu/OWL",
-      aromaScore: 4,
-      warnaScore: 3,
-      kejernihanScore: 5,
-      packagingScore: 4,
-      sealIntegrityScore: 3,
-      overallScore: 3.8,
-      status: "Fail",
-      notes: "Aroma off-spec, warna tidak konsisten, seal lemah. Batch di-reject.",
-      followUpRequired: "Yes",
-    },
-    // 1 Conditional
-    {
-      id: "QC-SEED-005",
-      batchCode: "BATCH-2026-005",
-      productionId: "PROD-005",
-      date: today,
-      inspector: "HemuHemu/OWL",
-      aromaScore: 6,
-      warnaScore: 5,
-      kejernihanScore: 6,
-      packagingScore: 5,
-      sealIntegrityScore: 6,
-      overallScore: 5.6,
-      status: "Conditional",
-      notes: "Conditional pass — perlu rework pada packaging sebelum release.",
-      followUpRequired: "Yes",
-    },
-  ];
-
-  return seeds;
-}
-
-export async function seedQcData(): Promise<number> {
-  const seeds = buildSeedData();
-  for (const seed of seeds) {
-    await appendQcRow(seed);
-  }
-  return seeds.length;
-}
-
-// ── Summary ───────────────────────────────────────────────────────
-
-export interface QcSummary {
-  total: number;
-  passed: number;
-  failed: number;
-  conditional: number;
-  passRate: number;
-}
-
+// ── Summary ────────────────────────────────────────────────────────
 export function computeSummary(results: QcResult[]): QcSummary {
   const total = results.length;
   const passed = results.filter((r) => r.status === "Pass").length;
@@ -285,4 +192,30 @@ export function computeSummary(results: QcResult[]): QcSummary {
   const conditional = results.filter((r) => r.status === "Conditional").length;
   const passRate = total > 0 ? Math.round((passed / total) * 100) : 0;
   return { total, passed, failed, conditional, passRate };
+}
+
+// ── Seed data ──────────────────────────────────────────────────────
+export async function seedQcData(): Promise<number> {
+  const today = new Date().toISOString().slice(0, 10);
+  const seeds: (string | number)[][] = [
+    // Pass — Aura Bloom
+    ["QC-20260624-0001", "BATCH-2026-01-15-1001", "PROD-2026-001", "2026-01-15", "HemuHemu/OWL",
+     9, 8, 9, 8, 9, 8.6, "Pass", "First batch of the year — excellent quality", "No"],
+    // Pass — Lumière
+    ["QC-20260624-0002", "BATCH-2026-02-10-2001", "PROD-2026-002", "2026-02-10", "HemuHemu/OWL",
+     8, 9, 8, 9, 8, 8.4, "Pass", "Valentine edition — all parameters within spec", "No"],
+    // Pass — Noir Essence
+    ["QC-20260624-0003", "BATCH-2026-03-20-3001", "PROD-2026-003", "2026-03-20", "HemuHemu/OWL",
+     9, 9, 8, 9, 9, 8.8, "Pass", "Premium line — superior aroma and packaging", "No"],
+    // Fail — Velvet Cloud (seal issue)
+    ["QC-20260624-0004", "BATCH-2026-05-18-5001", "PROD-2026-005", "2026-05-18", "HemuHemu/OWL",
+     6, 5, 5, 4, 3, 4.6, "Fail", "Seal integrity below threshold — bottle crack on filling detected", "Yes"],
+    // Conditional — Aura Bloom (second batch)
+    ["QC-20260624-0005", "BATCH-2026-04-05-4001", "PROD-2026-004", "2026-04-05", "HemuHemu/OWL",
+     7, 6, 6, 7, 5, 6.2, "Conditional", "Travel size — seal integrity marginal, rework recommended", "Yes"],
+  ];
+
+  await ensureQcHeaders();
+  await appendRows(QC_SHEET, seeds);
+  return seeds.length;
 }
