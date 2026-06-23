@@ -89,26 +89,35 @@ async function seed() {
     const otherCost = 1000000 + i * 250000;
     const totalCost = rawMaterialCost + bottlingCost + packagingCost + otherCost;
     const hppPerUnit = Math.round(totalCost / qty);
+    const productTypes = ["EDP", "EDT", "EDP", "Roll-on", "Mist"];
 
+    // 20 columns matching Brand_Production schema:
+    // 0: Production ID, 1: Date, 2: Brand ID, 3: Brand Name, 4: SKU,
+    // 5: Product Name, 6: Product Type, 7: Batch Code, 8: Qty Produced,
+    // 9: Unit, 10: Raw Material Cost, 11: Bottling Cost, 12: Packaging Cost,
+    // 13: Other Cost, 14: HPP/Unit, 15: Total Production Cost, 16: Status,
+    // 17: QC Status, 18: Stock Location, 19: Notes
     newProductionRows.push([
-      `PROD-${Date.now()}-${i}`, // Production ID
-      date,                       // Date
-      brand.name,                 // Brand (C)
-      brand.sku,                  // SKU (D)
-      brand.product,              // Product (E)
-      batchCode,                  // Batch Code (F)
-      qty,                        // Qty (G)
-      "pcs",                      // Unit (H)
-      rawMaterialCost,            // Raw Material Cost (I)
-      bottlingCost,               // Bottling Cost (J)
-      packagingCost,              // Packaging Cost (K)
-      otherCost,                  // Other Cost (L)
-      hppPerUnit,                 // HPP/Unit (M)
-      totalCost,                  // Total Production Cost (N)
-      statuses[i],                // Status (O)
-      qcStatuses[i],              // QC Status (P)
-      "Gudang Utama",             // Stock Location (Q)
-      `Seed data - ${brand.name}`, // Notes (R)
+      `PROD-${Date.now()}-${i}`,  // Production ID
+      date,                        // Date
+      brand.id,                    // Brand ID
+      brand.name,                  // Brand Name
+      brand.sku,                   // SKU
+      brand.product,               // Product Name
+      productTypes[i],             // Product Type
+      batchCode,                   // Batch Code
+      qty,                         // Qty Produced
+      "pcs",                       // Unit
+      rawMaterialCost,             // Raw Material Cost
+      bottlingCost,                // Bottling Cost
+      packagingCost,               // Packaging Cost
+      otherCost,                   // Other Cost
+      hppPerUnit,                  // HPP/Unit
+      totalCost,                   // Total Production Cost
+      statuses[i],                 // Status
+      qcStatuses[i],               // QC Status
+      "Gudang Utama",              // Stock Location
+      `Seed data - ${brand.name}`, // Notes
     ]);
   }
 

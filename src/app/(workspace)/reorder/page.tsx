@@ -16,7 +16,6 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
-import { X } from "lucide-react";
 
 /* ── Types ── */
 
@@ -362,6 +361,7 @@ export default function ReorderPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          action: "create-po",
           supplierId: poForm.supplierId,
           supplierName: poForm.supplierName,
           itemId: poForm.itemId,
@@ -850,7 +850,7 @@ export default function ReorderPage() {
               <CardContent>
                 {itemsBelowMin.length === 0 ? (
                   <EmptyState
-                    icon={<CheckCircle className="h-8 w-8" />}
+                    icon="✅"
                     title="Semua stok aman"
                     description="Tidak ada item di bawah minimum qty"
                   />
@@ -895,7 +895,7 @@ export default function ReorderPage() {
               <CardContent>
                 {alerts.length === 0 ? (
                   <EmptyState
-                    icon={<CheckCircle className="h-8 w-8" />}
+                    icon="✅"
                     title="Tidak ada alert"
                     description="Generate alerts dari Inventory_Master"
                   />
@@ -974,7 +974,7 @@ export default function ReorderPage() {
             <CardContent>
               {alerts.length === 0 ? (
                 <EmptyState
-                  icon={<AlertTriangle className="h-8 w-8" />}
+                  icon="🔔"
                   title="Belum ada reorder alerts"
                   description="Klik 'Generate Alerts' untuk scan Inventory_Master dan buat alert otomatis untuk item di bawah minimum."
                 />
@@ -1060,7 +1060,7 @@ export default function ReorderPage() {
             <CardContent>
               {allPOs.length === 0 ? (
                 <EmptyState
-                  icon={<ShoppingCart className="h-8 w-8" />}
+                  icon="🧾"
                   title="Belum ada Purchase Orders"
                   description="Buat PO manual atau generate dari reorder alerts."
                 />
@@ -1222,7 +1222,7 @@ export default function ReorderPage() {
             <CardContent>
               {inventory.length === 0 ? (
                 <EmptyState
-                  icon={<Package className="h-8 w-8" />}
+                  icon="📦"
                   title="Belum ada inventory data"
                   description="Data inventory akan muncul dari Google Sheets Inventory_Master."
                 />
