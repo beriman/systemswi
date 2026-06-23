@@ -1,12 +1,45 @@
-// GET /api/customers/[id]/interactions — interaction history for a customer
-// POST /api/customers/[id]/interactions — log new interaction for a customer
 import { NextRequest, NextResponse } from "next/server";
-import { googleWorkspaceDegradedSource, googleWorkspaceWriteBlockedSource, isGoogleWorkspaceAuthError } from "@/lib/api/google-workspace-error";
-import { readRange, appendRows, updateRow } from "@/lib/sheets/sheets-real";
+import { googleWorkspaceDegradedSource, isGoogleWorkspaceAuthError } from "@/lib/api/google-workspace-error";
+import { appendRows, readRange } from "@/lib/sheets/sheets-real";
 import { appendSwiMemoryLog } from "@/lib/google/audit-log";
+import { ensureCustomerTables } from "@/lib/customer/init-db";
 
 export const runtime = "nodejs";
 
+type CustomerSegment = "new" | "regular" | "loyal" | "vip";
+type ConsentStatus = "TBA" | "yes" | "no";
+
+type Customer = {
+  id: string;
+  name: string;
+  whatsapp: string;
+  segment: CustomerSegment;
+  interest: string;
+  source: string;
+  consent: ConsentStatus;
+  lastContact: string;
+  totalPurchases: number;
+  clv: number;
+  recommendedFormula: string;
+  notes: string;
+  updatedAt: string;
+  rowNumber: number;
+};
+
+type Interaction = {
+  timestamp: string;
+  interactionId: string;
+  customerId: string;
+  name: string;
+  type: string;
+  channel: string;
+  summary: string;
+  value: number;
+  followUpDate: string;
+  pic: string;
+};
+
+const SOURCE = "SQLite + Google Sheets: Customer_Master + Customer_Interactions";
 const text = (value: unknown) => String(value ?? "").trim();
 const numberValue = (value: unknown) => {
   if (typeof value === "number") return value;
@@ -15,26 +48,32 @@ const numberValue = (value: unknown) => {
 };
 const normalizeWa = (value: unknown) => text(value).replace(/[^\d+]/g, "");
 
-function safeConsent(value: unknown): "TBA" | "yes" | "no" {
-  const v = text(value).toLowerCase();
-  if (["yes", "ya", "true", "consent"].includes(v)) return "yes";
-  if (["no", "tidak", "false"].includes(v)) return "no";
-  return "TBA";
-}
-
-function segmentFromPurchases(count: number): "vip" | "loyal" | "regular" | "new" {
+function segmentFromPurchases(count: number): CustomerSegment {
   if (count >= 10) return "vip";
   if (count >= 5) return "loyal";
   if (count >= 2) return "regular";
   return "new";
 }
 
-function parseCustomers(rows: string[][]) {
+function safeConsent(value: unknown): ConsentStatus {
+  const v = text(value).toLowerCase();
+  if (["yes", "ya", "true", "consent"].includes(v)) return "yes";
+  if (["no", "tidak", "false"].includes(v)) return "no";
+  return "TBA";
+}
+
+function makeInteractionId(existing: Interaction[]) {
+  const today = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+  const sameDay = existing.filter((interaction) => interaction.interactionId.includes(today)).length + 1;
+  return `CI-${today}-${String(sameDay).padStart(3, "0")}`;
+}
+
+function parseCustomers(rows: string[][]): Customer[] {
   return rows.slice(1).filter((row) => row.some(Boolean)).map((row, index) => ({
     id: text(row[0]),
     name: text(row[1]),
     whatsapp: normalizeWa(row[2]),
-    segment: text(row[3]) || "new",
+    segment: (text(row[3]) as CustomerSegment) || "new",
     interest: text(row[4]) || "TBA",
     source: text(row[5]) || "TBA",
     consent: safeConsent(row[6]),
@@ -45,10 +84,10 @@ function parseCustomers(rows: string[][]) {
     notes: text(row[11]),
     updatedAt: text(row[12]),
     rowNumber: index + 2,
-  })).filter((c) => c.id && c.name);
+  })).filter((customer) => customer.id && customer.name);
 }
 
-function parseInteractions(rows: string[][]) {
+function parseInteractions(rows: string[][]): Interaction[] {
   return rows.slice(1).filter((row) => row.some(Boolean)).map((row) => ({
     timestamp: text(row[0]),
     interactionId: text(row[1]),
@@ -60,91 +99,181 @@ function parseInteractions(rows: string[][]) {
     value: numberValue(row[7]),
     followUpDate: text(row[8]) || "TBA",
     pic: text(row[9]) || "TBA",
-  })).filter((i) => i.interactionId);
+  })).filter((interaction) => interaction.interactionId);
 }
 
-function makeInteractionId(existing: { interactionId: string }[]) {
-  const today = new Date().toISOString().slice(0, 10).replace(/-/g, "");
-  const sameDay = existing.filter((i) => i.interactionId.includes(today)).length + 1;
-  return `CI-${today}-${String(sameDay).padStart(3, "0")}`;
+// ── SQLite helpers ──
+function getDbSafe(): any {
+  try {
+    const Database = require("better-sqlite3");
+    const path = require("path");
+    const fs = require("fs");
+    const dbDir = path.join(process.cwd(), ".data");
+    const dbPath = path.join(dbDir, "systemswi.db");
+    if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir, { recursive: true });
+    const db = new Database(dbPath);
+    db.pragma("journal_mode = WAL");
+    ensureCustomerTables(db);
+    return db;
+  } catch {
+    return null;
+  }
 }
 
-// ── GET interaction history ──
-export async function GET(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+function readFromSqlite(): { customers: Customer[]; interactions: Interaction[] } | null {
+  const db = getDbSafe();
+  if (!db) return null;
+  try {
+    const custRows = db.prepare("SELECT * FROM customers ORDER BY updated_at DESC").all();
+    const intRows = db.prepare("SELECT * FROM customer_interactions ORDER BY created_at DESC").all();
+    const customers: Customer[] = custRows.map((r: any) => ({
+      id: r.id,
+      name: r.name,
+      whatsapp: r.whatsapp || "",
+      segment: r.segment || "new",
+      interest: r.interest || "TBA",
+      source: r.source || "TBA",
+      consent: r.consent || "TBA",
+      lastContact: r.last_contact || "TBA",
+      totalPurchases: r.total_purchases || 0,
+      clv: r.clv || 0,
+      recommendedFormula: r.recommended_formula || "TBA",
+      notes: r.notes || "",
+      updatedAt: r.updated_at || "",
+      rowNumber: 0,
+    }));
+    const interactions: Interaction[] = intRows.map((r: any) => ({
+      timestamp: r.created_at || "",
+      interactionId: r.interaction_id,
+      customerId: r.customer_id,
+      name: r.name,
+      type: r.type || "note",
+      channel: r.channel || "WhatsApp",
+      summary: r.summary || "",
+      value: r.value || 0,
+      followUpDate: r.follow_up_date || "TBA",
+      pic: r.pic || "TBA",
+    }));
+    return { customers, interactions };
+  } catch {
+    return null;
+  } finally {
+    try { db.close(); } catch { /* ignore */ }
+  }
+}
+
+function writeCustomerToSqlite(customer: Omit<Customer, "rowNumber">) {
+  const db = getDbSafe();
+  if (!db) return false;
+  try {
+    const existing = db.prepare("SELECT id FROM customers WHERE id = ? OR whatsapp = ?").get(customer.id, customer.whatsapp);
+    if (existing) {
+      db.prepare(`UPDATE customers SET name=?, whatsapp=?, segment=?, interest=?, source=?, consent=?, last_contact=?, total_purchases=?, clv=?, recommended_formula=?, notes=?, updated_at=? WHERE id=?`)
+        .run(customer.name, customer.whatsapp, customer.segment, customer.interest, customer.source, customer.consent, customer.lastContact, customer.totalPurchases, customer.clv, customer.recommendedFormula, customer.notes, customer.updatedAt, customer.id);
+    } else {
+      db.prepare(`INSERT INTO customers (id, name, whatsapp, segment, interest, source, consent, last_contact, total_purchases, clv, recommended_formula, notes, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+        .run(customer.id, customer.name, customer.whatsapp, customer.segment, customer.interest, customer.source, customer.consent, customer.lastContact, customer.totalPurchases, customer.clv, customer.recommendedFormula, customer.notes, customer.updatedAt);
+    }
+    return true;
+  } catch {
+    return false;
+  } finally {
+    try { db.close(); } catch { /* ignore */ }
+  }
+}
+
+function writeInteractionToSqlite(interaction: Interaction) {
+  const db = getDbSafe();
+  if (!db) return false;
+  try {
+    db.prepare(`INSERT OR REPLACE INTO customer_interactions (interaction_id, customer_id, name, type, channel, summary, value, follow_up_date, pic) VALUES (?,?,?,?,?,?,?,?,?)`)
+      .run(interaction.interactionId, interaction.customerId, interaction.name, interaction.type, interaction.channel, interaction.summary, interaction.value, interaction.followUpDate, interaction.pic);
+    return true;
+  } catch {
+    return false;
+  } finally {
+    try { db.close(); } catch { /* ignore */ }
+  }
+}
+
+// ── Google Sheets fallback ──
+async function readCrmFromSheets() {
+  const [customerRows, interactionRows] = await Promise.all([
+    readRange("Customer_Master!A1:M1000"),
+    readRange("Customer_Interactions!A1:J1000"),
+  ]);
+  return {
+    customers: parseCustomers(customerRows),
+    interactions: parseInteractions(interactionRows),
+  };
+}
+
+async function readCrm() {
+  const sqliteData = readFromSqlite();
+  if (sqliteData && (sqliteData.customers.length > 0 || sqliteData.interactions.length > 0)) {
+    return { ...sqliteData, sourceStatus: "live" as const, source: "SQLite (local DB)" };
+  }
+  try {
+    const sheetsData = await readCrmFromSheets();
+    return { ...sheetsData, sourceStatus: "live" as const, source: "Google Sheets" };
+  } catch (error) {
+    if (isGoogleWorkspaceAuthError(error)) {
+      return { customers: [], interactions: [], sourceStatus: "degraded" as const, source: "Google Sheets (blocked)" };
+    }
+    throw error;
+  }
+}
+
+// ── GET /api/customers/[id]/interactions — history ──
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
-    const interactionRows = await readRange("Customer_Interactions!A1:J1000");
-    const allInteractions = parseInteractions(interactionRows);
+    const { customers, interactions, sourceStatus, source } = await readCrm();
 
-    // Try to find by customerId first, then by whatsapp
-    const customerRows = await readRange("Customer_Master!A1:M1000");
-    const customers = parseCustomers(customerRows);
-    const customer = customers.find(
-      (c) => c.id.toLowerCase() === id.toLowerCase() ||
-             c.whatsapp === normalizeWa(id)
-    );
+    const customer = customers.find((c) => c.id === id);
+    if (!customer) {
+      return NextResponse.json({ error: "Customer tidak ditemukan" }, { status: 404 });
+    }
 
-    const customerId = customer?.id || id;
-    const interactions = allInteractions
-      .filter((i) => i.customerId.toLowerCase() === customerId.toLowerCase())
+    const customerInteractions = interactions
+      .filter((ix) => ix.customerId === id)
       .sort((a, b) => b.timestamp.localeCompare(a.timestamp));
 
     return NextResponse.json({
-      source: "Google Sheets: Customer_Interactions",
-      customerId,
-      customerName: customer?.name || null,
-      interactions,
-      totalInteractions: interactions.length,
-      totalValue: interactions.reduce((sum, i) => sum + i.value, 0),
+      source,
+      sourceStatus,
+      customerId: id,
+      customerName: customer.name,
+      interactions: customerInteractions,
+      total: customerInteractions.length,
     });
   } catch (error) {
     if (isGoogleWorkspaceAuthError(error)) {
       return NextResponse.json({
-        ...googleWorkspaceDegradedSource("Google Sheets: Customer_Interactions", error),
+        ...googleWorkspaceDegradedSource(SOURCE, error),
         interactions: [],
       });
     }
-    return NextResponse.json(
-      { error: "Gagal membaca interaction history", details: String(error) },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Gagal membaca interactions", details: String(error) }, { status: 500 });
   }
 }
 
-// ── POST log interaction ──
-export async function POST(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+// ── POST /api/customers/[id]/interactions ── log interaction ──
+export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
     const body = await request.json();
-    const now = new Date().toISOString();
+    const { customers, interactions } = await readCrm();
 
-    // Find customer
-    const customerRows = await readRange("Customer_Master!A1:M1000");
-    const customers = parseCustomers(customerRows);
-    const customer = customers.find(
-      (c) => c.id.toLowerCase() === id.toLowerCase() ||
-             c.whatsapp === normalizeWa(id)
-    );
-
+    const customer = customers.find((c) => c.id === id);
     if (!customer) {
-      return NextResponse.json(
-        { error: `Customer ${id} tidak ditemukan` },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: "Customer tidak ditemukan" }, { status: 404 });
     }
 
-    const interactionRows = await readRange("Customer_Interactions!A1:J1000");
-    const allInteractions = parseInteractions(interactionRows);
-    const interactionId = makeInteractionId(allInteractions);
+    const now = new Date().toISOString();
+    const interactionId = makeInteractionId(interactions);
     const value = numberValue(body.value);
-
-    const interaction = {
+    const interaction: Interaction = {
       timestamp: now,
       interactionId,
       customerId: customer.id,
@@ -157,15 +286,24 @@ export async function POST(
       pic: text(body.pic) || "HemuHemu/OWL",
     };
 
-    // Write to Google Sheets
-    await appendRows("CustomerInteractions", [[
-      now, interactionId, customer.id, customer.name,
-      interaction.type, interaction.channel, interaction.summary,
-      value, interaction.followUpDate, interaction.pic,
-    ]]);
+    // Write to SQLite
+    writeInteractionToSqlite(interaction);
 
-    // Update customer totals
-    const updatedCustomer = {
+    // Try Google Sheets
+    let sheetsOk = false;
+    try {
+      await appendRows("CustomerInteractions", [[
+        now, interactionId, customer.id, customer.name,
+        interaction.type, interaction.channel, interaction.summary,
+        value, interaction.followUpDate, interaction.pic,
+      ]]);
+      sheetsOk = true;
+    } catch {
+      // Non-fatal
+    }
+
+    // Update customer CLV & purchases
+    const updated: Omit<Customer, "rowNumber"> = {
       ...customer,
       totalPurchases: customer.totalPurchases + (value > 0 ? 1 : 0),
       clv: customer.clv + value,
@@ -173,17 +311,8 @@ export async function POST(
       lastContact: now.slice(0, 10),
       updatedAt: now,
     };
+    writeCustomerToSqlite(updated);
 
-    await updateRow("CustomerMaster", customer.rowNumber, [
-      updatedCustomer.id, updatedCustomer.name, updatedCustomer.whatsapp,
-      updatedCustomer.segment, updatedCustomer.interest, updatedCustomer.source,
-      updatedCustomer.consent, updatedCustomer.lastContact,
-      updatedCustomer.totalPurchases, updatedCustomer.clv,
-      updatedCustomer.recommendedFormula, updatedCustomer.notes,
-      updatedCustomer.updatedAt,
-    ]);
-
-    // Audit log
     let auditStatus = "ok";
     try {
       await appendSwiMemoryLog({
@@ -198,19 +327,19 @@ export async function POST(
     return NextResponse.json({
       success: true,
       interaction,
-      customer: updatedCustomer,
+      customer: updated,
       auditStatus,
+      sheets: sheetsOk,
     }, { status: 201 });
   } catch (error) {
     if (isGoogleWorkspaceAuthError(error)) {
       return NextResponse.json({
-        ...googleWorkspaceWriteBlockedSource("Google Sheets: Customer_Interactions", error),
-        error: "Google OAuth perlu re-auth",
+        sourceStatus: "blocked",
+        source: SOURCE,
+        error: "Google Workspace OAuth perlu re-auth sebelum mencatat interaction.",
+        details: String(error),
       }, { status: 503 });
     }
-    return NextResponse.json(
-      { error: "Gagal mencatat interaction", details: String(error) },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Gagal mencatat interaction", details: String(error) }, { status: 500 });
   }
 }

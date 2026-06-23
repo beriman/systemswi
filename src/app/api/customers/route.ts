@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { googleWorkspaceDegradedSource, isGoogleWorkspaceAuthError } from "@/lib/api/google-workspace-error";
 import { appendRows, readRange, updateRow } from "@/lib/sheets/sheets-real";
 import { appendSwiMemoryLog } from "@/lib/google/audit-log";
+import { ensureCustomerTables } from "@/lib/customer/init-db";
 
 export const runtime = "nodejs";
 
@@ -183,6 +184,7 @@ function getDbSafe(): any {
     if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir, { recursive: true });
     const db = new Database(dbPath);
     db.pragma("journal_mode = WAL");
+    ensureCustomerTables(db);
     return db;
   } catch {
     return null;

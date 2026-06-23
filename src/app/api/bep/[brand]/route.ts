@@ -1,121 +1,90 @@
 // GET /api/bep/[brand] — Get BEP detail per brand
 import { NextRequest, NextResponse } from "next/server";
 import { readRange } from "@/lib/sheets/sheets-real";
-import { googleWorkspaceDegradedSource, isGoogleWorkspaceAuthError } from "@/lib/api/google-workspace-error";
 
 export const runtime = "nodejs";
 
-const money = (value: unknown): number => {
-  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
-  if (typeof value !== "string") return 0;
-  const parsed = Number(value.replace(/[^\d.-]/g, ""));
-  return Number.isFinite(parsed) ? parsed : 0;
-};
+const RANGE = "BEP_Calculations!A1:L1000";
 
-const text = (value: unknown): string => String(value ?? "").trim();
+function parseNum(v: unknown): number {
+  if (typeof v === "number") return Number.isFinite(v) ? v : 0;
+  if (typeof v !== "string") return 0;
+  const n = Number(v.replace(/[^\d.-]/g, ""));
+  return Number.isFinite(n) ? n : 0;
+}
 
-function calcBEP(fixedCost: number, variableCost: number, sellingPrice: number) {
+function calcBEP(fixedCost: number, variableCost: number, sellingPrice: number, currentSales: number) {
   const contributionMargin = sellingPrice - variableCost;
-  if (contributionMargin <= 0) {
-    return { contributionMargin: 0, bepUnits: 0, bepRevenue: 0 };
-  }
-  const bepUnits = Math.ceil(fixedCost / contributionMargin);
+  const bepUnits = contributionMargin > 0 ? fixedCost / contributionMargin : 0;
   const bepRevenue = bepUnits * sellingPrice;
-  return { contributionMargin, bepUnits, bepRevenue };
+  const marginOfSafety = currentSales > 0 ? ((currentSales - bepUnits) / currentSales) * 100 : 0;
+  const profit = (currentSales * contributionMargin) - fixedCost;
+  return { contributionMargin, bepUnits, bepRevenue, marginOfSafety, profit };
 }
 
 export async function GET(
-  req: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ brand: string }> }
 ) {
   try {
     const { brand } = await params;
     const decodedBrand = decodeURIComponent(brand);
 
-    const rawRows = await readRange("BEP_Calculations!A1:L1000");
-    if (rawRows.length <= 1) {
-      return NextResponse.json({
-        source: "Google Sheets: BEP_Calculations",
-        sourceStatus: "live",
-        brand: decodedBrand,
-        count: 0,
-        data: [],
-      });
+    const rows = await readRange(RANGE);
+    if (!rows || rows.length === 0) {
+      return NextResponse.json({ brand: decodedBrand, bep: [], source: "sheets" });
     }
 
-    const headers = rawRows[0].map((h) => h.toLowerCase().replace(/[\s/]/g, ""));
-    const getColIndex = (names: string[]): number => {
-      for (const name of names) {
-        const i = headers.indexOf(name.toLowerCase().replace(/[\s/]/g, ""));
-        if (i >= 0) return i;
-      }
-      return -1;
-    };
-
-    const brandIdx = getColIndex(["brand", "merek"]);
-    const fixedCostIdx = getColIndex(["fixedcost", "fixed cost", "biaya tetap"]);
-    const varCostIdx = getColIndex(["variablecostperunit", "variable cost/unit", "variable cost"]);
-    const priceIdx = getColIndex(["sellingpriceperunit", "selling price/unit", "selling price"]);
-    const salesIdx = getColIndex(["currentsales", "current sales", "penjualan saat ini"]);
-
-    const brandRows = rawRows.slice(1).filter((row) => {
-      const rowBrand = brandIdx >= 0 ? text(row[brandIdx]) : "";
-      return rowBrand.toLowerCase() === decodedBrand.toLowerCase();
-    });
-
-    const data = brandRows.map((row, idx) => {
-      const fixedCost = fixedCostIdx >= 0 ? money(row[fixedCostIdx]) : 0;
-      const variableCost = varCostIdx >= 0 ? money(row[varCostIdx]) : 0;
-      const sellingPrice = priceIdx >= 0 ? money(row[priceIdx]) : 0;
-      const currentSales = salesIdx >= 0 ? money(row[salesIdx]) : 0;
-      const { contributionMargin, bepUnits, bepRevenue } = calcBEP(fixedCost, variableCost, sellingPrice);
-      const marginOfSafety = currentSales > 0 ? Math.round(((currentSales - bepUnits) / currentSales) * 100) : 0;
-      const profitLoss = (currentSales * contributionMargin) - fixedCost;
-
-      return {
-        id: `bep-${idx + 2}`,
-        brand: decodedBrand,
-        product: text(row[getColIndex(["product", "produk"])]) || "Unknown",
-        fixedCost,
-        variableCostPerUnit: variableCost,
-        sellingPricePerUnit: sellingPrice,
-        contributionMargin,
-        bepUnits,
-        bepRevenue,
-        currentSales,
-        marginOfSafety,
-        profitLoss,
-      };
-    });
+    const dataRows = rows[0]?.[0] === "Calculation ID" ? rows.slice(1) : rows;
+    const bep = dataRows
+      .filter((r) => r && r[0] && r[1]?.toLowerCase() === decodedBrand.toLowerCase())
+      .map((row) => {
+        const fixedCost = parseNum(row[3]);
+        const variableCost = parseNum(row[4]);
+        const sellingPrice = parseNum(row[5]);
+        const currentSales = parseNum(row[9]);
+        const calc = calcBEP(fixedCost, variableCost, sellingPrice, currentSales);
+        return {
+          calculationId: row[0] || "",
+          brand: row[1] || "",
+          product: row[2] || "",
+          fixedCost,
+          variableCost,
+          sellingPrice,
+          contributionMargin: parseNum(row[6]) || calc.contributionMargin,
+          bepUnits: parseNum(row[7]) || calc.bepUnits,
+          bepRevenue: parseNum(row[8]) || calc.bepRevenue,
+          currentSales,
+          marginOfSafety: parseNum(row[10]) || calc.marginOfSafety,
+          profit: parseNum(row[11]) || calc.profit,
+        };
+      });
 
     // Aggregate brand summary
-    const totalFixedCost = data.reduce((s, r) => s + r.fixedCost, 0);
-    const totalCurrentSales = data.reduce((s, r) => s + r.currentSales, 0);
-    const totalProfitLoss = data.reduce((s, r) => s + r.profitLoss, 0);
-    const avgMarginOfSafety = data.length > 0 ? Math.round(data.reduce((s, r) => s + r.marginOfSafety, 0) / data.length) : 0;
+    const totalFixedCosts = bep.reduce((s, b) => s + b.fixedCost, 0);
+    const totalProfit = bep.reduce((s, b) => s + b.profit, 0);
+    const avgMarginOfSafety = bep.length > 0 ? bep.reduce((s, b) => s + b.marginOfSafety, 0) / bep.length : 0;
+    const totalBEPRevenue = bep.reduce((s, b) => s + b.bepRevenue, 0);
+    const totalCurrentRevenue = bep.reduce((s, b) => s + (b.currentSales * b.sellingPrice), 0);
 
     return NextResponse.json({
-      source: "Google Sheets: BEP_Calculations",
-      sourceStatus: "live",
-      generatedAt: new Date().toISOString(),
       brand: decodedBrand,
-      count: data.length,
       summary: {
-        totalFixedCost,
-        totalCurrentSales,
-        totalProfitLoss,
-        avgMarginOfSafety,
-        productCount: data.length,
+        totalProducts: bep.length,
+        totalFixedCosts,
+        totalProfit,
+        avgMarginOfSafety: Math.round(avgMarginOfSafety * 100) / 100,
+        totalBEPRevenue: Math.round(totalBEPRevenue),
+        totalCurrentRevenue: Math.round(totalCurrentRevenue),
+        profitable: totalProfit > 0,
       },
-      data,
+      bep,
+      source: "sheets",
     });
   } catch (error) {
-    if (isGoogleWorkspaceAuthError(error)) {
-      return NextResponse.json({
-        ...googleWorkspaceDegradedSource("Google Sheets: BEP_Calculations", error),
-        data: [],
-      });
-    }
-    return NextResponse.json({ error: "Failed to fetch brand BEP data", details: String(error) }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to fetch brand BEP", details: String(error) },
+      { status: 500 }
+    );
   }
 }

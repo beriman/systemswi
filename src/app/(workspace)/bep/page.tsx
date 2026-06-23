@@ -1,519 +1,551 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
+import { useState, useEffect, useCallback, useMemo } from "react";
+import {
+  Calculator, TrendingUp, TrendingDown, AlertTriangle, CheckCircle,
+  RefreshCw, Plus, Sliders, BarChart3, DollarSign, Package, Target
+} from "lucide-react";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Slider } from "@/components/ui/slider";
 
-// ── Types ──
-interface BEPRow {
-  id: string;
+// ── Types ──────────────────────────────────────────────────────────
+
+interface BEPItem {
+  calculationId: string;
   brand: string;
   product: string;
   fixedCost: number;
-  variableCostPerUnit: number;
-  sellingPricePerUnit: number;
+  variableCost: number;
+  sellingPrice: number;
   contributionMargin: number;
   bepUnits: number;
   bepRevenue: number;
   currentSales: number;
   marginOfSafety: number;
-  profitLoss: number;
-  createdAt?: string;
-}
-
-interface BEPSummary {
-  totalFixedCosts: number;
-  totalProfitLoss: number;
-  totalCurrentSales: number;
-  overallMarginOfSafety: number;
-  brandCount: number;
-  profitableCount: number;
-  atRiskCount: number;
+  profit: number;
 }
 
 interface BrandSummary {
   brand: string;
-  fixedCost: number;
-  currentSales: number;
-  profitLoss: number;
-  bepUnits: number;
-  marginOfSafety: number;
   productCount: number;
-  status: string;
+  totalFixedCosts: number;
+  totalProfit: number;
+  avgMarginOfSafety: number;
+  totalBEPRevenue: number;
+  totalCurrentRevenue: number;
+  profitable: boolean;
+  products: BEPItem[];
 }
 
-interface WhatIfScenario {
-  label: string;
-  fixedCost: number;
-  variableCostPerUnit: number;
-  sellingPricePerUnit: number;
-  contributionMargin: number;
-  bepUnits: number;
-  bepRevenue: number;
-  currentSales: number;
-  marginOfSafety: number;
-  profitLoss: number;
+interface SummaryData {
+  totalBrands: number;
+  totalProducts: number;
+  totalFixedCosts: number;
+  totalProfit: number;
+  avgMarginOfSafety: number;
+  profitableBrands: number;
+  lossBrands: number;
 }
 
 interface WhatIfResult {
-  scenarios: {
-    base: WhatIfScenario;
-    adjusted: WhatIfScenario;
-    optimistic: WhatIfScenario;
-    pessimistic: WhatIfScenario;
-  };
-}
-
-// ── Helpers ──
-function formatRp(amount: number): string {
-  if (!amount && amount !== 0) return "Rp 0";
-  return new Intl.NumberFormat("id-ID", {
-    style: "currency",
-    currency: "IDR",
-    minimumFractionDigits: 0,
-  }).format(amount);
-}
-
-function formatShortRp(amount: number): string {
-  if (Math.abs(amount) >= 1_000_000) {
-    return `Rp ${(amount / 1_000_000).toFixed(1)}jt`;
-  }
-  if (Math.abs(amount) >= 1_000) {
-    return `Rp ${(amount / 1_000).toFixed(0)}rb`;
-  }
-  return `Rp ${amount}`;
-}
-
-// ── Slider component ──
-function SliderInput({
-  label,
-  value,
-  onChange,
-  min = -50,
-  max = 50,
-  step = 1,
-  suffix = "%",
-}: {
-  label: string;
-  value: number;
-  onChange: (v: number) => void;
-  min?: number;
-  max?: number;
-  step?: number;
-  suffix?: string;
-}) {
-  return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between">
-        <Label className="text-sm">{label}</Label>
-        <span className="text-sm font-mono font-bold text-primary">
-          {value > 0 ? "+" : ""}{value}{suffix}
-        </span>
-      </div>
-      <input
-        type="range"
-        min={min}
-        max={max}
-        step={step}
-        value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
-        className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-primary"
-      />
-      <div className="flex justify-between text-xs text-muted-foreground">
-        <span>{min}{suffix}</span>
-        <span>0</span>
-        <span>+{max}{suffix}</span>
-      </div>
-    </div>
-  );
-}
-
-// ── Main Page Component ──
-export default function BEPPage() {
-  const [bepRows, setBepRows] = useState<BEPRow[]>([]);
-  const [summary, setSummary] = useState<BEPSummary | null>(null);
-  const [brandSummaries, setBrandSummaries] = useState<BrandSummary[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState("overview");
-
-  // Calculator form
-  const [calcFixedCost, setCalcFixedCost] = useState("");
-  const [calcVariableCost, setCalcVariableCost] = useState("");
-  const [calcSellingPrice, setCalcSellingPrice] = useState("");
-  const [calcCurrentSales, setCalcCurrentSales] = useState("");
-  const [calcResult, setCalcResult] = useState<{
+  base: {
     contributionMargin: number;
     bepUnits: number;
     bepRevenue: number;
     marginOfSafety: number;
-    profitLoss: number;
-  } | null>(null);
+    profit: number;
+  };
+  scenario: {
+    sellingPrice: number;
+    variableCost: number;
+    fixedCost: number;
+    currentSales: number;
+    contributionMargin: number;
+    bepUnits: number;
+    bepRevenue: number;
+    marginOfSafety: number;
+    profit: number;
+  };
+  delta: {
+    bepUnits: number;
+    bepRevenue: number;
+    marginOfSafety: number;
+    profit: number;
+  };
+}
 
-  // What-if form
-  const [wiFixedCost, setWiFixedCost] = useState("45000000");
-  const [wiVariableCost, setWiVariableCost] = useState("85000");
-  const [wiSellingPrice, setWiSellingPrice] = useState("180000");
-  const [wiCurrentSales, setWiCurrentSales] = useState("320");
+// ── Helpers ────────────────────────────────────────────────────────
+
+const fmt = (v: number) =>
+  new Intl.NumberFormat("id-ID", {
+    style: "currency", currency: "IDR", maximumFractionDigits: 0,
+  }).format(v || 0);
+
+const fmtNum = (v: number) =>
+  new Intl.NumberFormat("id-ID", { maximumFractionDigits: 0 }).format(v || 0);
+
+const fmtPct = (v: number) =>
+  `${(v || 0).toFixed(1)}%`;
+
+function ProfitBadge({ profit }: { profit: number }) {
+  if (profit > 0) return <Badge className="bg-emerald-600">Untung</Badge>;
+  if (profit < 0) return <Badge className="bg-red-500">Rugi</Badge>;
+  return <Badge variant="outline">BEP</Badge>;
+}
+
+function MoSBadge({ mos }: { mos: number }) {
+  if (mos >= 30) return <Badge className="bg-emerald-600">{fmtPct(mos)}</Badge>;
+  if (mos >= 15) return <Badge className="bg-yellow-500">{fmtPct(mos)}</Badge>;
+  if (mos > 0) return <Badge className="bg-orange-500">{fmtPct(mos)}</Badge>;
+  return <Badge className="bg-red-500">{fmtPct(mos)}</Badge>;
+}
+
+// ── Main Component ────────────────────────────────────────────────
+
+export default function BEPAnalysisPage() {
+  const [bepItems, setBepItems] = useState<BEPItem[]>([]);
+  const [summary, setSummary] = useState<SummaryData | null>(null);
+  const [brands, setBrands] = useState<BrandSummary[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [activeTab, setActiveTab] = useState("overview");
+  const [status, setStatus] = useState("Memuat...");
+
+  // Calculator form
+  const [calcBrand, setCalcBrand] = useState("");
+  const [calcProduct, setCalcProduct] = useState("");
+  const [calcFixedCost, setCalcFixedCost] = useState("");
+  const [calcVariableCost, setCalcVariableCost] = useState("");
+  const [calcSellingPrice, setCalcSellingPrice] = useState("");
+  const [calcCurrentSales, setCalcCurrentSales] = useState("");
+  const [calcResult, setCalcResult] = useState<BEPItem | null>(null);
+  const [calcSaving, setCalcSaving] = useState(false);
+
+  // What-if state
+  const [wiFixedCost, setWiFixedCost] = useState("50000000");
+  const [wiVariableCost, setWiVariableCost] = useState("15000");
+  const [wiSellingPrice, setWiSellingPrice] = useState("35000");
+  const [wiCurrentSales, setWiCurrentSales] = useState("5000");
   const [wiPriceAdj, setWiPriceAdj] = useState(0);
   const [wiVolumeAdj, setWiVolumeAdj] = useState(0);
   const [wiCostAdj, setWiCostAdj] = useState(0);
+  const [wiFixedAdj, setWiFixedAdj] = useState(0);
   const [wiResult, setWiResult] = useState<WhatIfResult | null>(null);
-  const [wiLoading, setWiLoading] = useState(false);
+  const [wiRunning, setWiRunning] = useState(false);
 
-  const fetchData = useCallback(async () => {
+  // ── Data Loading ─────────────────────────────────────────────────
+
+  const loadData = useCallback(async () => {
+    setRefreshing(true);
+    setStatus("Memuat data BEP...");
     try {
-      setLoading(true);
-      setError(null);
-
       const [bepRes, summaryRes] = await Promise.all([
-        fetch("/api/bep"),
-        fetch("/api/bep/summary"),
+        fetch("/api/bep", { cache: "no-store" }),
+        fetch("/api/bep/summary", { cache: "no-store" }),
       ]);
+      const bepData = await bepRes.json();
+      const summaryData = await summaryRes.json();
 
-      if (bepRes.ok) {
-        const json = await bepRes.json();
-        setBepRows(json.data || []);
-      }
+      if (bepRes.ok) setBepItems(bepData.bep || []);
       if (summaryRes.ok) {
-        const json = await summaryRes.json();
-        setSummary(json.summary || null);
-        setBrandSummaries(json.brands || []);
+        setSummary(summaryData.summary || null);
+        setBrands(summaryData.brands || []);
       }
+
+      setStatus(`Source: sheets | ${bepData.bep?.length || 0} calculations, ${summaryData.summary?.totalBrands || 0} brands`);
     } catch (err) {
-      setError(String(err));
+      setStatus(`Error: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }, []);
 
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+  useEffect(() => { loadData(); }, [loadData]);
 
-  // Calculator handler
-  const handleCalculate = () => {
+  // ── Calculator (live preview) ────────────────────────────────────
+
+  const liveCalc = useMemo(() => {
     const fc = Number(calcFixedCost) || 0;
     const vc = Number(calcVariableCost) || 0;
     const sp = Number(calcSellingPrice) || 0;
     const cs = Number(calcCurrentSales) || 0;
-
+    if (fc <= 0 || sp <= vc) return null;
     const cm = sp - vc;
-    if (cm <= 0) {
-      setCalcResult({ contributionMargin: 0, bepUnits: 0, bepRevenue: 0, marginOfSafety: 0, profitLoss: 0 });
-      return;
-    }
-    const bepU = Math.ceil(fc / cm);
+    const bepU = fc / cm;
     const bepR = bepU * sp;
-    const mos = cs > 0 ? Math.round(((cs - bepU) / cs) * 100) : 0;
-    const pl = (cs * cm) - fc;
+    const mos = cs > 0 ? ((cs - bepU) / cs) * 100 : 0;
+    const profit = (cs * cm) - fc;
+    return { contributionMargin: cm, bepUnits: bepU, bepRevenue: bepR, marginOfSafety: mos, profit };
+  }, [calcFixedCost, calcVariableCost, calcSellingPrice, calcCurrentSales]);
 
-    setCalcResult({ contributionMargin: cm, bepUnits: bepU, bepRevenue: bepR, marginOfSafety: mos, profitLoss: pl });
-  };
+  // ── Handlers ─────────────────────────────────────────────────────
 
-  // What-if handler
-  const handleWhatIf = async () => {
-    setWiLoading(true);
+  async function handleCalculate(e: React.FormEvent) {
+    e.preventDefault();
+    if (!calcBrand || !calcProduct || !calcFixedCost || !calcVariableCost || !calcSellingPrice) return;
+    setCalcSaving(true);
+    try {
+      const res = await fetch("/api/bep", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          brand: calcBrand,
+          product: calcProduct,
+          fixedCost: Number(calcFixedCost),
+          variableCost: Number(calcVariableCost),
+          sellingPrice: Number(calcSellingPrice),
+          currentSales: Number(calcCurrentSales) || 0,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Gagal menghitung BEP");
+      setCalcResult(data.bep);
+      setStatus(`BEP calculated: ${data.bep.brand} - ${data.bep.product}`);
+      // Reset form
+      setCalcBrand("");
+      setCalcProduct("");
+      setCalcFixedCost("");
+      setCalcVariableCost("");
+      setCalcSellingPrice("");
+      setCalcCurrentSales("");
+      await loadData();
+    } catch (err) {
+      setStatus(`${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setCalcSaving(false);
+    }
+  }
+
+  async function handleWhatIf() {
+    setWiRunning(true);
     try {
       const res = await fetch("/api/bep/what-if", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           fixedCost: Number(wiFixedCost) || 0,
-          variableCostPerUnit: Number(wiVariableCost) || 0,
-          sellingPricePerUnit: Number(wiSellingPrice) || 0,
+          variableCost: Number(wiVariableCost) || 0,
+          sellingPrice: Number(wiSellingPrice) || 0,
           currentSales: Number(wiCurrentSales) || 0,
           priceAdjustment: wiPriceAdj,
           volumeAdjustment: wiVolumeAdj,
           costAdjustment: wiCostAdj,
+          fixedCostAdjustment: wiFixedAdj,
         }),
       });
-      if (res.ok) {
-        const json = await res.json();
-        setWiResult(json);
-      }
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Gagal what-if");
+      setWiResult(data);
     } catch (err) {
-      console.error("What-if error:", err);
+      setStatus(`${err instanceof Error ? err.message : String(err)}`);
     } finally {
-      setWiLoading(false);
+      setWiRunning(false);
     }
-  };
+  }
 
-  // Auto-compute what-if when sliders change
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      handleWhatIf();
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [wiPriceAdj, wiVolumeAdj, wiCostAdj, wiFixedCost, wiVariableCost, wiSellingPrice, wiCurrentSales]);
-
-  const profitableBrands = brandSummaries.filter((b) => b.profitLoss >= 0);
-  const atRiskBrands = brandSummaries.filter((b) => b.profitLoss < 0);
+  // ── Render ───────────────────────────────────────────────────────
 
   return (
-    <div className="space-y-6">
+    <div className="p-6 space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">📐 Break-Even Analysis</h1>
-          <p className="text-muted-foreground">Analisis BEP untuk decision-making — Brand, Produk, & What-If Scenarios</p>
+          <h1 className="text-2xl font-bold flex items-center gap-2">
+            📐 Break-Even Analysis
+            <Badge variant="outline" className="text-xs">
+              {loading ? "Loading..." : `${bepItems.length} calculations`}
+            </Badge>
+          </h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            Analisis BEP untuk decision-making — contribution margin, margin of safety, profit/loss
+          </p>
         </div>
+        <Button variant="outline" size="sm" onClick={loadData} disabled={refreshing}>
+          <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? "animate-spin" : ""}`} />
+          Refresh
+        </Button>
       </div>
 
-      {/* Error */}
-      {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
-          Error: {error}
-        </div>
-      )}
+      <p className="text-xs text-muted-foreground">{status}</p>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList className="grid w-full grid-cols-4 lg:w-1/2">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
+        <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="overview">📊 Overview</TabsTrigger>
           <TabsTrigger value="calculator">🧮 Calculator</TabsTrigger>
           <TabsTrigger value="brands">🏷️ Brand Analysis</TabsTrigger>
           <TabsTrigger value="whatif">🔮 What-If</TabsTrigger>
         </TabsList>
 
-        {/* ═══ TAB: Overview ═══ */}
-        <TabsContent value="overview" className="space-y-6">
-          {/* Summary Cards */}
-          {summary && summary.brandCount > 0 ? (
+        {/* ═══ TAB 1: Overview ═══ */}
+        <TabsContent value="overview" className="space-y-4">
+          {loading ? (
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <Card>
-                <CardContent className="p-6">
-                  <p className="text-sm text-muted-foreground">Total Fixed Costs</p>
-                  <p className="text-2xl font-bold text-blue-600">{formatRp(summary.totalFixedCosts)}</p>
-                  <p className="text-xs text-muted-foreground mt-1">{summary.brandCount} brands</p>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="p-6">
-                  <p className="text-sm text-muted-foreground">Total Profit/Loss</p>
-                  <p className={`text-2xl font-bold ${summary.totalProfitLoss >= 0 ? "text-green-600" : "text-red-600"}`}>
-                    {formatRp(summary.totalProfitLoss)}
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {summary.profitableCount} profitable · {summary.atRiskCount} at risk
-                  </p>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="p-6">
-                  <p className="text-sm text-muted-foreground">Total Sales Volume</p>
-                  <p className="text-2xl font-bold text-purple-600">{summary.totalCurrentSales.toLocaleString("id-ID")} unit</p>
-                  <p className="text-xs text-muted-foreground mt-1">Current sales</p>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="p-6">
-                  <p className="text-sm text-muted-foreground">Avg Margin of Safety</p>
-                  <p className={`text-2xl font-bold ${
-                    summary.overallMarginOfSafety >= 30 ? "text-green-600" :
-                    summary.overallMarginOfSafety >= 15 ? "text-yellow-600" : "text-red-600"
-                  }`}>
-                    {summary.overallMarginOfSafety}%
-                  </p>
-                  <div className="mt-2 h-2 bg-gray-200 rounded-full overflow-hidden">
-                    <div
-                      className={`h-full rounded-full ${
-                        summary.overallMarginOfSafety >= 30 ? "bg-green-500" :
-                        summary.overallMarginOfSafety >= 15 ? "bg-yellow-500" : "bg-red-500"
-                      }`}
-                      style={{ width: `${Math.min(Math.max(summary.overallMarginOfSafety, 0), 100)}%` }}
-                    />
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          ) : loading ? (
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              {[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-32 w-full" />)}
+              {[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-28 rounded-lg" />)}
             </div>
           ) : (
-            <Card>
-              <CardContent className="p-8 text-center">
-                <p className="text-muted-foreground mb-4">Belum ada data BEP. Seed data terlebih dahulu.</p>
-                <Button onClick={async () => {
-                  const res = await fetch("/api/bep/seed?force=true", { method: "POST" });
-                  const json = await res.json();
-                  alert(json.message || JSON.stringify(json));
-                  fetchData();
-                }}>
-                  🔄 Seed BEP Data
-                </Button>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Brand Cards */}
-          {brandSummaries.length > 0 && (
-            <div>
-              <h2 className="text-lg font-semibold mb-4">BEP Summary per Brand</h2>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {brandSummaries.map((brand) => (
-                  <Card key={brand.brand} className={brand.status === "profitable" ? "border-green-200" : "border-red-200"}>
-                    <CardHeader className="pb-3">
-                      <div className="flex items-center justify-between">
-                        <CardTitle className="text-base">{brand.brand}</CardTitle>
-                        <Badge className={brand.status === "profitable" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}>
-                          {brand.status === "profitable" ? "✅ PROFIT" : "⚠️ AT RISK"}
-                        </Badge>
-                      </div>
-                      <CardDescription>{brand.productCount} produk</CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-2">
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">Fixed Cost</span>
-                        <span className="font-medium">{formatShortRp(brand.fixedCost)}</span>
-                      </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">BEP (units)</span>
-                        <span className="font-medium">{brand.bepUnits.toLocaleString("id-ID")} unit</span>
-                      </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">Current Sales</span>
-                        <span className="font-medium">{brand.currentSales.toLocaleString("id-ID")} unit</span>
-                      </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">Margin of Safety</span>
-                        <span className={`font-bold ${brand.marginOfSafety >= 30 ? "text-green-600" : brand.marginOfSafety >= 15 ? "text-yellow-600" : "text-red-600"}`}>
-                          {brand.marginOfSafety}%
-                        </span>
-                      </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">Profit/Loss</span>
-                        <span className={`font-bold ${brand.profitLoss >= 0 ? "text-green-600" : "text-red-600"}`}>
-                          {formatShortRp(brand.profitLoss)}
-                        </span>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
+            <>
+              {/* KPI Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardDescription className="flex items-center gap-1">
+                      <Package className="h-3 w-3" /> Total Brands
+                    </CardDescription>
+                    <CardTitle className="text-2xl">{summary?.totalBrands || 0}</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-xs text-muted-foreground">{summary?.totalProducts || 0} products analyzed</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardDescription className="flex items-center gap-1">
+                      <DollarSign className="h-3 w-3" /> Total Fixed Costs
+                    </CardDescription>
+                    <CardTitle className="text-2xl">{fmt(summary?.totalFixedCosts || 0)}</CardTitle>
+                  </CardHeader>
+                </Card>
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardDescription className="flex items-center gap-1">
+                      {summary && summary.totalProfit >= 0 ? <TrendingUp className="h-3 w-3 text-emerald-500" /> : <TrendingDown className="h-3 w-3 text-red-500" />}
+                      Total Profit/Loss
+                    </CardDescription>
+                    <CardTitle className={`text-2xl ${(summary?.totalProfit || 0) >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                      {fmt(summary?.totalProfit || 0)}
+                    </CardTitle>
+                  </CardHeader>
+                </Card>
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardDescription className="flex items-center gap-1">
+                      <Target className="h-3 w-3" /> Avg Margin of Safety
+                    </CardDescription>
+                    <CardTitle className="text-2xl">{fmtPct(summary?.avgMarginOfSafety || 0)}</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex gap-2 text-xs">
+                      <span className="text-emerald-600">{summary?.profitableBrands || 0} profitable</span>
+                      <span className="text-red-600">{summary?.lossBrands || 0} loss</span>
+                    </div>
+                  </CardContent>
+                </Card>
               </div>
-            </div>
+
+              {/* Brand Cards */}
+              <h2 className="text-lg font-semibold">BEP Summary per Brand</h2>
+              {brands.length === 0 ? (
+                <Card>
+                  <CardContent className="py-12 text-center">
+                    <div className="text-4xl mb-4">📐</div>
+                    <h3 className="text-lg font-semibold mb-2">Belum Ada Data BEP</h3>
+                    <p className="text-sm text-muted-foreground">Mulai hitung BEP di tab Calculator.</p>
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                  {brands.map((b) => (
+                    <Card key={b.brand} className={`hover:shadow-md transition-shadow ${b.profitable ? "border-l-4 border-l-emerald-500" : "border-l-4 border-l-red-500"}`}>
+                      <CardHeader className="pb-2">
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <CardTitle className="text-base">🏷️ {b.brand}</CardTitle>
+                            <CardDescription>{b.productCount} product(s)</CardDescription>
+                          </div>
+                          <ProfitBadge profit={b.totalProfit} />
+                        </div>
+                      </CardHeader>
+                      <CardContent className="space-y-2">
+                        <div className="grid grid-cols-2 gap-2 text-xs">
+                          <div>
+                            <span className="text-muted-foreground">Fixed Costs:</span>
+                            <div className="font-medium">{fmt(b.totalFixedCosts)}</div>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">Profit/Loss:</span>
+                            <div className={`font-medium ${b.totalProfit >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                              {fmt(b.totalProfit)}
+                            </div>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">BEP Revenue:</span>
+                            <div className="font-medium">{fmt(b.totalBEPRevenue)}</div>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">Current Revenue:</span>
+                            <div className="font-medium">{fmt(b.totalCurrentRevenue)}</div>
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between pt-1">
+                          <span className="text-xs text-muted-foreground">Margin of Safety</span>
+                          <MoSBadge mos={b.avgMarginOfSafety} />
+                        </div>
+                        <div className="w-full bg-gray-200 rounded-full h-2">
+                          <div
+                            className={`h-2 rounded-full transition-all ${b.avgMarginOfSafety >= 30 ? "bg-emerald-500" : b.avgMarginOfSafety >= 15 ? "bg-yellow-500" : "bg-red-500"}`}
+                            style={{ width: `${Math.min(Math.max(b.avgMarginOfSafety, 0), 100)}%` }}
+                          />
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </>
           )}
         </TabsContent>
 
-        {/* ═══ TAB: Calculator ═══ */}
-        <TabsContent value="calculator" className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Input Form */}
+        {/* ═══ TAB 2: BEP Calculator ═══ */}
+        <TabsContent value="calculator" className="space-y-4">
+          <div className="grid gap-6 lg:grid-cols-2">
+            {/* Form */}
             <Card>
               <CardHeader>
-                <CardTitle>🧮 BEP Calculator</CardTitle>
-                <CardDescription>Masukkan data untuk menghitung Break-Even Point</CardDescription>
+                <CardTitle className="flex items-center gap-2">
+                  <Calculator className="h-5 w-5" /> BEP Calculator
+                </CardTitle>
+                <CardDescription>
+                  Masukkan data biaya dan harga untuk menghitung break-even point
+                </CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <Label>Fixed Cost (Biaya Tetap)</Label>
-                  <Input
-                    type="number"
-                    value={calcFixedCost}
-                    onChange={(e) => setCalcFixedCost(e.target.value)}
-                    placeholder="45000000"
-                    className="mt-1"
-                  />
-                </div>
-                <div>
-                  <Label>Variable Cost / Unit (Biaya Variabel per Unit)</Label>
-                  <Input
-                    type="number"
-                    value={calcVariableCost}
-                    onChange={(e) => setCalcVariableCost(e.target.value)}
-                    placeholder="85000"
-                    className="mt-1"
-                  />
-                </div>
-                <div>
-                  <Label>Selling Price / Unit (Harga Jual per Unit)</Label>
-                  <Input
-                    type="number"
-                    value={calcSellingPrice}
-                    onChange={(e) => setCalcSellingPrice(e.target.value)}
-                    placeholder="180000"
-                    className="mt-1"
-                  />
-                </div>
-                <div>
-                  <Label>Current Sales (Penjualan Saat Ini)</Label>
-                  <Input
-                    type="number"
-                    value={calcCurrentSales}
-                    onChange={(e) => setCalcCurrentSales(e.target.value)}
-                    placeholder="320"
-                    className="mt-1"
-                  />
-                </div>
-                <Button onClick={handleCalculate} className="w-full">
-                  ⚡ Hitung BEP
-                </Button>
+              <CardContent>
+                <form className="space-y-4" onSubmit={handleCalculate}>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label>Brand *</Label>
+                      <Input
+                        placeholder="e.g. Wangi Fresh"
+                        value={calcBrand}
+                        onChange={(e) => setCalcBrand(e.target.value)}
+                        required
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Product *</Label>
+                      <Input
+                        placeholder="e.g. Eau de Toilette 50ml"
+                        value={calcProduct}
+                        onChange={(e) => setCalcProduct(e.target.value)}
+                        required
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Fixed Cost (Rp) *</Label>
+                      <Input
+                        type="number"
+                        placeholder="50000000"
+                        value={calcFixedCost}
+                        onChange={(e) => setCalcFixedCost(e.target.value)}
+                        required
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Variable Cost/Unit (Rp) *</Label>
+                      <Input
+                        type="number"
+                        placeholder="15000"
+                        value={calcVariableCost}
+                        onChange={(e) => setCalcVariableCost(e.target.value)}
+                        required
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Selling Price/Unit (Rp) *</Label>
+                      <Input
+                        type="number"
+                        placeholder="35000"
+                        value={calcSellingPrice}
+                        onChange={(e) => setCalcSellingPrice(e.target.value)}
+                        required
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Current Sales (units)</Label>
+                      <Input
+                        type="number"
+                        placeholder="5000"
+                        value={calcCurrentSales}
+                        onChange={(e) => setCalcCurrentSales(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <Button type="submit" disabled={calcSaving || !calcBrand || !calcProduct || !calcFixedCost || !calcVariableCost || !calcSellingPrice} className="w-full">
+                    <Plus className="h-4 w-4 mr-2" />
+                    {calcSaving ? "Menghitung..." : "Hitung & Simpan BEP"}
+                  </Button>
+                </form>
               </CardContent>
             </Card>
 
-            {/* Result */}
+            {/* Live Preview */}
             <Card>
               <CardHeader>
-                <CardTitle>📊 Hasil Perhitungan</CardTitle>
-                <CardDescription>Break-Even Point Analysis</CardDescription>
+                <CardTitle className="flex items-center gap-2">
+                  <BarChart3 className="h-5 w-5" /> Live Preview
+                </CardTitle>
+                <CardDescription>Hasil perhitungan real-time</CardDescription>
               </CardHeader>
               <CardContent>
-                {calcResult ? (
+                {liveCalc ? (
                   <div className="space-y-4">
-                    <div className="bg-blue-50 rounded-lg p-4">
-                      <p className="text-sm text-blue-600 mb-1">Contribution Margin</p>
-                      <p className="text-2xl font-bold text-blue-700">{formatRp(calcResult.contributionMargin)}</p>
-                      <p className="text-xs text-blue-500 mt-1">Selling Price − Variable Cost/Unit</p>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="bg-purple-50 rounded-lg p-4">
-                        <p className="text-sm text-purple-600 mb-1">BEP (Units)</p>
-                        <p className="text-2xl font-bold text-purple-700">{calcResult.bepUnits.toLocaleString("id-ID")}</p>
-                        <p className="text-xs text-purple-500 mt-1">unit</p>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="p-3 bg-blue-50 rounded-lg">
+                        <p className="text-xs text-blue-600 mb-1">Contribution Margin</p>
+                        <p className="text-lg font-bold text-blue-700">{fmt(liveCalc.contributionMargin)}</p>
                       </div>
-                      <div className="bg-indigo-50 rounded-lg p-4">
-                        <p className="text-sm text-indigo-600 mb-1">BEP (Revenue)</p>
-                        <p className="text-2xl font-bold text-indigo-700">{formatRp(calcResult.bepRevenue)}</p>
-                        <p className="text-xs text-indigo-500 mt-1">rupiah</p>
+                      <div className="p-3 bg-purple-50 rounded-lg">
+                        <p className="text-xs text-purple-600 mb-1">BEP (units)</p>
+                        <p className="text-lg font-bold text-purple-700">{fmtNum(Math.ceil(liveCalc.bepUnits))}</p>
+                      </div>
+                      <div className="p-3 bg-amber-50 rounded-lg">
+                        <p className="text-xs text-amber-600 mb-1">BEP (revenue)</p>
+                        <p className="text-lg font-bold text-amber-700">{fmt(liveCalc.bepRevenue)}</p>
+                      </div>
+                      <div className="p-3 bg-emerald-50 rounded-lg">
+                        <p className="text-xs text-emerald-600 mb-1">Margin of Safety</p>
+                        <p className="text-lg font-bold text-emerald-700">{fmtPct(liveCalc.marginOfSafety)}</p>
                       </div>
                     </div>
-
-                    <div className={`rounded-lg p-4 ${calcResult.marginOfSafety >= 0 ? "bg-green-50" : "bg-red-50"}`}>
-                      <p className={`text-sm mb-1 ${calcResult.marginOfSafety >= 0 ? "text-green-600" : "text-red-600"}`}>
-                        Margin of Safety
+                    <div className={`p-4 rounded-lg text-center ${liveCalc.profit >= 0 ? "bg-emerald-50" : "bg-red-50"}`}>
+                      <p className="text-xs text-muted-foreground mb-1">Projected Profit/Loss</p>
+                      <p className={`text-2xl font-bold ${liveCalc.profit >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                        {fmt(liveCalc.profit)}
                       </p>
-                      <p className={`text-2xl font-bold ${calcResult.marginOfSafety >= 0 ? "text-green-700" : "text-red-700"}`}>
-                        {calcResult.marginOfSafety}%
-                      </p>
-                      <p className={`text-xs mt-1 ${calcResult.marginOfSafety >= 0 ? "text-green-500" : "text-red-500"}`}>
-                        {calcResult.marginOfSafety >= 30 ? "Aman — di atas 30%" :
-                         calcResult.marginOfSafety >= 15 ? "Waspada — 15-30%" :
-                         calcResult.marginOfSafety >= 0 ? "Kritis — di bawah 15%" : "Rugi — di bawah BEP"}
-                      </p>
-                    </div>
-
-                    <div className={`rounded-lg p-4 ${calcResult.profitLoss >= 0 ? "bg-emerald-50" : "bg-red-50"}`}>
-                      <p className={`text-sm mb-1 ${calcResult.profitLoss >= 0 ? "text-emerald-600" : "text-red-600"}`}>
-                        Profit / Loss
-                      </p>
-                      <p className={`text-2xl font-bold ${calcResult.profitLoss >= 0 ? "text-emerald-700" : "text-red-700"}`}>
-                        {formatRp(calcResult.profitLoss)}
-                      </p>
-                      <p className={`text-xs mt-1 ${calcResult.profitLoss >= 0 ? "text-emerald-500" : "text-red-500"}`}>
-                        (Current Sales × CM) − Fixed Cost
-                      </p>
+                      {liveCalc.profit >= 0 ? (
+                        <p className="text-xs text-emerald-600 mt-1 flex items-center justify-center gap-1">
+                          <CheckCircle className="h-3 w-3" /> Profitable
+                        </p>
+                      ) : (
+                        <p className="text-xs text-red-600 mt-1 flex items-center justify-center gap-1">
+                          <AlertTriangle className="h-3 w-3" /> Below BEP
+                        </p>
+                      )}
                     </div>
                   </div>
                 ) : (
-                  <div className="flex items-center justify-center h-64 text-muted-foreground">
-                    <p className="text-center">Masukkan data dan klik <strong>Hitung BEP</strong><br />untuk melihat hasil</p>
+                  <div className="py-12 text-center text-muted-foreground">
+                    <Calculator className="h-12 w-12 mx-auto mb-3 opacity-30" />
+                    <p className="text-sm">Isi form untuk melihat preview perhitungan</p>
+                  </div>
+                )}
+
+                {calcResult && (
+                  <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+                    <p className="text-xs text-green-700 font-medium">✅ Tersimpan:</p>
+                    <p className="text-sm text-green-800">
+                      {calcResult.brand} — {calcResult.product}: BEP {fmtNum(Math.ceil(calcResult.bepUnits))} units ({fmt(calcResult.bepRevenue)})
+                    </p>
                   </div>
                 )}
               </CardContent>
@@ -521,289 +553,236 @@ export default function BEPPage() {
           </div>
         </TabsContent>
 
-        {/* ═══ TAB: Brand Analysis ═══ */}
-        <TabsContent value="brands" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>🏷️ Brand Analysis Table</CardTitle>
-              <CardDescription>Detail BEP per brand dan produk</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {loading ? (
-                <Skeleton className="h-64 w-full" />
-              ) : bepRows.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  <p>Tidak ada data BEP. Seed data terlebih dahulu.</p>
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Brand</TableHead>
-                        <TableHead>Product</TableHead>
-                        <TableHead className="text-right">Fixed Cost</TableHead>
-                        <TableHead className="text-right">Var Cost/Unit</TableHead>
-                        <TableHead className="text-right">Selling Price</TableHead>
-                        <TableHead className="text-right">CM</TableHead>
-                        <TableHead className="text-right">BEP (units)</TableHead>
-                        <TableHead className="text-right">BEP (revenue)</TableHead>
-                        <TableHead className="text-right">Current Sales</TableHead>
-                        <TableHead className="text-right">MoS</TableHead>
-                        <TableHead className="text-right">Profit/Loss</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {bepRows.map((row) => (
-                        <TableRow key={row.id}>
-                          <TableCell className="font-medium">{row.brand}</TableCell>
-                          <TableCell>{row.product}</TableCell>
-                          <TableCell className="text-right">{formatShortRp(row.fixedCost)}</TableCell>
-                          <TableCell className="text-right">{formatRp(row.variableCostPerUnit)}</TableCell>
-                          <TableCell className="text-right">{formatRp(row.sellingPricePerUnit)}</TableCell>
-                          <TableCell className="text-right font-medium text-blue-600">{formatRp(row.contributionMargin)}</TableCell>
-                          <TableCell className="text-right font-bold">{row.bepUnits.toLocaleString("id-ID")}</TableCell>
-                          <TableCell className="text-right">{formatShortRp(row.bepRevenue)}</TableCell>
-                          <TableCell className="text-right">{row.currentSales.toLocaleString("id-ID")}</TableCell>
-                          <TableCell className="text-right">
-                            <Badge className={
-                              row.marginOfSafety >= 30 ? "bg-green-100 text-green-700" :
-                              row.marginOfSafety >= 15 ? "bg-yellow-100 text-yellow-700" :
-                              row.marginOfSafety >= 0 ? "bg-orange-100 text-orange-700" :
-                              "bg-red-100 text-red-700"
-                            }>
-                              {row.marginOfSafety}%
-                            </Badge>
-                          </TableCell>
-                          <TableCell className={`text-right font-bold ${row.profitLoss >= 0 ? "text-green-600" : "text-red-600"}`}>
-                            {formatShortRp(row.profitLoss)}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Brand Summary Table */}
-          {brandSummaries.length > 0 && (
+        {/* ═══ TAB 3: Brand Analysis ═══ */}
+        <TabsContent value="brands" className="space-y-4">
+          <h2 className="text-lg font-semibold">Brand | Product | BEP | Current Sales | MoS | Profit</h2>
+          {loading ? (
+            <div className="space-y-2">
+              {[1, 2, 3, 4, 5].map((i) => <Skeleton key={i} className="h-12 rounded" />)}
+            </div>
+          ) : bepItems.length === 0 ? (
             <Card>
-              <CardHeader>
-                <CardTitle>📋 Brand Summary</CardTitle>
-                <CardDescription>Ringkasan agregat per brand</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Brand</TableHead>
-                        <TableHead className="text-right">Products</TableHead>
-                        <TableHead className="text-right">Total Fixed Cost</TableHead>
-                        <TableHead className="text-right">Total BEP (units)</TableHead>
-                        <TableHead className="text-right">Total Sales</TableHead>
-                        <TableHead className="text-right">Avg MoS</TableHead>
-                        <TableHead className="text-right">Total P/L</TableHead>
-                        <TableHead>Status</TableHead>
+              <CardContent className="py-12 text-center text-muted-foreground">
+                <p>Belum ada data BEP. Gunakan Calculator untuk menghitung.</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <Card>
+              <CardContent className="p-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Brand</TableHead>
+                      <TableHead>Product</TableHead>
+                      <TableHead className="text-right">BEP (units)</TableHead>
+                      <TableHead className="text-right">BEP (revenue)</TableHead>
+                      <TableHead className="text-right">Current Sales</TableHead>
+                      <TableHead className="text-right">MoS</TableHead>
+                      <TableHead className="text-right">Profit/Loss</TableHead>
+                      <TableHead>Status</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {bepItems.map((item) => (
+                      <TableRow key={item.calculationId}>
+                        <TableCell className="font-medium">{item.brand}</TableCell>
+                        <TableCell>{item.product}</TableCell>
+                        <TableCell className="text-right">{fmtNum(Math.ceil(item.bepUnits))}</TableCell>
+                        <TableCell className="text-right">{fmt(item.bepRevenue)}</TableCell>
+                        <TableCell className="text-right">{fmtNum(item.currentSales)}</TableCell>
+                        <TableCell className="text-right"><MoSBadge mos={item.marginOfSafety} /></TableCell>
+                        <TableCell className={`text-right font-medium ${item.profit >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                          {fmt(item.profit)}
+                        </TableCell>
+                        <TableCell><ProfitBadge profit={item.profit} /></TableCell>
                       </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {brandSummaries.map((b) => (
-                        <TableRow key={b.brand}>
-                          <TableCell className="font-semibold">{b.brand}</TableCell>
-                          <TableCell className="text-right">{b.productCount}</TableCell>
-                          <TableCell className="text-right">{formatShortRp(b.fixedCost)}</TableCell>
-                          <TableCell className="text-right">{b.bepUnits.toLocaleString("id-ID")}</TableCell>
-                          <TableCell className="text-right">{b.currentSales.toLocaleString("id-ID")}</TableCell>
-                          <TableCell className="text-right">
-                            <Badge className={
-                              b.marginOfSafety >= 30 ? "bg-green-100 text-green-700" :
-                              b.marginOfSafety >= 15 ? "bg-yellow-100 text-yellow-700" :
-                              "bg-red-100 text-red-700"
-                            }>
-                              {b.marginOfSafety}%
-                            </Badge>
-                          </TableCell>
-                          <TableCell className={`text-right font-bold ${b.profitLoss >= 0 ? "text-green-600" : "text-red-600"}`}>
-                            {formatShortRp(b.profitLoss)}
-                          </TableCell>
-                          <TableCell>
-                            <Badge className={b.status === "profitable" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}>
-                              {b.status === "profitable" ? "✅ PROFIT" : "⚠️ AT RISK"}
-                            </Badge>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
+                    ))}
+                  </TableBody>
+                </Table>
               </CardContent>
             </Card>
           )}
         </TabsContent>
 
-        {/* ═══ TAB: What-If ═══ */}
-        <TabsContent value="whatif" className="space-y-6">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Input Panel */}
+        {/* ═══ TAB 4: What-If ═══ */}
+        <TabsContent value="whatif" className="space-y-4">
+          <div className="grid gap-6 lg:grid-cols-2">
+            {/* Input */}
             <Card>
               <CardHeader>
-                <CardTitle>🔮 What-If Parameters</CardTitle>
-                <CardDescription>Atur base values dan slider untuk simulasi</CardDescription>
+                <CardTitle className="flex items-center gap-2">
+                  <Sliders className="h-5 w-5" /> What-If Scenario
+                </CardTitle>
+                <CardDescription>
+                  Adjust price, volume, and cost to see impact on BEP
+                </CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="space-y-5">
+                {/* Base values */}
                 <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <Label className="text-xs">Fixed Cost</Label>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Fixed Cost (Rp)</Label>
                     <Input type="number" value={wiFixedCost} onChange={(e) => setWiFixedCost(e.target.value)} />
                   </div>
-                  <div>
-                    <Label className="text-xs">Var Cost/Unit</Label>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Variable Cost/Unit (Rp)</Label>
                     <Input type="number" value={wiVariableCost} onChange={(e) => setWiVariableCost(e.target.value)} />
                   </div>
-                  <div>
-                    <Label className="text-xs">Selling Price</Label>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Selling Price/Unit (Rp)</Label>
                     <Input type="number" value={wiSellingPrice} onChange={(e) => setWiSellingPrice(e.target.value)} />
                   </div>
-                  <div>
-                    <Label className="text-xs">Current Sales</Label>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Current Sales (units)</Label>
                     <Input type="number" value={wiCurrentSales} onChange={(e) => setWiCurrentSales(e.target.value)} />
                   </div>
                 </div>
 
-                <hr className="my-4" />
+                <div className="border-t pt-4 space-y-4">
+                  <p className="text-sm font-medium">Adjustments</p>
 
-                <SliderInput label="Harga Jual" value={wiPriceAdj} onChange={setWiPriceAdj} />
-                <SliderInput label="Volume Penjualan" value={wiVolumeAdj} onChange={setWiVolumeAdj} />
-                <SliderInput label="Biaya (Fixed & Variable)" value={wiCostAdj} onChange={setWiCostAdj} />
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-xs">
+                      <Label>Price Adjustment</Label>
+                      <span className={wiPriceAdj > 0 ? "text-emerald-600" : wiPriceAdj < 0 ? "text-red-600" : ""}>
+                        {wiPriceAdj > 0 ? "+" : ""}{wiPriceAdj}%
+                      </span>
+                    </div>
+                    <Slider min={-50} max={50} step={1} value={[wiPriceAdj]} onValueChange={([v]) => setWiPriceAdj(v)} />
+                  </div>
 
-                <Button onClick={handleWhatIf} className="w-full" disabled={wiLoading}>
-                  {wiLoading ? "Menghitung..." : "⚡ Hitung Skenario"}
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-xs">
+                      <Label>Volume Adjustment</Label>
+                      <span className={wiVolumeAdj > 0 ? "text-emerald-600" : wiVolumeAdj < 0 ? "text-red-600" : ""}>
+                        {wiVolumeAdj > 0 ? "+" : ""}{wiVolumeAdj}%
+                      </span>
+                    </div>
+                    <Slider min={-50} max={100} step={1} value={[wiVolumeAdj]} onValueChange={([v]) => setWiVolumeAdj(v)} />
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-xs">
+                      <Label>Variable Cost Adjustment</Label>
+                      <span className={wiCostAdj > 0 ? "text-red-600" : wiCostAdj < 0 ? "text-emerald-600" : ""}>
+                        {wiCostAdj > 0 ? "+" : ""}{wiCostAdj}%
+                      </span>
+                    </div>
+                    <Slider min={-30} max={50} step={1} value={[wiCostAdj]} onValueChange={([v]) => setWiCostAdj(v)} />
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-xs">
+                      <Label>Fixed Cost Adjustment</Label>
+                      <span className={wiFixedAdj > 0 ? "text-red-600" : wiFixedAdj < 0 ? "text-emerald-600" : ""}>
+                        {wiFixedAdj > 0 ? "+" : ""}{wiFixedAdj}%
+                      </span>
+                    </div>
+                    <Slider min={-30} max={50} step={1} value={[wiFixedAdj]} onValueChange={([v]) => setWiFixedAdj(v)} />
+                  </div>
+                </div>
+
+                <Button onClick={handleWhatIf} disabled={wiRunning} className="w-full">
+                  <Sliders className="h-4 w-4 mr-2" />
+                  {wiRunning ? "Menghitung..." : "Run What-If Analysis"}
                 </Button>
               </CardContent>
             </Card>
 
-            {/* Results Panel */}
-            <div className="lg:col-span-2 space-y-4">
-              {wiResult ? (
-                <>
-                  {/* Scenario Comparison Table */}
-                  <Card>
-                    <CardHeader>
-                      <CardTitle>📊 Scenario Comparison</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="overflow-x-auto">
-                        <Table>
-                          <TableHeader>
-                            <TableRow>
-                              <TableHead>Metric</TableHead>
-                              <TableHead className="text-right">Base</TableHead>
-                              <TableHead className="text-right">Your Scenario</TableHead>
-                              <TableHead className="text-right">Optimistic</TableHead>
-                              <TableHead className="text-right">Pessimistic</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            <TableRow>
-                              <TableCell className="font-medium">Contribution Margin</TableCell>
-                              <TableCell className="text-right">{formatRp(wiResult.scenarios.base.contributionMargin)}</TableCell>
-                              <TableCell className="text-right">{formatRp(wiResult.scenarios.adjusted.contributionMargin)}</TableCell>
-                              <TableCell className="text-right text-green-600">{formatRp(wiResult.scenarios.optimistic.contributionMargin)}</TableCell>
-                              <TableCell className="text-right text-red-600">{formatRp(wiResult.scenarios.pessimistic.contributionMargin)}</TableCell>
-                            </TableRow>
-                            <TableRow>
-                              <TableCell className="font-medium">BEP (units)</TableCell>
-                              <TableCell className="text-right">{wiResult.scenarios.base.bepUnits.toLocaleString("id-ID")}</TableCell>
-                              <TableCell className="text-right">{wiResult.scenarios.adjusted.bepUnits.toLocaleString("id-ID")}</TableCell>
-                              <TableCell className="text-right text-green-600">{wiResult.scenarios.optimistic.bepUnits.toLocaleString("id-ID")}</TableCell>
-                              <TableCell className="text-right text-red-600">{wiResult.scenarios.pessimistic.bepUnits.toLocaleString("id-ID")}</TableCell>
-                            </TableRow>
-                            <TableRow>
-                              <TableCell className="font-medium">BEP (revenue)</TableCell>
-                              <TableCell className="text-right">{formatShortRp(wiResult.scenarios.base.bepRevenue)}</TableCell>
-                              <TableCell className="text-right">{formatShortRp(wiResult.scenarios.adjusted.bepRevenue)}</TableCell>
-                              <TableCell className="text-right text-green-600">{formatShortRp(wiResult.scenarios.optimistic.bepRevenue)}</TableCell>
-                              <TableCell className="text-right text-red-600">{formatShortRp(wiResult.scenarios.pessimistic.bepRevenue)}</TableCell>
-                            </TableRow>
-                            <TableRow>
-                              <TableCell className="font-medium">Margin of Safety</TableCell>
-                              <TableCell className="text-right">{wiResult.scenarios.base.marginOfSafety}%</TableCell>
-                              <TableCell className="text-right">{wiResult.scenarios.adjusted.marginOfSafety}%</TableCell>
-                              <TableCell className="text-right text-green-600 font-bold">{wiResult.scenarios.optimistic.marginOfSafety}%</TableCell>
-                              <TableCell className="text-right text-red-600 font-bold">{wiResult.scenarios.pessimistic.marginOfSafety}%</TableCell>
-                            </TableRow>
-                            <TableRow>
-                              <TableCell className="font-medium">Profit/Loss</TableCell>
-                              <TableCell className={`text-right font-bold ${wiResult.scenarios.base.profitLoss >= 0 ? "text-green-600" : "text-red-600"}`}>
-                                {formatShortRp(wiResult.scenarios.base.profitLoss)}
-                              </TableCell>
-                              <TableCell className={`text-right font-bold ${wiResult.scenarios.adjusted.profitLoss >= 0 ? "text-green-600" : "text-red-600"}`}>
-                                {formatShortRp(wiResult.scenarios.adjusted.profitLoss)}
-                              </TableCell>
-                              <TableCell className={`text-right font-bold ${wiResult.scenarios.optimistic.profitLoss >= 0 ? "text-green-600" : "text-red-600"}`}>
-                                {formatShortRp(wiResult.scenarios.optimistic.profitLoss)}
-                              </TableCell>
-                              <TableCell className={`text-right font-bold ${wiResult.scenarios.pessimistic.profitLoss >= 0 ? "text-green-600" : "text-red-600"}`}>
-                                {formatShortRp(wiResult.scenarios.pessimistic.profitLoss)}
-                              </TableCell>
-                            </TableRow>
-                          </TableBody>
-                        </Table>
+            {/* Results */}
+            <Card>
+              <CardHeader>
+                <CardTitle>What-If Result</CardTitle>
+                <CardDescription>Perbandingan base vs scenario</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {wiResult ? (
+                  <div className="space-y-4">
+                    {/* Scenario values */}
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="p-3 bg-blue-50 rounded-lg">
+                        <p className="text-xs text-blue-600 mb-1">New Selling Price</p>
+                        <p className="text-lg font-bold text-blue-700">{fmt(wiResult.scenario.sellingPrice)}</p>
                       </div>
-                    </CardContent>
-                  </Card>
+                      <div className="p-3 bg-orange-50 rounded-lg">
+                        <p className="text-xs text-orange-600 mb-1">New Variable Cost</p>
+                        <p className="text-lg font-bold text-orange-700">{fmt(wiResult.scenario.variableCost)}</p>
+                      </div>
+                    </div>
 
-                  {/* Visual Cards for each scenario */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <Card className="border-green-200">
-                      <CardHeader className="pb-2">
-                        <CardTitle className="text-sm text-green-700">😊 Optimistic</CardTitle>
-                      </CardHeader>
-                      <CardContent className="space-y-1 text-sm">
-                        <p>BEP: <strong>{wiResult.scenarios.optimistic.bepUnits.toLocaleString("id-ID")} unit</strong></p>
-                        <p>MoS: <strong>{wiResult.scenarios.optimistic.marginOfSafety}%</strong></p>
-                        <p className={wiResult.scenarios.optimistic.profitLoss >= 0 ? "text-green-600" : "text-red-600"}>
-                          P/L: <strong>{formatShortRp(wiResult.scenarios.optimistic.profitLoss)}</strong>
+                    {/* Comparison table */}
+                    <div className="rounded-md border overflow-hidden">
+                      <table className="w-full text-sm">
+                        <thead className="bg-muted/60">
+                          <tr>
+                            <th className="p-2 text-left">Metric</th>
+                            <th className="p-2 text-right">Base</th>
+                            <th className="p-2 text-right">Scenario</th>
+                            <th className="p-2 text-right">Δ</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr className="border-t">
+                            <td className="p-2 text-muted-foreground">BEP (units)</td>
+                            <td className="p-2 text-right">{fmtNum(Math.ceil(wiResult.base.bepUnits))}</td>
+                            <td className="p-2 text-right font-medium">{fmtNum(Math.ceil(wiResult.scenario.bepUnits))}</td>
+                            <td className={`p-2 text-right text-xs ${wiResult.delta.bepUnits <= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                              {wiResult.delta.bepUnits > 0 ? "+" : ""}{fmtNum(Math.ceil(wiResult.delta.bepUnits))}
+                            </td>
+                          </tr>
+                          <tr className="border-t">
+                            <td className="p-2 text-muted-foreground">BEP (revenue)</td>
+                            <td className="p-2 text-right">{fmt(wiResult.base.bepRevenue)}</td>
+                            <td className="p-2 text-right font-medium">{fmt(wiResult.scenario.bepRevenue)}</td>
+                            <td className={`p-2 text-right text-xs ${wiResult.delta.bepRevenue <= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                              {wiResult.delta.bepRevenue > 0 ? "+" : ""}{fmt(wiResult.delta.bepRevenue)}
+                            </td>
+                          </tr>
+                          <tr className="border-t">
+                            <td className="p-2 text-muted-foreground">Margin of Safety</td>
+                            <td className="p-2 text-right">{fmtPct(wiResult.base.marginOfSafety)}</td>
+                            <td className="p-2 text-right font-medium">{fmtPct(wiResult.scenario.marginOfSafety)}</td>
+                            <td className={`p-2 text-right text-xs ${wiResult.delta.marginOfSafety >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                              {wiResult.delta.marginOfSafety > 0 ? "+" : ""}{fmtPct(wiResult.delta.marginOfSafety)}
+                            </td>
+                          </tr>
+                          <tr className="border-t">
+                            <td className="p-2 text-muted-foreground">Profit/Loss</td>
+                            <td className="p-2 text-right">{fmt(wiResult.base.profit)}</td>
+                            <td className={`p-2 text-right font-medium ${wiResult.scenario.profit >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                              {fmt(wiResult.scenario.profit)}
+                            </td>
+                            <td className={`p-2 text-right text-xs ${wiResult.delta.profit >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                              {wiResult.delta.profit > 0 ? "+" : ""}{fmt(wiResult.delta.profit)}
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Verdict */}
+                    <div className={`p-4 rounded-lg text-center ${wiResult.scenario.profit >= 0 ? "bg-emerald-50" : "bg-red-50"}`}>
+                      {wiResult.delta.profit > 0 ? (
+                        <p className="text-sm text-emerald-700 flex items-center justify-center gap-1">
+                          <TrendingUp className="h-4 w-4" /> Scenario improves profit by {fmt(wiResult.delta.profit)}
                         </p>
-                      </CardContent>
-                    </Card>
-                    <Card className="border-blue-200">
-                      <CardHeader className="pb-2">
-                        <CardTitle className="text-sm text-blue-700">📊 Your Scenario</CardTitle>
-                      </CardHeader>
-                      <CardContent className="space-y-1 text-sm">
-                        <p>BEP: <strong>{wiResult.scenarios.adjusted.bepUnits.toLocaleString("id-ID")} unit</strong></p>
-                        <p>MoS: <strong>{wiResult.scenarios.adjusted.marginOfSafety}%</strong></p>
-                        <p className={wiResult.scenarios.adjusted.profitLoss >= 0 ? "text-green-600" : "text-red-600"}>
-                          P/L: <strong>{formatShortRp(wiResult.scenarios.adjusted.profitLoss)}</strong>
+                      ) : wiResult.delta.profit < 0 ? (
+                        <p className="text-sm text-red-700 flex items-center justify-center gap-1">
+                          <TrendingDown className="h-4 w-4" /> Scenario reduces profit by {fmt(Math.abs(wiResult.delta.profit))}
                         </p>
-                      </CardContent>
-                    </Card>
-                    <Card className="border-red-200">
-                      <CardHeader className="pb-2">
-                        <CardTitle className="text-sm text-red-700">😰 Pessimistic</CardTitle>
-                      </CardHeader>
-                      <CardContent className="space-y-1 text-sm">
-                        <p>BEP: <strong>{wiResult.scenarios.pessimistic.bepUnits.toLocaleString("id-ID")} unit</strong></p>
-                        <p>MoS: <strong>{wiResult.scenarios.pessimistic.marginOfSafety}%</strong></p>
-                        <p className={wiResult.scenarios.pessimistic.profitLoss >= 0 ? "text-green-600" : "text-red-600"}>
-                          P/L: <strong>{formatShortRp(wiResult.scenarios.pessimistic.profitLoss)}</strong>
-                        </p>
-                      </CardContent>
-                    </Card>
+                      ) : (
+                        <p className="text-sm text-muted-foreground">No change in profit</p>
+                      )}
+                    </div>
                   </div>
-                </>
-              ) : (
-                <Card>
-                  <CardContent className="p-8 text-center text-muted-foreground">
-                    <p>Atur parameter dan slider, lalu klik <strong>Hitung Skenario</strong><br />untuk melihat simulasi what-if</p>
-                  </CardContent>
-                </Card>
-              )}
-            </div>
+                ) : (
+                  <div className="py-12 text-center text-muted-foreground">
+                    <Sliders className="h-12 w-12 mx-auto mb-3 opacity-30" />
+                    <p className="text-sm">Adjust sliders dan klik "Run What-If Analysis"</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           </div>
         </TabsContent>
       </Tabs>

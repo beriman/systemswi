@@ -3,137 +3,136 @@ import { NextRequest, NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
-const money = (value: unknown): number => {
-  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
-  if (typeof value !== "string") return 0;
-  const parsed = Number(value.replace(/[^\d.-]/g, ""));
-  return Number.isFinite(parsed) ? parsed : 0;
-};
-
-function calcBEP(fixedCost: number, variableCost: number, sellingPrice: number) {
-  const contributionMargin = sellingPrice - variableCost;
-  if (contributionMargin <= 0) {
-    return { contributionMargin: 0, bepUnits: 0, bepRevenue: 0 };
-  }
-  const bepUnits = Math.ceil(fixedCost / contributionMargin);
-  const bepRevenue = bepUnits * sellingPrice;
-  return { contributionMargin, bepUnits, bepRevenue };
+function parseNum(v: unknown): number {
+  if (typeof v === "number") return Number.isFinite(v) ? v : 0;
+  if (typeof v !== "string") return 0;
+  const n = Number(v.replace(/[^\d.-]/g, ""));
+  return Number.isFinite(n) ? n : 0;
 }
 
-export async function POST(req: NextRequest) {
+interface ScenarioInput {
+  brand?: string;
+  product?: string;
+  fixedCost: number;
+  variableCost: number;
+  sellingPrice: number;
+  currentSales: number;
+  // What-if adjustments (percentage or absolute)
+  priceAdjustment?: number;       // percentage e.g. +10 = +10%
+  volumeAdjustment?: number;      // percentage
+  costAdjustment?: number;        // percentage (applies to variable cost)
+  fixedCostAdjustment?: number;   // percentage
+}
+
+interface ScenarioResult {
+  base: {
+    contributionMargin: number;
+    bepUnits: number;
+    bepRevenue: number;
+    marginOfSafety: number;
+    profit: number;
+  };
+  scenario: {
+    sellingPrice: number;
+    variableCost: number;
+    fixedCost: number;
+    currentSales: number;
+    contributionMargin: number;
+    bepUnits: number;
+    bepRevenue: number;
+    marginOfSafety: number;
+    profit: number;
+  };
+  delta: {
+    bepUnits: number;
+    bepRevenue: number;
+    marginOfSafety: number;
+    profit: number;
+  };
+}
+
+function calcBEP(fixedCost: number, variableCost: number, sellingPrice: number, currentSales: number) {
+  const contributionMargin = sellingPrice - variableCost;
+  const bepUnits = contributionMargin > 0 ? fixedCost / contributionMargin : 0;
+  const bepRevenue = bepUnits * sellingPrice;
+  const marginOfSafety = currentSales > 0 ? ((currentSales - bepUnits) / currentSales) * 100 : 0;
+  const profit = (currentSales * contributionMargin) - fixedCost;
+  return { contributionMargin, bepUnits, bepRevenue, marginOfSafety, profit };
+}
+
+export async function POST(request: NextRequest) {
   try {
-    const body = await req.json();
+    const body: ScenarioInput = await request.json();
+    const {
+      brand = "What-If",
+      product = "Scenario",
+      priceAdjustment = 0,
+      volumeAdjustment = 0,
+      costAdjustment = 0,
+      fixedCostAdjustment = 0,
+    } = body;
 
-    const baseFixedCost = money(body.baseFixedCost) || money(body.fixedCost) || 0;
-    const baseVariableCost = money(body.baseVariableCost) || money(body.variableCostPerUnit) || 0;
-    const baseSellingPrice = money(body.baseSellingPrice) || money(body.sellingPricePerUnit) || 0;
-    const baseCurrentSales = money(body.baseCurrentSales) || money(body.currentSales) || 0;
+    const baseFixedCost = parseNum(body.fixedCost);
+    const baseVariableCost = parseNum(body.variableCost);
+    const baseSellingPrice = parseNum(body.sellingPrice);
+    const baseCurrentSales = parseNum(body.currentSales);
 
-    // Scenario adjustments (percentage changes)
-    const priceAdjustment = Number(body.priceAdjustment) || 0; // e.g. +10 means +10%
-    const volumeAdjustment = Number(body.volumeAdjustment) || 0;
-    const costAdjustment = Number(body.costAdjustment) || 0;
+    if (baseSellingPrice <= 0) {
+      return NextResponse.json(
+        { error: "Selling price must be greater than 0" },
+        { status: 400 }
+      );
+    }
 
-    // Base scenario
-    const baseCM = calcBEP(baseFixedCost, baseVariableCost, baseSellingPrice);
-    const baseMarginOfSafety = baseCurrentSales > 0 ? Math.round(((baseCurrentSales - baseCM.bepUnits) / baseCurrentSales) * 100) : 0;
-    const baseProfit = (baseCurrentSales * baseCM.contributionMargin) - baseFixedCost;
+    // Base calculation
+    const base = calcBEP(baseFixedCost, baseVariableCost, baseSellingPrice, baseCurrentSales);
 
-    // Adjusted scenario
+    // Scenario adjustments
     const adjSellingPrice = baseSellingPrice * (1 + priceAdjustment / 100);
-    const adjCurrentSales = baseCurrentSales * (1 + volumeAdjustment / 100);
     const adjVariableCost = baseVariableCost * (1 + costAdjustment / 100);
-    const adjFixedCost = baseFixedCost * (1 + costAdjustment / 100);
+    const adjFixedCost = baseFixedCost * (1 + fixedCostAdjustment / 100);
+    const adjCurrentSales = baseCurrentSales * (1 + volumeAdjustment / 100);
 
-    const adjCM = calcBEP(adjFixedCost, adjVariableCost, adjSellingPrice);
-    const adjMarginOfSafety = adjCurrentSales > 0 ? Math.round(((adjCurrentSales - adjCM.bepUnits) / adjCurrentSales) * 100) : 0;
-    const adjProfit = (adjCurrentSales * adjCM.contributionMargin) - adjFixedCost;
+    const scenario = calcBEP(adjFixedCost, adjVariableCost, adjSellingPrice, adjCurrentSales);
 
-    // Optimistic scenario (+10% price, +15% volume, -5% cost)
-    const optCM = calcBEP(
-      baseFixedCost * 0.95,
-      baseVariableCost * 0.95,
-      baseSellingPrice * 1.10
-    );
-    const optSales = baseCurrentSales * 1.15;
-    const optMarginOfSafety = optSales > 0 ? Math.round(((optSales - optCM.bepUnits) / optSales) * 100) : 0;
-    const optProfit = (optSales * optCM.contributionMargin) - baseFixedCost * 0.95;
-
-    // Pessimistic scenario (-10% price, -15% volume, +10% cost)
-    const pesCM = calcBEP(
-      baseFixedCost * 1.10,
-      baseVariableCost * 1.10,
-      baseSellingPrice * 0.90
-    );
-    const pesSales = baseCurrentSales * 0.85;
-    const pesMarginOfSafety = pesSales > 0 ? Math.round(((pesSales - pesCM.bepUnits) / pesSales) * 100) : 0;
-    const pesProfit = (pesSales * pesCM.contributionMargin) - baseFixedCost * 1.10;
+    const result: ScenarioResult = {
+      base: {
+        contributionMargin: Math.round(base.contributionMargin * 100) / 100,
+        bepUnits: Math.round(base.bepUnits * 100) / 100,
+        bepRevenue: Math.round(base.bepRevenue),
+        marginOfSafety: Math.round(base.marginOfSafety * 100) / 100,
+        profit: Math.round(base.profit),
+      },
+      scenario: {
+        sellingPrice: Math.round(adjSellingPrice * 100) / 100,
+        variableCost: Math.round(adjVariableCost * 100) / 100,
+        fixedCost: Math.round(adjFixedCost),
+        currentSales: Math.round(adjCurrentSales),
+        contributionMargin: Math.round(scenario.contributionMargin * 100) / 100,
+        bepUnits: Math.round(scenario.bepUnits * 100) / 100,
+        bepRevenue: Math.round(scenario.bepRevenue),
+        marginOfSafety: Math.round(scenario.marginOfSafety * 100) / 100,
+        profit: Math.round(scenario.profit),
+      },
+      delta: {
+        bepUnits: Math.round((scenario.bepUnits - base.bepUnits) * 100) / 100,
+        bepRevenue: Math.round(scenario.bepRevenue - base.bepRevenue),
+        marginOfSafety: Math.round((scenario.marginOfSafety - base.marginOfSafety) * 100) / 100,
+        profit: Math.round(scenario.profit - base.profit),
+      },
+    };
 
     return NextResponse.json({
-      source: "computed",
-      sourceStatus: "live",
-      generatedAt: new Date().toISOString(),
-      input: {
-        fixedCost: baseFixedCost,
-        variableCostPerUnit: baseVariableCost,
-        sellingPricePerUnit: baseSellingPrice,
-        currentSales: baseCurrentSales,
-        priceAdjustment,
-        volumeAdjustment,
-        costAdjustment,
-      },
-      scenarios: {
-        base: {
-          label: "Base Case",
-          fixedCost: baseFixedCost,
-          variableCostPerUnit: baseVariableCost,
-          sellingPricePerUnit: baseSellingPrice,
-          contributionMargin: baseCM.contributionMargin,
-          bepUnits: baseCM.bepUnits,
-          bepRevenue: baseCM.bepRevenue,
-          currentSales: baseCurrentSales,
-          marginOfSafety: baseMarginOfSafety,
-          profitLoss: baseProfit,
-        },
-        adjusted: {
-          label: priceAdjustment !== 0 || volumeAdjustment !== 0 || costAdjustment !== 0 ? "Your Scenario" : "Base Case",
-          fixedCost: adjFixedCost,
-          variableCostPerUnit: adjVariableCost,
-          sellingPricePerUnit: adjSellingPrice,
-          contributionMargin: adjCM.contributionMargin,
-          bepUnits: adjCM.bepUnits,
-          bepRevenue: adjCM.bepRevenue,
-          currentSales: adjCurrentSales,
-          marginOfSafety: adjMarginOfSafety,
-          profitLoss: adjProfit,
-        },
-        optimistic: {
-          label: "Optimistic (+10% price, +15% volume, -5% cost)",
-          fixedCost: baseFixedCost * 0.95,
-          variableCostPerUnit: baseVariableCost * 0.95,
-          sellingPricePerUnit: baseSellingPrice * 1.10,
-          contributionMargin: optCM.contributionMargin,
-          bepUnits: optCM.bepUnits,
-          bepRevenue: optCM.bepRevenue,
-          currentSales: optSales,
-          marginOfSafety: optMarginOfSafety,
-          profitLoss: optProfit,
-        },
-        pessimistic: {
-          label: "Pessimistic (-10% price, -15% volume, +10% cost)",
-          fixedCost: baseFixedCost * 1.10,
-          variableCostPerUnit: baseVariableCost * 1.10,
-          sellingPricePerUnit: baseSellingPrice * 0.90,
-          contributionMargin: pesCM.contributionMargin,
-          bepUnits: pesCM.bepUnits,
-          bepRevenue: pesCM.bepRevenue,
-          currentSales: pesSales,
-          marginOfSafety: pesMarginOfSafety,
-          profitLoss: pesProfit,
-        },
-      },
+      brand,
+      product,
+      adjustments: { priceAdjustment, volumeAdjustment, costAdjustment, fixedCostAdjustment },
+      ...result,
+      source: "calculated",
     });
   } catch (error) {
-    return NextResponse.json({ error: "Failed to compute what-if scenario", details: String(error) }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to run what-if scenario", details: String(error) },
+      { status: 500 }
+    );
   }
 }
