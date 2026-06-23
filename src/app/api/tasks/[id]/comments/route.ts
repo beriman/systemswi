@@ -91,7 +91,7 @@ export async function GET(
   try {
     const { id: taskId } = await params;
 
-    const range = SHEETS["Task_Comments"]?.range || "Task_Comments!A1:E1000";
+    const range = SHEETS["TaskComments"]?.range || "Task_Comments!A1:E1000";
     const rows = await readRange(range);
 
     if (rows.length < 2) {
