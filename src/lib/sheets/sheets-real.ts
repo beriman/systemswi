@@ -81,9 +81,6 @@ export const SHEETS: Record<string, { range: string; description: string }> = {
   SalesActuals:      { range: "Sales_Actuals!A1:J1000",            description: "Actual sales transactions" },
   Tasks:             { range: "Tasks!A1:M1000",                   description: "Task management — master task tracker" },
   TaskComments:      { range: "Task_Comments!A1:E1000",            description: "Task comments" },
-
-  // ── Aliases used by API routes (match appendRows/updateRow sheetName args) ──
-  ReorderAlerts:     { range: "Reorder_Alerts!A1:L1000",          description: "Reorder alerts — alias for Reorder_Alerts" },
 };
 
 // ── Auth ──────────────────────────────────────────────────────────
