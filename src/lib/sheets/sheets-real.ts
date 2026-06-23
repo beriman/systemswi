@@ -40,6 +40,7 @@ export const SHEETS: Record<string, { range: string; description: string }> = {
   CashflowForecast:  { range: "Cashflow_Forecast!A1:J30",     description: "Cashflow forecast" },
   CashflowAktual:    { range: "Cashflow_Aktual!A1:I80",       description: "Cashflow aktual" },
   BreakEven:         { range: "Break_Even_Analysis!A1:J16",   description: "Break even analysis" },
+  BEP_Calculations:  { range: "BEP_Calculations!A1:L1000",    description: "BEP calculations per brand/product" },
   Proyeksi12Bulan:   { range: "Proyeksi_12Bulan!A1:O25",      description: "Proyeksi 12 bulan" },
   Produksi:          { range: "Produksi!A1:Z100",             description: "Data produksi" },
   BrandMaster:       { range: "Brand_Master!A1:K200",         description: "Master brand dan template brand" },
