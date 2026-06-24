@@ -4,7 +4,7 @@ import { readSheet } from "@/lib/sheets/sheets-real";
 
 export const runtime = "nodejs";
 
-const SHEET_NAME = "Cash_Harian";
+const SHEET_NAME = "CashHarian";
 
 function rowToEntry(row: string[]) {
   return {

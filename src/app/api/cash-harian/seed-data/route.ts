@@ -4,7 +4,7 @@ import { readSheet, appendRows } from "@/lib/sheets/sheets-real";
 
 export const runtime = "nodejs";
 
-const SHEET_NAME = "Cash_Harian";
+const SHEET_NAME = "CashHarian";
 
 const HEADERS = [
   "EntryId", "Date", "Type", "Category", "Description",

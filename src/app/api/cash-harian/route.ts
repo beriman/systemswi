@@ -6,7 +6,7 @@ import { googleWorkspaceWriteBlockedSource } from "@/lib/api/google-workspace-er
 
 export const runtime = "nodejs";
 
-const SHEET_NAME = "Cash_Harian";
+const SHEET_NAME = "CashHarian";
 
 // Column order:
 // A: EntryId, B: Date, C: Type (Masuk/Keluar), D: Category, E: Description

@@ -5,7 +5,7 @@ import { googleWorkspaceWriteBlockedSource } from "@/lib/api/google-workspace-er
 
 export const runtime = "nodejs";
 
-const SHEET_NAME = "Cash_Harian";
+const SHEET_NAME = "CashHarian";
 
 function rowToEntry(row: string[], rowNumber: number) {
   return {
