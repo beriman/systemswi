@@ -152,6 +152,7 @@ export async function GET(_request: NextRequest) {
     { phase: 4, name: "BRI API", file: "phase4-scaffold.ts", description: "Bank mutation auto-sync" },
     { phase: 4, name: "WhatsApp Business", file: "phase4-scaffold.ts", description: "Auto-reply + broadcast" },
     { phase: 4, name: "Sukuk Payment", file: "phase4-scaffold.ts", description: "Profit distribution" },
+    { phase: 5, name: "Agent Health Widget", file: "health-stats/route.ts", description: "Real-time uptime & duration per module" },
   ];
 
   return NextResponse.json({

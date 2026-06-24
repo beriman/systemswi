@@ -212,7 +212,7 @@ SWI saat ini punya **systemswi** — ERP dashboard yang sudah 31 modul. Tapi ini
 | # | Task | Status | Notes |
 |---|------|--------|-------|
 | 5.1 | **Error Recovery Integration** | ✅ DONE | Integrated `executeWithRetry` + `agentHealthTracker` into orchestrator. Health check now retries with exponential backoff. Circuit breaker ready for Google Sheets & Telegram. |
-| 5.2 | **Agent Health Dashboard Widget** | 🟡 Planned | Real-time uptime/avg-duration stats per module on agent dashboard |
+| 5.2 | **Agent Health Dashboard Widget** | ✅ DONE | `src/app/api/agent/health-stats/route.ts` + Agent Dashboard "💓 Health Stats" tab — Real-time uptime %, avg duration, total runs, last status per module. Reads from `agentHealthTracker` singleton. Summary cards (Healthy/Degraded/Critical) + per-module table. |
 | 5.3 | **Approval SLA Monitor** | 🟡 Planned | Track time-to-approval, escalate if >2 hours unanswered |
 | 5.4 | **Weekly Agent Report** | 🟡 Planned | Auto-generated weekly summary: tasks run, failures, approvals, time saved |
 
@@ -346,6 +346,6 @@ Auto-refresh setiap 60 detik. Manual refresh button tersedia.
 ---
 
 *Document created: 2026-06-18 by OWL/HemuHemu*
-*Last updated: 2026-06-24 by OWL/HemuHemu — Phase 5 🟡 STARTED: Error recovery integrated into orchestrator (executeWithRetry + agentHealthTracker + circuit breaker). Phase 5.1 ✅.*
+*Last updated: 2026-06-25 by OWL/HemuHemu — Phase 5.2 ✅ DONE: Agent Health Dashboard Widget — new /api/agent/health-stats route + "💓 Health Stats" tab on agent dashboard with per-module uptime, avg duration, total runs, last status.*
 *Review cycle: Quarterly ( setiap 3 bulan)*
 *Next review: September 2026*

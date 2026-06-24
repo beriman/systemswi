@@ -41,6 +41,28 @@ interface AgentModule {
   description: string;
 }
 
+interface HealthModule {
+  taskName: string;
+  uptime: number;
+  avgDurationMs: number;
+  totalRuns: number;
+  lastRun: string | null;
+  lastStatus: string;
+}
+
+interface HealthStatsData {
+  ok: boolean;
+  timestamp: string;
+  summary: {
+    totalModules: number;
+    healthyModules: number;
+    degradedModules: number;
+    criticalModules: number;
+    overallUptime: number;
+  };
+  modules: HealthModule[];
+}
+
 interface DashboardData {
   ok: boolean;
   timestamp: string;
@@ -97,6 +119,7 @@ function PhaseBadge({ phase }: { phase: number }) {
     2: "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200",
     3: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200",
     4: "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200",
+    5: "bg-rose-100 text-rose-800 dark:bg-rose-900 dark:text-rose-200",
   };
   return (
     <span
@@ -113,7 +136,9 @@ export default function AgentDashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"overview" | "approvals" | "audit" | "modules">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "health" | "approvals" | "audit" | "modules">("overview");
+  const [healthStats, setHealthStats] = useState<HealthStatsData | null>(null);
+  const [healthLoading, setHealthLoading] = useState(false);
 
   const fetchDashboard = useCallback(async () => {
     try {
@@ -130,11 +155,29 @@ export default function AgentDashboardPage() {
     }
   }, []);
 
+  const fetchHealthStats = useCallback(async () => {
+    try {
+      setHealthLoading(true);
+      const res = await fetch("/api/agent/health-stats");
+      if (!res.ok) throw new Error("Failed to fetch health stats");
+      const json = await res.json();
+      setHealthStats(json);
+    } catch (err) {
+      console.error("Failed to fetch health stats:", err);
+    } finally {
+      setHealthLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     fetchDashboard();
-    const interval = setInterval(fetchDashboard, 60000); // Refresh every 60s
+    fetchHealthStats();
+    const interval = setInterval(() => {
+      fetchDashboard();
+      fetchHealthStats();
+    }, 60000); // Refresh every 60s
     return () => clearInterval(interval);
-  }, [fetchDashboard]);
+  }, [fetchDashboard, fetchHealthStats]);
 
   if (loading && !data) {
     return (
@@ -243,6 +286,7 @@ export default function AgentDashboardPage() {
               }`}
             >
               {tab === "overview" && "🔌 Integrasi"}
+              {tab === "health" && "💓 Health Stats"}
               {tab === "approvals" && "⚠️ Approvals"}
               {tab === "audit" && "📋 Audit Trail"}
               {tab === "modules" && "🧩 Modules"}
@@ -303,6 +347,147 @@ export default function AgentDashboardPage() {
                       Semua aksi agent yang kritis (transaksi &gt; Rp 10jt, new vendor, legal, tax)
                       memerlukan approval manusia via Telegram. Agent hanya draft & suggest —
                       eksekusi final tetap manusia. Sesuai UU ITE/PDP, UU Ketenagakerjaan, dan OJK.
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {activeTab === "health" && (
+          <div className="space-y-4">
+            {/* Overall Health Summary */}
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+              <Card>
+                <CardContent className="p-6">
+                  <div className="text-sm text-muted-foreground">Overall Uptime</div>
+                  <div className={`text-3xl font-bold mt-1 ${
+                    healthStats && healthStats.summary.overallUptime >= 95
+                      ? "text-green-600"
+                      : healthStats && healthStats.summary.overallUptime >= 80
+                      ? "text-amber-600"
+                      : "text-red-600"
+                  }`}>
+                    {healthStats ? `${healthStats.summary.overallUptime}%` : "—"}
+                  </div>
+                  <div className="text-xs text-muted-foreground mt-1">rata-rata semua module</div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-6">
+                  <div className="text-sm text-muted-foreground">Healthy</div>
+                  <div className="text-3xl font-bold mt-1 text-green-600">
+                    {healthStats ? healthStats.summary.healthyModules : "—"}
+                  </div>
+                  <div className="text-xs text-muted-foreground mt-1">uptime ≥ 95%</div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-6">
+                  <div className="text-sm text-muted-foreground">Degraded</div>
+                  <div className="text-3xl font-bold mt-1 text-amber-600">
+                    {healthStats ? healthStats.summary.degradedModules : "—"}
+                  </div>
+                  <div className="text-xs text-muted-foreground mt-1">uptime 80-94%</div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-6">
+                  <div className="text-sm text-muted-foreground">Critical</div>
+                  <div className="text-3xl font-bold mt-1 text-red-600">
+                    {healthStats ? healthStats.summary.criticalModules : "—"}
+                  </div>
+                  <div className="text-xs text-muted-foreground mt-1">uptime &lt; 80%</div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Per-Module Health Table */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Per-Module Health Stats</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {healthLoading && !healthStats ? (
+                  <div className="text-center py-8 text-muted-foreground">Memuat health stats...</div>
+                ) : healthStats && healthStats.modules.length > 0 ? (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b">
+                          <th className="text-left py-2 px-2 font-medium">Module</th>
+                          <th className="text-left py-2 px-2 font-medium">Uptime</th>
+                          <th className="text-left py-2 px-2 font-medium">Avg Duration</th>
+                          <th className="text-left py-2 px-2 font-medium">Total Runs</th>
+                          <th className="text-left py-2 px-2 font-medium">Last Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {healthStats.modules.map((mod) => (
+                          <tr key={mod.taskName} className="border-b hover:bg-accent/50">
+                            <td className="py-2 px-2 font-mono text-xs">{mod.taskName}</td>
+                            <td className="py-2 px-2">
+                              <div className="flex items-center gap-2">
+                                <div className={`w-2 h-2 rounded-full ${
+                                  mod.uptime >= 95 ? "bg-green-500" :
+                                  mod.uptime >= 80 ? "bg-amber-500" : "bg-red-500"
+                                }`} />
+                                <span className={`font-medium ${
+                                  mod.uptime >= 95 ? "text-green-700 dark:text-green-400" :
+                                  mod.uptime >= 80 ? "text-amber-700 dark:text-amber-400" :
+                                  "text-red-700 dark:text-red-400"
+                                }`}>
+                                  {mod.uptime}%
+                                </span>
+                              </div>
+                            </td>
+                            <td className="py-2 px-2 text-muted-foreground">
+                              {mod.avgDurationMs > 0 ? `${mod.avgDurationMs}ms` : "—"}
+                            </td>
+                            <td className="py-2 px-2 text-muted-foreground">{mod.totalRuns}</td>
+                            <td className="py-2 px-2">
+                              <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                                mod.lastStatus === "success"
+                                  ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
+                                  : mod.lastStatus === "failed"
+                                  ? "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200"
+                                  : "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400"
+                              }`}>
+                                {mod.lastStatus || "unknown"}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <div className="text-4xl mb-3">📊</div>
+                    <div className="font-medium">Belum ada health data</div>
+                    <div className="text-sm mt-1">
+                      Stats akan muncul setelah agent menjalankan task pertama kali.
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Info */}
+            <Card className="border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950">
+              <CardContent className="p-4">
+                <div className="flex items-start gap-3">
+                  <span className="text-2xl">ℹ️</span>
+                  <div>
+                    <div className="font-medium text-blue-900 dark:text-blue-100">
+                      Tentang Health Stats
+                    </div>
+                    <div className="text-sm text-blue-800 dark:text-blue-200 mt-1">
+                      Data di atas berasal dari <code>AgentHealthTracker</code> yang mencatat
+                      setiap agent task execution. Uptime = persentase successful runs. Data bersifat
+                      in-memory dan reset saat deploy. Untuk persistent tracking, lihat tab Audit Trail
+                      yang membaca dari Google Sheets <code>Agent_Audit_Log</code>.
                     </div>
                   </div>
                 </div>
@@ -433,19 +618,21 @@ export default function AgentDashboardPage() {
 
         {activeTab === "modules" && (
           <div className="space-y-6">
-            {[1, 2, 3, 4].map((phase) => {
+            {[1, 2, 3, 4, 5].map((phase) => {
               const phaseModules = data.modules.filter((m) => m.phase === phase);
               const phaseNames: Record<number, string> = {
                 1: "Phase 1 — Agent Infrastructure",
                 2: "Phase 2 — Agent Automation",
                 3: "Phase 3 — Agent Intelligence",
                 4: "Phase 4 — Agent Ecosystem",
+                5: "Phase 5 — Agent Reliability",
               };
               const phaseStatus: Record<number, string> = {
                 1: "✅ Complete",
                 2: "✅ Complete",
                 3: "✅ Complete",
                 4: "🟡 Enhanced (local logic)",
+                5: "🟡 In Progress",
               };
               return (
                 <Card key={phase}>
