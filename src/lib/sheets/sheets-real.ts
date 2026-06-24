@@ -159,17 +159,17 @@ function loadCredentialsFromEnv() {
 }
 
 function loadServiceAccount() {
-  // 1. Try JSON string from env (Vercel / cloud deployments)
-  const saJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
-  if (saJson) {
+  // 1. Try base64-encoded JSON from env (Vercel / cloud deployments)
+  const saB64 = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
+  if (saB64) {
     try {
-      const sa = JSON.parse(saJson);
+      const decoded = Buffer.from(saB64, "base64").toString("utf-8");
+      const sa = JSON.parse(decoded);
       if (sa.type === "service_account") return sa;
     } catch {
-      // maybe base64 encoded
+      // maybe raw JSON (not base64)
       try {
-        const decoded = Buffer.from(saJson, "base64").toString("utf-8");
-        const sa = JSON.parse(decoded);
+        const sa = JSON.parse(saB64);
         if (sa.type === "service_account") return sa;
       } catch {
         // fall through
