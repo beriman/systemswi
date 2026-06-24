@@ -1,141 +1,104 @@
-// POST /api/cash-harian/seed — Seed 14 days of daily cash entries
+// POST /api/cash-harian/seed-data — Seed 14 days of cash entries
 import { NextRequest, NextResponse } from "next/server";
 import { readSheet, appendRows } from "@/lib/sheets/sheets-real";
 
 export const runtime = "nodejs";
 
-const SHEET_NAME = "CashHarian";
-const SOURCE = "Google Sheets: Cash_Harian";
+const SHEET_NAME = "Cash_Harian";
 
-function generateId(): string {
-  return `CH-${Date.now()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
-}
-
-// 14 days of seed data: mix of Masuk and Keluar entries
-const SEED_DATA: Array<{
-  date: string;
-  type: "Masuk" | "Keluar";
-  category: string;
-  description: string;
-  amount: number;
-}> = [
-  // Day 1 — 2026-06-09
-  { date: "2026-06-09", type: "Masuk", category: "Penjualan", description: "Penjualan parfum Aura 100ml batch #001", amount: 15000000 },
-  { date: "2026-06-09", type: "Keluar", category: "Bahan Baku", description: "Pembelian bahan baku alcohol 96%", amount: 3500000 },
-
-  // Day 2 — 2026-06-10
-  { date: "2026-06-10", type: "Masuk", category: "Penjualan", description: "Penjualan parfum Zen 50ml batch #002", amount: 8500000 },
-  { date: "2026-06-10", type: "Keluar", category: "Operasional", description: "Biaya listrik pabrik bulan Mei", amount: 1200000 },
-
-  // Day 3 — 2026-06-11
-  { date: "2026-06-11", type: "Keluar", category: "Transport", description: "Ongkos kirim barang ke distributor Jakarta", amount: 750000 },
-  { date: "2026-06-11", type: "Masuk", category: "Penjualan", description: "Penjualan parfum Ocean 100ml batch #003", amount: 22000000 },
-
-  // Day 4 — 2026-06-12
-  { date: "2026-06-12", type: "Keluar", category: "Bahan Baku", description: "Pembelian botol kaca 100ml (200 pcs)", amount: 5000000 },
-  { date: "2026-06-12", type: "Keluar", category: "Gaji", description: "Gaji karyawan produksi Mei 2026", amount: 12000000 },
-
-  // Day 5 — 2026-06-13
-  { date: "2026-06-13", type: "Masuk", category: "Penjualan", description: "Penjualan parfum Aura 50ml batch #004", amount: 18500000 },
-  { date: "2026-06-13", type: "Keluar", category: "Bahan Baku", description: "Pembelian essential oil lavender", amount: 2800000 },
-
-  // Day 6 — 2026-06-14
-  { date: "2026-06-14", type: "Keluar", category: "Operasional", description: "Biaya air dan kebersihan pabrik", amount: 850000 },
-  { date: "2026-06-14", type: "Masuk", category: "Penjualan", description: "Penjualan parfum Zen 100ml batch #005", amount: 11000000 },
-
-  // Day 7 — 2026-06-15
-  { date: "2026-06-15", type: "Keluar", category: "Transport", description: "Ongkos kirim barang ke Surabaya", amount: 1100000 },
-  { date: "2026-06-15", type: "Masuk", category: "Penjualan", description: "Penjualan parfum Ocean 50ml batch #006", amount: 25000000 },
-
-  // Day 8 — 2026-06-16
-  { date: "2026-06-16", type: "Keluar", category: "Bahan Baku", description: "Pembelian packaging box premium", amount: 4200000 },
-  { date: "2026-06-16", type: "Keluar", category: "Operasional", description: "Biaya maintenance mesin filling", amount: 1500000 },
-
-  // Day 9 — 2026-06-17
-  { date: "2026-06-17", type: "Masuk", category: "Penjualan", description: "Penjualan parfum Aura 100ml batch #007", amount: 9500000 },
-  { date: "2026-06-17", type: "Keluar", category: "Gaji", description: "Gaji karyawan admin & marketing Mei 2026", amount: 8000000 },
-
-  // Day 10 — 2026-06-18
-  { date: "2026-06-18", type: "Masuk", category: "Penjualan", description: "Penjualan parfum Zen 50ml batch #008", amount: 16500000 },
-  { date: "2026-06-18", type: "Keluar", category: "Bahan Baku", description: "Pembelian bahan pengawet parfum", amount: 3200000 },
-
-  // Day 11 — 2026-06-19
-  { date: "2026-06-19", type: "Keluar", category: "Transport", description: "Ongkos kirim barang ke Bandung", amount: 950000 },
-  { date: "2026-06-19", type: "Masuk", category: "Penjualan", description: "Penjualan parfum Ocean 100ml batch #009", amount: 13000000 },
-
-  // Day 12 — 2026-06-20
-  { date: "2026-06-20", type: "Keluar", category: "Utilitas", description: "Biaya internet & telepon kantor", amount: 500000 },
-  { date: "2026-06-20", type: "Masuk", category: "Penjualan", description: "Penjualan parfum Aura 50ml batch #010", amount: 19000000 },
-  { date: "2026-06-20", type: "Keluar", category: "Bahan Baku", description: "Pembelian essential oil rose", amount: 4500000 },
-
-  // Day 13 — 2026-06-21
-  { date: "2026-06-21", type: "Masuk", category: "Investasi", description: "Modal tambahan dari pemilik", amount: 50000000 },
-  { date: "2026-06-21", type: "Keluar", category: "Operasional", description: "Biaya sewa gudang bulan Juni", amount: 6000000 },
-
-  // Day 14 — 2026-06-22
-  { date: "2026-06-22", type: "Masuk", category: "Penjualan", description: "Penjualan parfum Zen 100ml batch #011", amount: 21000000 },
-  { date: "2026-06-22", type: "Keluar", category: "Gaji", description: "Gaji karyawan produksi Juni 2026", amount: 12000000 },
-  { date: "2026-06-22", type: "Keluar", category: "Lain-lain", description: "Biaya tak terduga - perbaikan atap pabrik", amount: 2000000 },
+const HEADERS = [
+  "EntryId", "Date", "Type", "Category", "Description",
+  "Amount", "Saldo", "InputBy", "InputDate",
 ];
 
-export async function POST(req: NextRequest) {
+// 14 days of realistic daily cash entries (2-3 per day)
+const SEED_DATA: (string | number)[][] = [
+  // Day 1 — 2026-06-09
+  ["CH-SEED-001", "2026-06-09", "Masuk", "Penjualan", "Penjualan parfum Aura Bloom 10 pcs", 2500000, 2500000, "system", "2026-06-09 08:30"],
+  ["CH-SEED-002", "2026-06-09", "Keluar", "Bahan Baku", "Pembelian essential oil lavender", 800000, 1700000, "system", "2026-06-09 14:00"],
+  // Day 2 — 2026-06-10
+  ["CH-SEED-003", "2026-06-10", "Masuk", "Penjualan", "Penjualan Velvet Mist 5 pcs + Ocean Breeze 3 pcs", 1850000, 3550000, "system", "2026-06-10 09:00"],
+  ["CH-SEED-004", "2026-06-10", "Keluar", "Operasional", "Biaya listrik pabrik", 450000, 3100000, "system", "2026-06-10 15:00"],
+  // Day 3 — 2026-06-11
+  ["CH-SEED-005", "2026-06-11", "Masuk", "Penjualan", "Online order marketplace", 3200000, 6300000, "system", "2026-06-11 10:00"],
+  ["CH-SEED-006", "2026-06-11", "Keluar", "Transport", "Biaya pengiriman ke Surabaya", 650000, 5650000, "system", "2026-06-11 16:00"],
+  // Day 4 — 2026-06-12
+  ["CH-SEED-007", "2026-06-12", "Masuk", "Penjualan", "Penjualan grosir ke distributor Bali", 5000000, 10650000, "system", "2026-06-12 08:00"],
+  ["CH-SEED-008", "2026-06-12", "Keluar", "Gaji", "Gaji karyawan bagian produksi", 3500000, 7150000, "system", "2026-06-12 17:00"],
+  // Day 5 — 2026-06-13
+  ["CH-SEED-009", "2026-06-13", "Masuk", "Penjualan", "Direct sale ke hotel", 4200000, 11350000, "system", "2026-06-13 09:30"],
+  ["CH-SEED-010", "2026-06-13", "Keluar", "Utilitas", "Pembayaran air + internet kantor", 350000, 11000000, "system", "2026-06-13 11:00"],
+  // Day 6 — 2026-06-14
+  ["CH-SEED-011", "2026-06-14", "Masuk", "Penjualan", "Event sale festival parfum", 3800000, 14800000, "system", "2026-06-14 10:00"],
+  ["CH-SEED-012", "2026-06-14", "Keluar", "Lain-lain", "Biaya event booth fee", 1200000, 13600000, "system", "2026-06-14 18:00"],
+  // Day 7 — 2026-06-15
+  ["CH-SEED-013", "2026-06-15", "Masuk", "Penjualan", "Penjualan reguler harian", 2100000, 15700000, "system", "2026-06-15 08:00"],
+  ["CH-SEED-014", "2026-06-15", "Keluar", "Investasi", "Pembelian mesin filling otomatis", 8000000, 7700000, "system", "2026-06-15 13:00"],
+  // Day 8 — 2026-06-16
+  ["CH-SEED-015", "2026-06-16", "Masuk", "Penjualan", "Penjualan Aura Bloom 8 pcs + Velvet Mist 4 pcs", 2800000, 10500000, "system", "2026-06-16 09:00"],
+  ["CH-SEED-016", "2026-06-16", "Keluar", "Bahan Baku", "Pembelian botol kaca + cap", 1500000, 9000000, "system", "2026-06-16 14:00"],
+  // Day 9 — 2026-06-17
+  ["CH-SEED-017", "2026-06-17", "Masuk", "Penjualan", "Online order Shopee + Tokopedia", 4100000, 13100000, "system", "2026-06-17 10:00"],
+  ["CH-SEED-018", "2026-06-17", "Keluar", "Operasional", "Biaya packing + bubble wrap", 300000, 12800000, "system", "2026-06-17 15:00"],
+  // Day 10 — 2026-06-18
+  ["CH-SEED-019", "2026-06-18", "Masuk", "Penjualan", "Grosir ke reseller Jakarta", 6200000, 19000000, "system", "2026-06-18 08:00"],
+  ["CH-SEED-020", "2026-06-18", "Keluar", "Gaji", "Gaji karyawan admin + marketing", 2800000, 16200000, "system", "2026-06-18 17:00"],
+  // Day 11 — 2026-06-19
+  ["CH-SEED-021", "2026-06-19", "Masuk", "Penjualan", "Penjualan reguler + sample gratis", 1900000, 18100000, "system", "2026-06-19 09:00"],
+  ["CH-SEED-022", "2026-06-19", "Keluar", "Transport", "Ongkir pengiriman ke Bandung", 480000, 17620000, "system", "2026-06-19 13:00"],
+  // Day 12 — 2026-06-20
+  ["CH-SEED-023", "2026-06-20", "Masuk", "Penjualan", "Flash sale online 24 jam", 5500000, 23120000, "system", "2026-06-20 08:00"],
+  ["CH-SEED-024", "2026-06-20", "Keluar", "Bahan Baku", "Restock alcohol + fragrance oil", 2200000, 20920000, "system", "2026-06-20 12:00"],
+  // Day 13 — 2026-06-21
+  ["CH-SEED-025", "2026-06-21", "Masuk", "Penjualan", "Penjualan akhir pekan", 3100000, 24020000, "system", "2026-06-21 10:00"],
+  ["CH-SEED-026", "2026-06-21", "Keluar", "Utilitas", "Listrik + air + internet bulan Juni", 950000, 23070000, "system", "2026-06-21 16:00"],
+  // Day 14 — 2026-06-22
+  ["CH-SEED-027", "2026-06-22", "Masuk", "Penjualan", "Penjualan Ocean Breeze 12 pcs", 3600000, 26670000, "system", "2026-06-22 09:00"],
+  ["CH-SEED-028", "2026-06-22", "Keluar", "Operasional", "Biaya maintenance mesin", 1100000, 25570000, "system", "2026-06-22 14:00"],
+];
+
+export async function POST(request: NextRequest) {
   try {
-    // Check if data already exists
     const raw = await readSheet(SHEET_NAME);
-    const dataRows = raw.slice(1).filter((row) => row && row[0]);
+    const hasHeader = raw.length > 0 && raw[0][0] === "EntryId";
+    const dataRows = hasHeader ? raw.slice(1) : raw;
 
-    if (dataRows.length > 0) {
+    const existingIds = new Set(
+      dataRows.filter((r) => r && r[0]).map((r) => r[0])
+    );
+    const newRows = SEED_DATA.filter((row) => !existingIds.has(row[0]));
+
+    if (newRows.length === 0) {
       return NextResponse.json({
-        source: SOURCE,
-        sourceStatus: "skipped",
-        message: `Cash Harian already has ${dataRows.length} entries. Seed skipped to avoid duplicates.`,
-        existingCount: dataRows.length,
-      }, { status: 200 });
+        source: `Google Sheets: ${SHEET_NAME}`,
+        sourceStatus: "live",
+        message: "Seed data already exists — nothing inserted",
+        seeded: 0,
+        total: SEED_DATA.length,
+      });
     }
 
-    // Calculate running saldo for seed data (starting from 0 as initial balance)
-    let runningSaldo = 0;
-    const rowsToInsert: (string | number)[][] = [];
-    const today = new Date().toISOString().slice(0, 10);
-
-    for (const data of SEED_DATA) {
-      const entryId = generateId();
-      if (data.type === "Masuk") {
-        runningSaldo += data.amount;
-      } else {
-        runningSaldo -= data.amount;
-      }
-      rowsToInsert.push([
-        entryId,
-        data.date,
-        data.type,
-        data.category,
-        data.description,
-        data.amount,
-        runningSaldo,
-        "system",
-        today,
-      ]);
+    if (!hasHeader) {
+      await appendRows(SHEET_NAME, [HEADERS]);
     }
 
-    // Insert in batches of 10 to avoid timeout
-    const BATCH_SIZE = 10;
-    for (let i = 0; i < rowsToInsert.length; i += BATCH_SIZE) {
-      const batch = rowsToInsert.slice(i, i + BATCH_SIZE);
-      await appendRows(SHEET_NAME, batch);
-    }
+    await appendRows(SHEET_NAME, newRows);
 
-    return NextResponse.json({
-      source: SOURCE,
-      sourceStatus: "live",
-      message: `Seeded ${SEED_DATA.length} cash harian entries across 14 days successfully.`,
-      count: SEED_DATA.length,
-      finalSaldo: runningSaldo,
-    }, { status: 201 });
+    return NextResponse.json(
+      {
+        source: `Google Sheets: ${SHEET_NAME}`,
+        sourceStatus: "live",
+        message: `${newRows.length} cash entries seeded successfully`,
+        seeded: newRows.length,
+        total: SEED_DATA.length,
+        skipped: SEED_DATA.length - newRows.length,
+      },
+      { status: 201 }
+    );
   } catch (error) {
-    return NextResponse.json({
-      error: "Failed to seed cash harian data",
-      details: String(error),
-    }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to seed cash data", details: String(error) },
+      { status: 500 }
+    );
   }
 }

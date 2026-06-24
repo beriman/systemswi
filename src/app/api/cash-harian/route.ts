@@ -1,19 +1,26 @@
-// GET /api/cash-harian — List cash harian entries with date filter
+// GET /api/cash-harian — List cash entries (filter: date, type, category, startDate, endDate)
 // POST /api/cash-harian — Create new entry
 import { NextRequest, NextResponse } from "next/server";
-import { readSheet, appendRows, SHEETS } from "@/lib/sheets/sheets-real";
+import { readSheet, appendRows } from "@/lib/sheets/sheets-real";
 import { googleWorkspaceWriteBlockedSource } from "@/lib/api/google-workspace-error";
 
 export const runtime = "nodejs";
 
-const SHEET_NAME = "CashHarian";
+const SHEET_NAME = "Cash_Harian";
 
-// Column order: EntryId | Date | Type | Category | Description | Amount | Saldo | InputBy | InputDate
+// Column order:
+// A: EntryId, B: Date, C: Type (Masuk/Keluar), D: Category, E: Description
+// F: Amount, G: Saldo, H: InputBy, I: InputDate
+const HEADERS = [
+  "EntryId", "Date", "Type", "Category", "Description",
+  "Amount", "Saldo", "InputBy", "InputDate",
+];
+
 function rowToEntry(row: string[], rowNumber: number) {
   return {
     entryId: row[0] || "",
     date: row[1] || "",
-    type: (row[2] || "Masuk") as "Masuk" | "Keluar",
+    type: row[2] || "",
     category: row[3] || "",
     description: row[4] || "",
     amount: Number(row[5]) || 0,
@@ -24,49 +31,70 @@ function rowToEntry(row: string[], rowNumber: number) {
   };
 }
 
-function parseAmount(value: unknown): number {
-  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
-  if (typeof value !== "string") return 0;
-  const normalized = value.replace(/[^\d.-]/g, "");
-  const parsed = Number(normalized);
-  return Number.isFinite(parsed) ? parsed : 0;
+async function ensureHeader() {
+  const raw = await readSheet(SHEET_NAME);
+  if (raw.length === 0 || raw[0][0] !== "EntryId") {
+    await appendRows(SHEET_NAME, [HEADERS]);
+  }
 }
 
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
+    const date = searchParams.get("date") || "";
+    const type = searchParams.get("type") || "";
+    const category = searchParams.get("category") || "";
     const startDate = searchParams.get("startDate") || "";
     const endDate = searchParams.get("endDate") || "";
 
     const raw = await readSheet(SHEET_NAME);
-    // Data starts at row 6 (header at row 5 per range A5:I100)
-    const dataRows = raw.slice(1); // skip header row
+    const hasHeader = raw.length > 0 && raw[0][0] === "EntryId";
+    const dataRows = hasHeader ? raw.slice(1) : raw;
 
-    let entries = dataRows
+    let results = dataRows
       .filter((row) => row && row[0])
-      .map((row, i) => rowToEntry(row, i + 6));
+      .map((row, i) => rowToEntry(row, i + (hasHeader ? 2 : 1)));
 
-    // Filter by date range
+    if (date) {
+      results = results.filter((r) => r.date === date);
+    }
+    if (type) {
+      results = results.filter((r) => r.type.toLowerCase() === type.toLowerCase());
+    }
+    if (category) {
+      results = results.filter((r) =>
+        r.category.toLowerCase().includes(category.toLowerCase())
+      );
+    }
     if (startDate) {
-      entries = entries.filter((e) => e.date >= startDate);
+      results = results.filter((r) => r.date >= startDate);
     }
     if (endDate) {
-      entries = entries.filter((e) => e.date <= endDate);
+      results = results.filter((r) => r.date <= endDate);
     }
 
     // Sort by date ascending
-    entries.sort((a, b) => a.date.localeCompare(b.date));
+    results.sort((a, b) => a.date.localeCompare(b.date));
+
+    const totalMasuk = results
+      .filter((r) => r.type === "Masuk")
+      .reduce((s, r) => s + r.amount, 0);
+    const totalKeluar = results
+      .filter((r) => r.type === "Keluar")
+      .reduce((s, r) => s + r.amount, 0);
+    const saldoAkhir = results.length > 0 ? results[results.length - 1].saldo : 0;
 
     return NextResponse.json({
       source: `Google Sheets: ${SHEET_NAME}`,
       sourceStatus: "live",
       generatedAt: new Date().toISOString(),
-      count: entries.length,
-      data: entries,
+      summary: { totalMasuk, totalKeluar, saldoAkhir, count: results.length },
+      count: results.length,
+      data: results,
     });
   } catch (error) {
     return NextResponse.json(
-      { error: "Failed to fetch cash harian entries", details: String(error) },
+      { error: "Failed to fetch cash harian", details: String(error) },
       { status: 500 }
     );
   }
@@ -77,57 +105,56 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { date, type, category, description, amount, inputBy } = body;
 
-    if (!date || !type || !category || !amount) {
+    if (!date || !type || !amount) {
       return NextResponse.json(
-        { error: "Missing required fields: date, type, category, amount" },
+        { error: "Missing required fields: date, type, amount are required" },
         { status: 400 }
       );
     }
 
-    const parsedAmount = parseAmount(amount);
-    if (parsedAmount <= 0) {
+    if (!["Masuk", "Keluar"].includes(type)) {
       return NextResponse.json(
-        { error: "Amount must be greater than 0" },
+        { error: "Type must be 'Masuk' or 'Keluar'" },
         { status: 400 }
       );
     }
 
-    // Generate entry ID
-    const entryId = `CH-${Date.now()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
-    const entryDate = new Date().toISOString().slice(0, 10);
+    const amt = Number(amount);
+    if (amt <= 0) {
+      return NextResponse.json(
+        { error: "Amount must be positive" },
+        { status: 400 }
+      );
+    }
 
-    // Calculate saldo: read last entry's saldo
+    await ensureHeader();
+
+    // Read existing to compute running saldo
     const raw = await readSheet(SHEET_NAME);
-    const dataRows = raw.slice(1).filter((row) => row && row[0]);
-    let lastSaldo = 0;
-    if (dataRows.length > 0) {
-      const lastRow = dataRows[dataRows.length - 1];
-      lastSaldo = Number(lastRow[6]) || 0;
-    }
+    const hasHeader = raw.length > 0 && raw[0][0] === "EntryId";
+    const dataRows = hasHeader ? raw.slice(1) : raw;
+    const existing = dataRows.filter((row) => row && row[0]).map(rowToEntry);
+    const lastSaldo = existing.length > 0 ? existing[existing.length - 1].saldo : 0;
+    const newSaldo = type === "Masuk" ? lastSaldo + amt : lastSaldo - amt;
 
-    const saldoChange = type === "Masuk" ? parsedAmount : -parsedAmount;
-    const newSaldo = lastSaldo + saldoChange;
-
-    const newRow = [
-      entryId,
-      date,
-      type,
-      category,
-      description || "",
-      parsedAmount,
-      newSaldo,
-      inputBy || "system",
-      entryDate,
+    const entryId = `CH-${Date.now()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+    const now = new Date().toISOString().slice(0, 19).replace("T", " ");
+    const row: (string | number)[] = [
+      entryId, date, type, category || "Lain-lain", description || "",
+      amt, newSaldo, inputBy || "system", now,
     ];
 
-    await appendRows(SHEET_NAME, [newRow]);
+    await appendRows(SHEET_NAME, [row]);
 
-    return NextResponse.json({
-      source: `Google Sheets: ${SHEET_NAME}`,
-      sourceStatus: "live",
-      message: "Entry created successfully",
-      data: rowToEntry(newRow, 0),
-    }, { status: 201 });
+    return NextResponse.json(
+      {
+        source: `Google Sheets: ${SHEET_NAME}`,
+        sourceStatus: "live",
+        message: "Cash entry created successfully",
+        data: rowToEntry(row, 0),
+      },
+      { status: 201 }
+    );
   } catch (error) {
     return NextResponse.json(
       googleWorkspaceWriteBlockedSource(SHEET_NAME, error),

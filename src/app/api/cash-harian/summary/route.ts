@@ -1,17 +1,23 @@
-// GET /api/cash-harian/summary — Period summary (total masuk, keluar, net, daily breakdown)
+// GET /api/cash-harian/summary — Period summary with daily breakdown
 import { NextRequest, NextResponse } from "next/server";
 import { readSheet } from "@/lib/sheets/sheets-real";
 
 export const runtime = "nodejs";
 
-const SHEET_NAME = "CashHarian";
+const SHEET_NAME = "Cash_Harian";
 
-function parseAmount(value: unknown): number {
-  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
-  if (typeof value !== "string") return 0;
-  const normalized = value.replace(/[^\d.-]/g, "");
-  const parsed = Number(normalized);
-  return Number.isFinite(parsed) ? parsed : 0;
+function rowToEntry(row: string[]) {
+  return {
+    entryId: row[0] || "",
+    date: row[1] || "",
+    type: row[2] || "",
+    category: row[3] || "",
+    description: row[4] || "",
+    amount: Number(row[5]) || 0,
+    saldo: Number(row[6]) || 0,
+    inputBy: row[7] || "",
+    inputDate: row[8] || "",
+  };
 }
 
 export async function GET(request: NextRequest) {
@@ -21,80 +27,71 @@ export async function GET(request: NextRequest) {
     const endDate = searchParams.get("endDate") || "";
 
     const raw = await readSheet(SHEET_NAME);
-    const dataRows = raw.slice(1).filter((row) => row && row[0]);
+    const hasHeader = raw.length > 0 && raw[0][0] === "EntryId";
+    const dataRows = hasHeader ? raw.slice(1) : raw;
 
-    let entries = dataRows.map((row, i) => ({
-      entryId: row[0] || "",
-      date: row[1] || "",
-      type: (row[2] || "Masuk") as "Masuk" | "Keluar",
-      category: row[3] || "",
-      description: row[4] || "",
-      amount: parseAmount(row[5]),
-      saldo: parseAmount(row[6]),
-      inputBy: row[7] || "",
-      inputDate: row[8] || "",
-      rowNumber: i + 6,
-    }));
+    let allEntries = dataRows.filter((row) => row && row[0]).map(rowToEntry);
 
-    // Filter by date range
-    if (startDate) {
-      entries = entries.filter((e) => e.date >= startDate);
+    if (startDate) allEntries = allEntries.filter((r) => r.date >= startDate);
+    if (endDate) allEntries = allEntries.filter((r) => r.date <= endDate);
+
+    // Group by date
+    const byDate = new Map<
+      string,
+      { masuk: number; keluar: number; categories: Record<string, number> }
+    >();
+    for (const e of allEntries) {
+      if (!byDate.has(e.date))
+        byDate.set(e.date, { masuk: 0, keluar: 0, categories: {} });
+      const d = byDate.get(e.date)!;
+      if (e.type === "Masuk") {
+        d.masuk += e.amount;
+        d.categories[e.category] = (d.categories[e.category] || 0) + e.amount;
+      } else {
+        d.keluar += e.amount;
+        d.categories[e.category] = (d.categories[e.category] || 0) + e.amount;
+      }
     }
-    if (endDate) {
-      entries = entries.filter((e) => e.date <= endDate);
-    }
 
-    // Sort by date
-    entries.sort((a, b) => a.date.localeCompare(b.date));
+    const dailyBreakdown = Array.from(byDate.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, d]) => ({
+        date,
+        masuk: d.masuk,
+        keluar: d.keluar,
+        net: d.masuk - d.keluar,
+        categories: d.categories,
+      }));
 
-    // Aggregates
-    const totalMasuk = entries
-      .filter((e) => e.type === "Masuk")
-      .reduce((sum, e) => sum + e.amount, 0);
-
-    const totalKeluar = entries
-      .filter((e) => e.type === "Keluar")
-      .reduce((sum, e) => sum + e.amount, 0);
-
-    const netCash = totalMasuk - totalKeluar;
-
-    // Daily breakdown
-    const daily: Record<string, { masuk: number; keluar: number; net: number }> = {};
-    for (const e of entries) {
-      if (!daily[e.date]) daily[e.date] = { masuk: 0, keluar: 0, net: 0 };
-      if (e.type === "Masuk") daily[e.date].masuk += e.amount;
-      else daily[e.date].keluar += e.amount;
-      daily[e.date].net = daily[e.date].masuk - daily[e.date].keluar;
-    }
+    const totalMasuk = dailyBreakdown.reduce((s, d) => s + d.masuk, 0);
+    const totalKeluar = dailyBreakdown.reduce((s, d) => s + d.keluar, 0);
 
     // Category breakdown
-    const byCategory: Record<string, number> = {};
-    for (const e of entries) {
-      const sign = e.type === "Masuk" ? 1 : -1;
-      byCategory[e.category] = (byCategory[e.category] || 0) + e.amount * sign;
+    const categories: Record<
+      string,
+      { masuk: number; keluar: number; total: number }
+    > = {};
+    for (const e of allEntries) {
+      if (!categories[e.category])
+        categories[e.category] = { masuk: 0, keluar: 0, total: 0 };
+      if (e.type === "Masuk") categories[e.category].masuk += e.amount;
+      else categories[e.category].keluar += e.amount;
+      categories[e.category].total += e.amount;
     }
-
-    // Running saldo
-    const sortedDates = Object.keys(daily).sort();
-    let runningSaldo = 0;
-    const dailyWithSaldo = sortedDates.map((date) => {
-      runningSaldo += daily[date].net;
-      return { date, ...daily[date], saldo: runningSaldo };
-    });
 
     return NextResponse.json({
       source: `Google Sheets: ${SHEET_NAME}`,
       sourceStatus: "live",
       generatedAt: new Date().toISOString(),
-      period: { startDate, endDate },
+      period: { startDate: startDate || "all", endDate: endDate || "all" },
       summary: {
         totalMasuk,
         totalKeluar,
-        netCash,
-        entryCount: entries.length,
+        netCash: totalMasuk - totalKeluar,
+        dayCount: dailyBreakdown.length,
       },
-      daily: dailyWithSaldo,
-      byCategory,
+      dailyBreakdown,
+      categories,
     });
   } catch (error) {
     return NextResponse.json(

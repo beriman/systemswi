@@ -1,81 +1,79 @@
-// GET /api/cash-harian/today — Today's cash position (saldo awal, total masuk/keluar, akhir)
+// GET /api/cash-harian/today — Today's cash position
 import { NextRequest, NextResponse } from "next/server";
 import { readSheet } from "@/lib/sheets/sheets-real";
 
 export const runtime = "nodejs";
 
-const SHEET_NAME = "CashHarian";
+const SHEET_NAME = "Cash_Harian";
 
-function parseAmount(value: unknown): number {
-  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
-  if (typeof value !== "string") return 0;
-  const normalized = value.replace(/[^\d.-]/g, "");
-  const parsed = Number(normalized);
-  return Number.isFinite(parsed) ? parsed : 0;
+function rowToEntry(row: string[]) {
+  return {
+    entryId: row[0] || "",
+    date: row[1] || "",
+    type: row[2] || "",
+    category: row[3] || "",
+    description: row[4] || "",
+    amount: Number(row[5]) || 0,
+    saldo: Number(row[6]) || 0,
+    inputBy: row[7] || "",
+    inputDate: row[8] || "",
+  };
 }
 
 export async function GET() {
   try {
     const today = new Date().toISOString().slice(0, 10);
+
     const raw = await readSheet(SHEET_NAME);
-    // Data starts at row 6 (header at row 5)
-    const dataRows = raw.slice(1).filter((row) => row && row[0]);
+    const hasHeader = raw.length > 0 && raw[0][0] === "EntryId";
+    const dataRows = hasHeader ? raw.slice(1) : raw;
 
-    const allEntries = dataRows.map((row, i) => ({
-      entryId: row[0] || "",
-      date: row[1] || "",
-      type: (row[2] || "Masuk") as "Masuk" | "Keluar",
-      category: row[3] || "",
-      description: row[4] || "",
-      amount: parseAmount(row[5]),
-      saldo: parseAmount(row[6]),
-      inputBy: row[7] || "",
-      inputDate: row[8] || "",
-      rowNumber: i + 6,
-    }));
+    const allEntries = dataRows.filter((row) => row && row[0]).map(rowToEntry);
 
-    // Sort by date ascending
-    allEntries.sort((a, b) => a.date.localeCompare(b.date));
+    // All entries up to and including today
+    const todayEntries = allEntries.filter((r) => r.date <= today);
+    const todayOnlyEntries = allEntries.filter((r) => r.date === today);
 
-    // Find saldo awal: last saldo before today
-    const entriesBeforeToday = allEntries.filter((e) => e.date < today);
-    const saldoAwal = entriesBeforeToday.length > 0
-      ? entriesBeforeToday[entriesBeforeToday.length - 1].saldo
-      : 0;
+    // Saldo: use the last entry up to today
+    let saldoAkhir = 0;
+    if (todayEntries.length > 0) {
+      saldoAkhir = todayEntries[todayEntries.length - 1].saldo;
+    }
 
-    // Today's entries
-    const todayEntries = allEntries.filter((e) => e.date === today);
+    // If no sheet saldo stored, compute from scratch
+    if (saldoAkhir === 0 && todayEntries.length > 0) {
+      for (const e of todayEntries) {
+        if (e.type === "Masuk") saldoAkhir += e.amount;
+        else saldoAkhir -= e.amount;
+      }
+    }
 
-    const totalMasuk = todayEntries
+    const todayMasuk = todayOnlyEntries
       .filter((e) => e.type === "Masuk")
-      .reduce((sum, e) => sum + e.amount, 0);
-
-    const totalKeluar = todayEntries
+      .reduce((s, e) => s + e.amount, 0);
+    const todayKeluar = todayOnlyEntries
       .filter((e) => e.type === "Keluar")
-      .reduce((sum, e) => sum + e.amount, 0);
-
-    const saldoAkhir = saldoAwal + totalMasuk - totalKeluar;
-
-    // Get forecast for today (if available from CashflowForecast sheet)
-    let vsForecast: number | null = null;
+      .reduce((s, e) => s + e.amount, 0);
+    const saldoAwal = saldoAkhir - todayMasuk + todayKeluar;
 
     return NextResponse.json({
       source: `Google Sheets: ${SHEET_NAME}`,
       sourceStatus: "live",
       generatedAt: new Date().toISOString(),
-      data: {
-        date: today,
+      date: today,
+      summary: {
         saldoAwal,
-        totalMasuk,
-        totalKeluar,
+        todayMasuk,
+        todayKeluar,
         saldoAkhir,
-        entries: todayEntries,
-        vsForecast,
+        netChange: todayMasuk - todayKeluar,
+        entryCount: todayOnlyEntries.length,
       },
+      data: todayOnlyEntries,
     });
   } catch (error) {
     return NextResponse.json(
-      { error: "Failed to fetch today's position", details: String(error) },
+      { error: "Failed to fetch today's cash position", details: String(error) },
       { status: 500 }
     );
   }
