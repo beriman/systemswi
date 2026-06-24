@@ -115,51 +115,70 @@ export async function POST(request: NextRequest) {
     // ── Always seed SQLite first (idempotent — skips if data exists) ──
     const sqliteResult = seedSqlite();
 
-    // ── Google Sheets ──
-    const [existingCustomers, existingInteractions] = await Promise.all([
-      readRange("Customer_Master!A2:M1000"),
-      readRange("Customer_Interactions!A2:J1000"),
-    ]);
+    // ── Google Sheets (non-blocking) ──
+    let hasCustomers = false;
+    let hasInteractions = false;
+    let existingCount = { customers: 0, interactions: 0 };
+    let sheetsWriteStatus = "unavailable";
 
-    const hasCustomers = existingCustomers.some((row) => row.some(Boolean));
-    const hasInteractions = existingInteractions.some((row) => row.some(Boolean));
+    try {
+      const [existingSheetsCustomers, existingSheetsInteractions] = await Promise.all([
+        readRange("Customer_Master!A2:M1000"),
+        readRange("Customer_Interactions!A2:J1000"),
+      ]);
+      hasCustomers = existingSheetsCustomers.some((row) => row.some(Boolean));
+      hasInteractions = existingSheetsInteractions.some((row) => row.some(Boolean));
+      existingCount = {
+        customers: existingSheetsCustomers.filter((r) => r.some(Boolean)).length,
+        interactions: existingSheetsInteractions.filter((r) => r.some(Boolean)).length,
+      };
+      sheetsWriteStatus = "available";
+    } catch {
+      // Google Sheets auth may be expired — continue with SQLite only
+      sheetsWriteStatus = "degraded";
+    }
 
-    if (!force && hasCustomers && hasInteractions) {
+    if (sheetsWriteStatus === "available" && !force && hasCustomers && hasInteractions) {
       return NextResponse.json({
         message: "Data sudah ada di Google Sheets. Gunakan { force: true } untuk overwrite.",
         sqlite: sqliteResult,
-        sheets: {
-          customers: existingCustomers.filter((r) => r.some(Boolean)).length,
-          interactions: existingInteractions.filter((r) => r.some(Boolean)).length,
-        },
+        sheets: existingCount,
       });
     }
 
-    if (force) {
-      // Clear existing data rows (keep headers)
-      if (hasCustomers) {
-        await writeRange(
-          `Customer_Master!A2:M${existingCustomers.length + 1}`,
-          Array(existingCustomers.length).fill(Array(13).fill(""))
-        );
-      }
-      if (hasInteractions) {
-        await writeRange(
-          `Customer_Interactions!A2:J${existingInteractions.length + 1}`,
-          Array(existingInteractions.length).fill(Array(10).fill(""))
-        );
+    // Write sample data to Google Sheets (only if auth works)
+    if (sheetsWriteStatus === "available") {
+      try {
+        if (force) {
+          // Clear existing data rows (keep headers)
+          if (hasCustomers) {
+            await writeRange(
+              `Customer_Master!A2:M${existingCount.customers + 1}`,
+              Array(existingCount.customers).fill(Array(13).fill(""))
+            );
+          }
+          if (hasInteractions) {
+            await writeRange(
+              `Customer_Interactions!A2:J${existingCount.interactions + 1}`,
+              Array(existingCount.interactions).fill(Array(10).fill(""))
+            );
+          }
+        }
+
+        await Promise.all([
+          appendRows("CustomerMaster", SAMPLE_CUSTOMERS),
+          appendRows("CustomerInteractions", SAMPLE_INTERACTIONS),
+        ]);
+      } catch {
+        // Sheets write failed — SQLite is already seeded, so non-fatal
+        sheetsWriteStatus = "write_failed";
       }
     }
-
-    // Write sample data to Google Sheets
-    await Promise.all([
-      appendRows("CustomerMaster", SAMPLE_CUSTOMERS),
-      appendRows("CustomerInteractions", SAMPLE_INTERACTIONS),
-    ]);
 
     return NextResponse.json({
       message: `Seed selesai: ${SAMPLE_CUSTOMERS.length} customers, ${SAMPLE_INTERACTIONS.length} interactions.`,
       sqlite: sqliteResult,
+      sheets: sheetsWriteStatus,
       customersSeeded: SAMPLE_CUSTOMERS.length,
       interactionsSeeded: SAMPLE_INTERACTIONS.length,
       force,
