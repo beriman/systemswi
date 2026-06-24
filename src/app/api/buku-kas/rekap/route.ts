@@ -71,6 +71,17 @@ export async function GET(request: NextRequest) {
       });
     }
 
+    // Build byCategory with net field for UI compatibility
+    const byCategoryWithNet: Record<string, { debit: number; kredit: number; net: number; count: number }> = {};
+    for (const [cat, data] of Object.entries(byCategory)) {
+      byCategoryWithNet[cat] = {
+        debit: data.debit,
+        kredit: data.credit,
+        net: data.debit - data.credit,
+        count: data.count,
+      };
+    }
+
     return NextResponse.json({
       source: `Google Sheets: ${SHEET_NAME}`,
       sourceStatus: "live",
@@ -83,10 +94,12 @@ export async function GET(request: NextRequest) {
         netChange,
         entryCount: filtered.length,
       },
-      byCategory,
+      totalDebit,
+      totalKredit,
+      netChange,
+      byCategory: byCategoryWithNet,
       byDate,
       monthlySummary,
-      netChange,
     });
   } catch (error) {
     return NextResponse.json(
