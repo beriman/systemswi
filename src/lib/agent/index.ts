@@ -45,4 +45,4 @@ export { runPhase4Checks, isEFakturConfigured, isBPOMConfigured, isBRIConfigured
 export type { EFakturDraft, BPOMStatus, BRITransaction, WhatsAppMessage, SukukPayment } from "./phase4-scaffold";
 
 // ── Phase 1+2 Orchestrator ─────────────────────────────────────────
-export { dailyHealthCheck, dailyTransactionDetection, dailyStockAlert, requestApproval, runFullDailyAgent, APPROVAL_THRESHOLD } from "./orchestrator";
+export { dailyHealthCheck, dailyTransactionDetection, dailyStockAlert, requestApproval, runFullDailyAgent, getAgentHealthStats, APPROVAL_THRESHOLD } from "./orchestrator";

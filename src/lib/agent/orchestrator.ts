@@ -32,7 +32,17 @@ export const APPROVAL_THRESHOLD = 10_000_000; // Rp 10 juta
 
 // ── Daily Health Check (Task 1.1) ──
 export async function dailyHealthCheck(): Promise<void> {
-  const report = await runHealthCheck();
+  const result = await executeWithRetry(
+    "dailyHealthCheck",
+    async () => {
+      const report = await runHealthCheck();
+      return report;
+    },
+    { maxRetries: 2, baseDelayMs: 2000 }
+  );
+
+  const report = result.success ? (result.data as Awaited<ReturnType<typeof runHealthCheck>>) : await runHealthCheck();
+  agentHealthTracker.record("dailyHealthCheck", result as any);
 
   await logAgentActionSafe({
     timestamp: report.timestamp,

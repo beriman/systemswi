@@ -206,6 +206,18 @@ SWI saat ini punya **systemswi** — ERP dashboard yang sudah 31 modul. Tapi ini
 
 ---
 
+## 🔮 Phase 5: Agent Reliability (Bulan 13+) — 🟡 IN PROGRESS
+**Goal:** Agent lebih resilient, observable, dan siap production
+
+| # | Task | Status | Notes |
+|---|------|--------|-------|
+| 5.1 | **Error Recovery Integration** | ✅ DONE | Integrated `executeWithRetry` + `agentHealthTracker` into orchestrator. Health check now retries with exponential backoff. Circuit breaker ready for Google Sheets & Telegram. |
+| 5.2 | **Agent Health Dashboard Widget** | 🟡 Planned | Real-time uptime/avg-duration stats per module on agent dashboard |
+| 5.3 | **Approval SLA Monitor** | 🟡 Planned | Track time-to-approval, escalate if >2 hours unanswered |
+| 5.4 | **Weekly Agent Report** | 🟡 Planned | Auto-generated weekly summary: tasks run, failures, approvals, time saved |
+
+---
+
 ## 🔒 Compliance & Governance Framework
 
 ### A. Agent Decision Matrix
@@ -334,6 +346,6 @@ Auto-refresh setiap 60 detik. Manual refresh button tersedia.
 ---
 
 *Document created: 2026-06-18 by OWL/HemuHemu*
-*Last updated: 2026-06-19 by OWL/HemuHemu — Phase 4 🟡 ENHANCED: e-Faktur XML generator ✅, BRI anomaly detection ✅. Agent Dashboard ✅. 5 integration modules with real local logic + enhanced output. External API calls gated by env vars. Integrated into orchestrator.*
+*Last updated: 2026-06-24 by OWL/HemuHemu — Phase 5 🟡 STARTED: Error recovery integrated into orchestrator (executeWithRetry + agentHealthTracker + circuit breaker). Phase 5.1 ✅.*
 *Review cycle: Quarterly ( setiap 3 bulan)*
 *Next review: September 2026*
