@@ -163,7 +163,6 @@ function loadServiceAccount() {
   const saB64 = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
   if (saB64) {
     try {
-      // Try base64 decode first (Vercel stores as base64 to avoid escaping issues)
       const decoded = Buffer.from(saB64, "base64").toString("utf-8");
       if (decoded.trim().startsWith("{")) {
         const sa = JSON.parse(decoded);
@@ -172,7 +171,6 @@ function loadServiceAccount() {
     } catch {
       // fall through
     }
-    // Try raw JSON
     try {
       const sa = JSON.parse(saB64);
       if (sa.type === "service_account") return sa;
@@ -191,6 +189,18 @@ function loadServiceAccount() {
     } catch {
       // fall through
     }
+  }
+
+  // 3. Try relative to source file (Next.js includes this in build)
+  try {
+    const path = require("path");
+    const dir = __dirname;
+    const relPath = path.resolve(dir, "service-account.json");
+    const raw = fs.readFileSync(relPath, "utf-8");
+    const sa = JSON.parse(raw);
+    if (sa.type === "service_account") return sa;
+  } catch {
+    // fall through
   }
 
   return null;
