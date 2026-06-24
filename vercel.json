@@ -1,9 +1,5 @@
 {
-  "$schema": "https://openapi.vercel.sh/vercel.json",
-  "framework": "nextjs",
-  "buildCommand": "npm run build",
-  "regions": ["sin1"],
-  "env": {
-    "NODE_ENV": "production"
-  }
+  "buildCommand": "npm ci || npm install --legacy-peer-deps",
+  "installCommand": "npm ci || npm install --legacy-peer-deps",
+  "framework": "nextjs"
 }
