@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { generateDocumentContent, getTemplateByType, getAllTemplates } from "@/lib/document";
+import { generateDocumentContent, getTemplateByType, getAllTemplates, type RabContext } from "@/lib/document";
 import type { DocumentType } from "@/lib/document";
 import { readRange } from "@/lib/sheets/sheets-real";
 import { EVENT_SHEETS, readEventSheet } from "@/lib/event/sheets";
@@ -16,6 +16,10 @@ type SheetContext = {
   sourceStatus: "live" | "degraded";
   warning?: string;
   details?: string;
+  budgetByCategory?: Record<string, number>;
+  totalBudget?: number;
+  totalActual?: number;
+  eventBudgetSummary?: Array<{ name: string; budget: number; actual: number; remaining: number; status: string }>;
 };
 
 const text = (value: unknown) => String(value ?? "").trim();
@@ -47,11 +51,13 @@ async function readContext(): Promise<SheetContext> {
     return [];
   };
 
-  const [finance, tenants, sponsors, inventory] = await Promise.all([
+  const [finance, tenants, sponsors, inventory, budgetCategories, eventBudget] = await Promise.all([
     readRange("Laporan_Bulanan!A1:P16").catch(emptyOnAuthError),
     readEventSheet(EVENT_SHEETS.Tenants).catch(emptyOnAuthError),
     readEventSheet(EVENT_SHEETS.Sponsors).catch(emptyOnAuthError),
     readRange("Inventory_Master!A1:O1000").catch(emptyOnAuthError),
+    readRange("Budget_Categories!A1:D50").catch(emptyOnAuthError),
+    readRange("Event_Budget!A1:H1000").catch(emptyOnAuthError),
   ]);
 
   const unpaidTenants = tenants.slice(1).filter((row) => {
@@ -71,6 +77,39 @@ async function readContext(): Promise<SheetContext> {
     return text(row[0]) && min > 0 && qty <= min;
   }).length;
 
+  // Aggregate budget data for RAB enrichment
+  const budgetByCategory: Record<string, number> = {};
+  let totalBudget = 0;
+  let totalActual = 0;
+  const eventBudgetSummary: Array<{ name: string; budget: number; actual: number; remaining: number; status: string }> = [];
+
+  if (eventBudget.length > 1) {
+    for (const row of eventBudget.slice(1)) {
+      if (!row[0]) continue;
+      const evtBudget = amount(row[3]);
+      const evtActual = amount(row[4]);
+      const evtRemaining = amount(row[5]);
+      const evtStatus = text(row[6]) || "ok";
+      totalBudget += evtBudget;
+      totalActual += evtActual;
+      eventBudgetSummary.push({
+        name: text(row[1]) || text(row[0]),
+        budget: evtBudget,
+        actual: evtActual,
+        remaining: evtRemaining,
+        status: evtStatus,
+      });
+    }
+  }
+
+  if (budgetCategories.length > 1) {
+    for (const row of budgetCategories.slice(1)) {
+      if (!row[0] || !row[1]) continue;
+      const catBudget = amount(row[2]);
+      budgetByCategory[text(row[0])] = (budgetByCategory[text(row[0])] || 0) + catBudget;
+    }
+  }
+
   const degraded = googleAuthError
     ? googleWorkspaceDegradedSource("Google Sheets context for Document Generator", googleAuthError)
     : null;
@@ -83,11 +122,16 @@ async function readContext(): Promise<SheetContext> {
     sourceStatus: degraded ? "degraded" : "live",
     warning: degraded?.warning,
     details: degraded?.details,
+    budgetByCategory,
+    totalBudget,
+    totalActual,
+    eventBudgetSummary,
     notes: [
       `Finance source: Laporan_Bulanan (${Math.max(finance.length - 1, 0)} data rows).`,
       `Commercial source: Event_Tenants ${Math.max(tenants.length - 1, 0)} rows; ${unpaidTenants} tenant belum lunas.`,
       `Sponsor source: Event_Sponsors ${Math.max(sponsors.length - 1, 0)} rows; ${followUpSponsors} sponsor perlu follow-up.`,
       `Inventory source: Inventory_Master ${Math.max(inventory.length - 1, 0)} rows; ${lowStock} item low/critical.`,
+      `Budget source: ${eventBudgetSummary.length} event budgets, total budget ${totalBudget.toLocaleString("id-ID")}.`,
       ...(degraded ? [degraded.warning] : []),
     ],
   };
@@ -121,7 +165,17 @@ export async function POST(req: NextRequest) {
     }
 
     const context = await readContext();
-    const content = appendContext(generateDocumentContent(rawType, data, text(body.letterNumber)), context);
+    const rabContext: RabContext = {
+      budgetByCategory: context.budgetByCategory,
+      totalBudget: context.totalBudget,
+      totalActual: context.totalActual,
+      eventBudgetSummary: context.eventBudgetSummary,
+      financeRows: context.financeRows,
+      tenantRows: context.tenantRows,
+      sponsorRows: context.sponsorRows,
+      inventoryRows: context.inventoryRows,
+    };
+    const content = appendContext(generateDocumentContent(rawType, data, text(body.letterNumber), rabContext), context);
     const template = getTemplateByType(rawType);
 
     return NextResponse.json({

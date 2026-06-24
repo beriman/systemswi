@@ -22,11 +22,24 @@ export function formatLetterNumber(ln: LetterNumber): string {
     return `${seq}/${ln.prefix}/${ln.month}/${ln.year}`;
 }
 
+// Budget context from Google Sheets (optional)
+export type RabContext = {
+  budgetByCategory?: Record<string, number>;
+  totalBudget?: number;
+  totalActual?: number;
+  eventBudgetSummary?: Array<{ name: string; budget: number; actual: number; remaining: number; status: string }>;
+  financeRows?: number;
+  tenantRows?: number;
+  sponsorRows?: number;
+  inventoryRows?: number;
+};
+
 // Generate document content based on type and data
 export function generateDocumentContent(
     type: DocumentType,
     data: Record<string, string>,
-    letterNumber?: string
+    letterNumber?: string,
+    context?: RabContext
 ): string {
     const now = new Date().toLocaleDateString("id-ID", {
         day: "numeric",
@@ -44,11 +57,11 @@ export function generateDocumentContent(
         case "proposal":
             return generateProposal(data, letterNumber, now);
         case "rab":
-            return generateRAB(data, letterNumber, now);
+            return generateRAB(data, letterNumber, now, context);
         case "laporan_keuangan":
             return generateLaporanKeuangan(data, letterNumber, now);
         case "monthly_report":
-            return generateMonthlyReport(data, letterNumber, now);
+            return generateMonthlyReport(data, letterNumber, now, context);
         case "laporan_progress":
             return generateLaporanProgress(data, letterNumber, now);
         case "surat_undangan":
@@ -208,7 +221,72 @@ Demikian proposal ini kami ajukan. Atas perhatian dan kerjasamanya, kami ucapkan
 `;
 }
 
-function generateRAB(data: Record<string, string>, letterNumber: string = "", date: string): string {
+function generateRAB(data: Record<string, string>, letterNumber: string = "", date: string, context?: RabContext): string {
+    // Build budget line items from real Google Sheets data
+    const budgetItems: Array<{ category: string; item: string; qty: number; unitPrice: number; total: number }> = [];
+    const budgetByCategory = context?.budgetByCategory || {};
+
+    const defaultCategories = [
+        { cat: "Bahan Baku", items: ["Essential Oil", "Alkohol", "Botol Parfum", "Cap & Label"] },
+        { cat: "Venue", items: ["Sewa Booth", "Listrik", "Area Setup"] },
+        { cat: "Marketing", items: [" Instagram Ads", "Poster & Banner", "MC / Host"] },
+        { cat: "Operasional", items: ["Transport Akomodasi", "Konsumsi Panitia", "Dokumentasi"] },
+        { cat: "Sound & Tech", items: ["Sound System", "Lighting", "Visual"] },
+    ];
+
+    let grandTotal = 0;
+    let itemNo = 0;
+
+    if (Object.keys(budgetByCategory).length > 0) {
+        // Use real budget data from Sheets
+        const categoryMapping: Record<string, string[]> = {
+            "Venue": ["Venue"],
+            "Catering": ["Operasional"],
+            "Marketing": ["Marketing"],
+            "Sound": ["Sound & Tech"],
+            "Bahan Baku": ["Bahan Baku"],
+            "Dekorasi": ["Venue"],
+            "Packaging": ["Bahan Baku"],
+            "Operasional": ["Operasional"],
+        };
+        for (const [sheetCat, budget] of Object.entries(budgetByCategory)) {
+            const mapped = categoryMapping[sheetCat] || [sheetCat];
+            for (const mappedCat of mapped) {
+                const existing = budgetItems.find(b => b.category === mappedCat);
+                if (existing) {
+                    existing.total += budget;
+                } else {
+                    budgetItems.push({ category: mappedCat, item: sheetCat, qty: 1, unitPrice: budget, total: budget });
+                }
+                grandTotal += budget;
+            }
+        }
+    } else {
+        // Fallback: use user-provided data or defaults
+        for (const group of defaultCategories) {
+            for (const item of group.items) {
+                itemNo++;
+                budgetItems.push({ category: group.cat, item, qty: 0, unitPrice: 0, total: 0 });
+            }
+        }
+    }
+
+    const categorySubtotals: Record<string, number> = {};
+    for (const item of budgetItems) {
+        categorySubtotals[item.category] = (categorySubtotals[item.category] || 0) + item.total;
+    }
+
+    const tableRows = budgetItems
+        .filter(b => b.total > 0 || Object.keys(budgetByCategory).length === 0)
+        .map((b, i) => `| ${i + 1} | ${b.category} | ${b.item} | ${b.qty || "-"} | ${rupiah(b.unitPrice)} | ${rupiah(b.total)} |`)
+        .join("\n");
+
+    const totalLine = grandTotal > 0 ? `**TOTAL ANGGARAN**: ${rupiah(grandTotal)}` : `**TOTAL ANGGARAN**: Rp -`;
+
+    const eventSummary = context?.eventBudgetSummary && context.eventBudgetSummary.length > 0
+        ? `\n## EVENT BUDGET SUMMARY (Google Sheets Live Data)\n\n| Event | Budget | Actual | Remaining | Status |\n|-------|--------|--------|-----------|--------|\n${context.eventBudgetSummary.map(e => `| ${e.name} | ${rupiah(e.budget)} | ${rupiah(e.actual)} | ${rupiah(e.remaining)} | ${e.status} |`).join("\n")}\n`
+        : "";
+
     return `
 # RENCANA ANGGARAN BIAYA
 **Event: ${data.event || "Nama Event"}**
@@ -220,21 +298,15 @@ function generateRAB(data: Record<string, string>, letterNumber: string = "", da
 **Periode**: ${data.period || "-"}
 
 ## RINCIAN ANGGARAN
+${tableRows}
 
-| No | Kategori | Item | Qty | Harga Satuan | Total |
-|----|----------|------|-----|--------------|-------|
-| 1  | Venue    | -    | -   | -            | -     |
-| 2  | Catering | -    | -   | -            | -     |
-| 3  | Dekorasi | -    | -   | -            | -     |
-| 4  | Sound    | -    | -   | -            | -     |
-
-**TOTAL ANGGARAN**: Rp -
+${totalLine}${eventSummary}
 
 ## CATATAN
 ${data.notes || "-"}
 
 ---
-Dibuat oleh: Finance Team
+Dibuat oleh: Finance Team — Angka bersumber dari Google Sheets Budget_Categories & Event_Budget (${context?.eventBudgetSummary?.length || 0} event budgets).
 `;
 }
 
@@ -268,7 +340,13 @@ Dibuat oleh: Finance Team
 `;
 }
 
-function generateMonthlyReport(data: Record<string, string>, letterNumber: string = "", date: string): string {
+function generateMonthlyReport(data: Record<string, string>, letterNumber: string = "", date: string, context?: RabContext): string {
+    const financeInfo = context?.financeRows ? `Data keuangan: ${context.financeRows} baris Laporan_Bulanan.` : "Data keuangan: belum tersedia.";
+    const commercialInfo = context?.tenantRows ? `Tenant: ${context.tenantRows} brands | Sponsor: ${context.sponsorRows || 0} companies` : "Data komersial: belum tersedia.";
+    const budgetInfo = context?.totalBudget ? `\n**Total Budget (event)**: ${rupiah(context.totalBudget)}\n**Total Actual**: ${rupiah(context.totalActual || 0)}\n**Remaining**: ${rupiah(Math.max((context.totalBudget || 0) - (context.totalActual || 0), 0))}` : "";
+    const eventTable = context?.eventBudgetSummary && context.eventBudgetSummary.length > 0
+        ? `\n| Event | Budget | Actual | Remaining | Status |\n|-------|--------|--------|-----------|--------|\n${context.eventBudgetSummary.map(e => `| ${e.name} | ${rupiah(e.budget)} | ${rupiah(e.actual)} | ${rupiah(e.remaining)} | ${e.status} |`).join("\n")}\n`
+        : "";
     return `
 # MONTHLY REPORT
 **Periode: ${data.period || "TBA"}**
@@ -283,12 +361,19 @@ ${data.executive_summary || "Ringkasan eksekutif belum diisi. Gunakan data Sheet
 
 ## FINANCE
 ${data.finance_notes || "TBA — cek Cash_Harian, Buku_Kas, Laporan_Bulanan, dan setoran saham outstanding."}
+${budgetInfo}
 
 ## EVENT / FRAGRANTIONS
 ${data.event_notes || "TBA — cek tenant, sponsor, invoice/payment status, booth assignment, dan deadline timeline."}
+${eventTable || ""}
 
 ## INVENTORY & PROCUREMENT
 ${data.inventory_notes || "TBA — cek stock minimum, PO terbuka, receiving goods, dan QC."}
+${context?.inventoryRows ? `\nInventory: ${context.inventoryRows} items tracked.` : ""}
+
+## DATA SOURCE
+${financeInfo}
+${commercialInfo}
 
 ## NEXT ACTIONS
 ${data.next_actions || "1. Validasi angka final dengan PIC terkait.\n2. Lampirkan proof URL untuk transaksi material.\n3. Update status follow-up di systemswi."}
