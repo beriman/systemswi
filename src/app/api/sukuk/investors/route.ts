@@ -6,47 +6,40 @@ import { readRange, appendRows } from "@/lib/sheets/sheets-real";
 import { getLocalInvestors, addLocalInvestor } from "@/lib/sheets/sukuk-local-data";
 
 async function getInvestorsFromSheets() {
-  try {
-    const rows = await readRange("SukukStore!A13:O26");
-    if (!rows || rows.length === 0) return null;
-    const dataRows = rows[0]?.[0] === "ID" ? rows.slice(1) : rows;
-    return dataRows
-      .filter((r) => r && r[0])
-      .map((r) => ({
-        id: r[0] || "",
-        nama: r[1] || "",
-        email: r[2] || "",
-        telepon: r[3] || "",
-        alamat: r[4] || "",
-        npwp: r[5] || "",
-        bank: r[6] || "",
-        no_rekening: r[7] || "",
-        saldo_investasi: Number(r[8]) || 0,
-        total_profit: Number(r[9]) || 0,
-        status: r[10] || "aktif",
-        consent: r[11] || "1",
-        tanggal_daftar: r[12] || "",
-        catatan: r[13] || "",
-      }));
-  } catch {
-    return null;
-  }
+  const rows = await readRange("SukukStore!A13:O26");
+  if (!rows || rows.length === 0) return [];
+  const dataRows = rows[0]?.[0] === "ID" ? rows.slice(1) : rows;
+  return dataRows
+    .filter((r) => r && r[0])
+    .map((r) => ({
+      id: r[0] || "",
+      nama: r[1] || "",
+      email: r[2] || "",
+      telepon: r[3] || "",
+      alamat: r[4] || "",
+      npwp: r[5] || "",
+      bank: r[6] || "",
+      no_rekening: r[7] || "",
+      saldo_investasi: Number(r[8]) || 0,
+      total_profit: Number(r[9]) || 0,
+      status: r[10] || "aktif",
+      consent: r[11] || "1",
+      tanggal_daftar: r[12] || "",
+      catatan: r[13] || "",
+    }));
 }
 
 export async function GET() {
   try {
     const sheetData = await getInvestorsFromSheets();
-    if (sheetData && sheetData.length > 0) {
+    if (sheetData.length > 0) {
       return NextResponse.json({ investors: sheetData, source: "sheets" });
     }
-    // Fallback to local data
-    const localData = getLocalInvestors();
-    return NextResponse.json({ investors: localData, source: "local" });
-  } catch (error) {
-    // Final fallback
-    const localData = getLocalInvestors();
-    return NextResponse.json({ investors: localData, source: "local-fallback" });
+  } catch {
+    // Sheets auth failed — fall through to local
   }
+  const localData = getLocalInvestors();
+  return NextResponse.json({ investors: localData, source: "local" });
 }
 
 export async function POST(request: NextRequest) {
