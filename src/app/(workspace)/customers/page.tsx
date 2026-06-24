@@ -284,6 +284,7 @@ export default function CustomersPage() {
           <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-6">
             <Metric title="Total Customer" value={data?.summary.totalCustomers || 0} />
             <Metric title="VIP" value={data?.summary.bySegment?.vip || 0} tone="purple" />
+            <Metric title="Loyal" value={data?.summary.bySegment?.loyal || 0} tone="purple" />
             <Metric title="Regular" value={data?.summary.bySegment?.regular || 0} tone="blue" />
             <Metric title="New" value={data?.summary.bySegment?.new || 0} tone="amber" />
             <Metric title="Total CLV" value={formatCurrency(data?.summary.totalClv || 0)} />
@@ -430,7 +431,7 @@ export default function CustomersPage() {
               <CardContent className="space-y-4">
                 <div className="flex gap-3 flex-wrap">
                   <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Cari nama, WA, minat..." className="max-w-sm" />
-                  <div className="flex gap-1">
+                  <div className="flex gap-1 flex-wrap">
                     {(["all", "vip", "loyal", "regular", "new"] as const).map((s) => (
                       <Button key={s} size="sm" variant={segmentFilter === s ? "default" : "outline"}
                         onClick={() => setSegmentFilter(s)}>

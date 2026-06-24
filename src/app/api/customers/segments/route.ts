@@ -114,6 +114,11 @@ async function getCustomers(): Promise<{ customers: Customer[]; source: string; 
     return { customers: sheetsCustomers, source: "Google Sheets", sourceStatus: "live" };
   } catch (error) {
     if (isGoogleWorkspaceAuthError(error)) {
+      // Last-resort: try SQLite even if empty (might have data on this instance)
+      const sqliteFallback = readCustomersFromSqlite();
+      if (sqliteFallback && sqliteFallback.length > 0) {
+        return { customers: sqliteFallback, source: "SQLite (fallback)", sourceStatus: "live" };
+      }
       return { customers: [], source: "Google Sheets (blocked)", sourceStatus: "degraded" };
     }
     throw error;

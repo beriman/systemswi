@@ -218,6 +218,10 @@ async function readCrm() {
     return { ...sheetsData, sourceStatus: "live" as const, source: "Google Sheets" };
   } catch (error) {
     if (isGoogleWorkspaceAuthError(error)) {
+      const sqliteFallback = readFromSqlite();
+      if (sqliteFallback && (sqliteFallback.customers.length > 0 || sqliteFallback.interactions.length > 0)) {
+        return { ...sqliteFallback, sourceStatus: "live" as const, source: "SQLite (fallback)" };
+      }
       return { customers: [], interactions: [], sourceStatus: "degraded" as const, source: "Google Sheets (blocked)" };
     }
     throw error;
