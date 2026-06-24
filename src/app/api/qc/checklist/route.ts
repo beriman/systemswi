@@ -1,52 +1,71 @@
-// GET /api/qc/checklist — Return QC checklist template
+// GET /api/qc/checklist — Get QC checklist template
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
-const CHECKLIST_TEMPLATE = [
-  {
-    category: "Aroma",
-    items: [
-      { id: "aroma-1", category: "Aroma", item: "Kesesuaian aroma dengan formula", description: "Cocok dengan deskripsi produk dan formula", type: "score", order: 1 },
-      { id: "aroma-2", category: "Aroma", item: "Kekuatan aroma (longevity)", description: "Tahan minimal 4 jam di kulit", type: "score", order: 2 },
-      { id: "aroma-3", category: "Aroma", item: "Tidak ada bau aneh/off-note", description: "Tidak ada bau tengik, metalik, atau tidak wajar", type: "score", order: 3 },
-    ],
+// QC Checklist template — 5 categories, each with items
+const CHECKLIST_TEMPLATE = {
+  categories: [
+    {
+      category: "Aroma",
+      items: [
+        { id: "AR-001", category: "Aroma", item: "Kesesuaian Aroma", description: "Aroma sesuai dengan spec/fragrance profile", type: "score", order: 1 },
+        { id: "AR-002", category: "Aroma", item: "Kekuatan Aroma", description: "Intensity/throw strength sesuai standar", type: "score", order: 2 },
+        { id: "AR-003", category: "Aroma", item: "Stabilitas Aroma", description: "Tidak ada off-note atau perubahan aroma", type: "score", order: 3 },
+        { id: "AR-004", category: "Aroma", item: "Longevity", description: "Durasi aroma sesuai spec (4-8 jam)", type: "score", order: 4 },
+      ],
+    },
+    {
+      category: "Warna",
+      items: [
+        { id: "WN-001", category: "Warna", item: "Konsistensi Warna", description: "Warna cairan sesuai dengan standard color", type: "score", order: 1 },
+        { id: "WN-002", category: "Warna", item: "Kejernihan Visual", description: "Tidak ada partikel mengapung atau endapan", type: "score", order: 2 },
+        { id: "WN-003", category: "Warna", item: "Gradasi Warna", description: "Tidak ada gradasi/pemisahan warna", type: "score", order: 3 },
+      ],
+    },
+    {
+      category: "Kejernihan",
+      items: [
+        { id: "KJ-001", category: "Kejernihan", item: "Visual Clarity", description: "Cairan jernih, tidak keruh", type: "score", order: 1 },
+        { id: "KJ-002", category: "Kejernihan", item: "Partikel Check", description: "Tidak ada partikel asing di bawah lampu UV", type: "score", order: 2 },
+        { id: "KJ-003", category: "Kejernihan", item: "Viskositas", description: "Viskositas sesuai spec (flow rate)", type: "score", order: 3 },
+      ],
+    },
+    {
+      category: "Packaging",
+      items: [
+        { id: "PK-001", category: "Packaging", item: "Botol & Cap", description: "Kualitas botol, cap, dan sprayer berfungsi baik", type: "score", order: 1 },
+        { id: "PK-002", category: "Packaging", item: "Label & Printing", description: "Label rapi, printing jelas, tidak luntur", type: "score", order: 2 },
+        { id: "PK-003", category: "Packaging", item: "Box & Insert", description: "Kotak luar dan insert card rapi", type: "score", order: 3 },
+        { id: "PK-004", category: "Packaging", item: "Batch Code Print", description: "Batch code dan expiry date tercetak jelas", type: "score", order: 4 },
+      ],
+    },
+    {
+      category: "Seal Integrity",
+      items: [
+        { id: "SL-001", category: "Seal Integrity", item: "Cap Seal", description: "Seal cap utuh, tidak ada bukaan", type: "score", order: 1 },
+        { id: "SL-002", category: "Seal Integrity", item: "Sprayer Seal", description: "Tidak ada kebocoran di area sprayer", type: "score", order: 2 },
+        { id: "SL-003", category: "Seal Integrity", item: "Pressure Test", description: "Lekanan sesuai spec (tidak bocor saat ditekan)", type: "score", order: 3 },
+        { id: "SL-004", category: "Seal Integrity", item: "Drop Test", description: "Tidak bocor/jatuh dari ketinggian 1m", type: "score", order: 4 },
+      ],
+    },
+  ],
+  scoring: {
+    min: 1,
+    max: 10,
+    thresholds: {
+      pass: ">= 7.0",
+      conditional: "5.0 — 6.99",
+      fail: "< 5.0",
+    },
   },
-  {
-    category: "Warna",
-    items: [
-      { id: "warna-1", category: "Warna", item: "Konsistensi warna dengan standar", description: "Warna sesuai dengan color chart produk", type: "score", order: 1 },
-      { id: "warna-2", category: "Warna", item: "Tidak ada perubahan warna", description: "Tidak ada oksidasi atau perubahan warna selama produksi", type: "score", order: 2 },
-    ],
-  },
-  {
-    category: "Kejernihan",
-    items: [
-      { id: "kejernihan-1", category: "Kejernihan", item: "Kejernihan cairan", description: "Cairan jernih, tidak ada partikel atau endapan", type: "score", order: 1 },
-      { id: "kejernihan-2", category: "Kejernihan", item: "Tidak ada pemisahan fase", description: "Tidak ada pemisahan minyak dan air", type: "score", order: 2 },
-    ],
-  },
-  {
-    category: "Packaging",
-    items: [
-      { id: "packaging-1", category: "Packaging", item: "Kualitas botol", description: "Botol tidak ada goresan, retak, atau cacat", type: "score", order: 1 },
-      { id: "packaging-2", category: "Packaging", item: "Label benar dan rapi", description: "Label sesuai produk, posisi rapi, tidak mengelupas", type: "score", order: 2 },
-      { id: "packaging-3", category: "Packaging", item: "Kartu dan aksesoris lengkap", description: "Kartu produk, stiker, dan aksesoris lengkap", type: "score", order: 3 },
-    ],
-  },
-  {
-    category: "Seal Integrity",
-    items: [
-      { id: "seal-1", category: "Seal Integrity", item: "Keutuhan seal botol", description: "Seal utuh, tidak ada tanda-tanda buka", type: "score", order: 1 },
-      { id: "seal-2", category: "Seal Integrity", item: "Tidak bocor", description: "Tidak ada kebocoran saat dibalik atau ditekan", type: "score", order: 2 },
-      { id: "seal-3", category: "Seal Integrity", item: "Cap/spray berfungsi baik", description: "Tutup atau sprayer berfungsi dengan baik", type: "score", order: 3 },
-    ],
-  },
-];
+};
 
 export async function GET() {
   return NextResponse.json({
-    categories: CHECKLIST_TEMPLATE,
-    totalItems: CHECKLIST_TEMPLATE.reduce((sum, cat) => sum + cat.items.length, 0),
+    source: "QC Checklist Template",
+    sourceStatus: "live",
+    generatedAt: new Date().toISOString(),
+    ...CHECKLIST_TEMPLATE,
   });
 }
