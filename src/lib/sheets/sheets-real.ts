@@ -2,6 +2,7 @@
 // Adapted from holding-swi for systemswi
 import { google } from "googleapis";
 import fs from "fs";
+import { withCircuitBreaker } from "./circuit-breaker";
 
 export const SPREADSHEET_ID = process.env.GOOGLE_SHEETS_ID || "1lQ_FX6v-aX0XNwkRO6TyYLU1NGq6lAMFvK88S09KZsA";
 const TOKEN_PATH = "/home/ubuntu/.hermes/google_token.json";
@@ -264,19 +265,53 @@ export function invalidateAuth() {
   invalidateReadCache();
 }
 
+// ── Retry config ───────────────────────────────────────────────────
+const SHEETS_MAX_RETRIES = 3;
+const SHEETS_BASE_DELAY_MS = 1000;
+
+async function retryWithBackoff<T>(
+  fn: () => Promise<T>,
+  context: string
+): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= SHEETS_MAX_RETRIES; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+      if (attempt < SHEETS_MAX_RETRIES) {
+        const delay = SHEETS_BASE_DELAY_MS * Math.pow(2, attempt);
+        console.warn(
+          `[Sheets] ${context} failed (attempt ${attempt + 1}/${SHEETS_MAX_RETRIES + 1}), retrying in ${delay}ms:`,
+          error instanceof Error ? error.message : String(error)
+        );
+        await new Promise((r) => setTimeout(r, delay));
+      }
+    }
+  }
+  throw lastError;
+}
+
 // ── Read ──────────────────────────────────────────────────────────
 export async function readRange(range: string): Promise<string[][]> {
   const cacheKey = `range:${range}`;
   const cached = getCachedRows(cacheKey);
   if (cached) return cached;
 
-  const auth = getAuth();
-  const sheets = google.sheets({ version: "v4", auth });
-  const { data } = await sheets.spreadsheets.values.get({
-    spreadsheetId: SPREADSHEET_ID,
-    range,
-  });
-  const rows = data.values || [];
+  const rows = await withCircuitBreaker(
+    "google-sheets-read",
+    () =>
+      retryWithBackoff(async () => {
+        const auth = getAuth();
+        const sheets = google.sheets({ version: "v4", auth });
+        const { data } = await sheets.spreadsheets.values.get({
+          spreadsheetId: SPREADSHEET_ID,
+          range,
+        });
+        return data.values || [];
+      }, `readRange(${range})`)
+  );
+
   setCachedRows(cacheKey, rows);
   return cloneRows(rows);
 }
@@ -319,20 +354,24 @@ export async function readRanges(ranges: string[]): Promise<Record<string, strin
 
 // ── Write ─────────────────────────────────────────────────────────
 export async function writeRange(range: string, values: (string | number)[][]): Promise<void> {
-  const auth = getAuth();
-  const sheets = google.sheets({ version: "v4", auth });
-  await sheets.spreadsheets.values.update({
-    spreadsheetId: SPREADSHEET_ID,
-    range,
-    valueInputOption: "USER_ENTERED",
-    requestBody: { values },
-  });
+  await withCircuitBreaker(
+    "google-sheets-write",
+    () =>
+      retryWithBackoff(async () => {
+        const auth = getAuth();
+        const sheets = google.sheets({ version: "v4", auth });
+        await sheets.spreadsheets.values.update({
+          spreadsheetId: SPREADSHEET_ID,
+          range,
+          valueInputOption: "USER_ENTERED",
+          requestBody: { values },
+        });
+      }, `writeRange(${range})`)
+  );
   invalidateReadCache();
 }
 
 export async function appendRows(sheetName: string, rows: (string | number)[][]): Promise<void> {
-  const auth = getAuth();
-  const sheets = google.sheets({ version: "v4", auth });
   const cfg = SHEETS[sheetName];
   const rangeConfig = cfg?.range || `${sheetName}!A:Z`;
   const rangeMatch = rangeConfig.match(/^(?:([^!]+)!)?([A-Z]+)\d+:([A-Z]+)\d+$/);
@@ -340,12 +379,21 @@ export async function appendRows(sheetName: string, rows: (string | number)[][])
   const appendRange = rangeMatch
     ? `${actualSheetName}!${rangeMatch[2]}:${rangeMatch[3]}`
     : `${actualSheetName}!A:Z`;
-  await sheets.spreadsheets.values.append({
-    spreadsheetId: SPREADSHEET_ID,
-    range: appendRange,
-    valueInputOption: "USER_ENTERED",
-    requestBody: { values: rows },
-  });
+
+  await withCircuitBreaker(
+    "google-sheets-write",
+    () =>
+      retryWithBackoff(async () => {
+        const auth = getAuth();
+        const sheets = google.sheets({ version: "v4", auth });
+        await sheets.spreadsheets.values.append({
+          spreadsheetId: SPREADSHEET_ID,
+          range: appendRange,
+          valueInputOption: "USER_ENTERED",
+          requestBody: { values: rows },
+        });
+      }, `appendRows(${sheetName})`)
+  );
   invalidateReadCache();
 }
 
