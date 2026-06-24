@@ -1,6 +1,7 @@
 // GET /api/buku-kas/rekap — Period rekap (monthly/weekly summary, by category)
 import { NextRequest, NextResponse } from "next/server";
 import { readSheet } from "@/lib/sheets/sheets-real";
+import { googleWorkspaceDegradedSource, isGoogleWorkspaceAuthError } from "@/lib/api/google-workspace-error";
 
 export const runtime = "nodejs";
 
@@ -89,6 +90,9 @@ export async function GET(request: NextRequest) {
       byPeriod: periodMap,
     });
   } catch (error) {
+    if (isGoogleWorkspaceAuthError(error)) {
+      return NextResponse.json(googleWorkspaceDegradedSource(SHEET_NAME, error), { status: 200 });
+    }
     return NextResponse.json(
       { error: "Failed to fetch rekap", details: String(error) },
       { status: 500 }

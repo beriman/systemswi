@@ -2,7 +2,7 @@
 // POST /api/buku-kas — Create new entry
 import { NextRequest, NextResponse } from "next/server";
 import { readSheet, appendRows } from "@/lib/sheets/sheets-real";
-import { googleWorkspaceWriteBlockedSource } from "@/lib/api/google-workspace-error";
+import { googleWorkspaceWriteBlockedSource, googleWorkspaceDegradedSource, isGoogleWorkspaceAuthError } from "@/lib/api/google-workspace-error";
 
 export const runtime = "nodejs";
 
@@ -94,6 +94,9 @@ export async function GET(request: NextRequest) {
       data: results,
     });
   } catch (error) {
+    if (isGoogleWorkspaceAuthError(error)) {
+      return NextResponse.json(googleWorkspaceDegradedSource(SHEET_NAME, error), { status: 200 });
+    }
     return NextResponse.json(
       { error: "Failed to fetch buku kas", details: String(error) },
       { status: 500 }
