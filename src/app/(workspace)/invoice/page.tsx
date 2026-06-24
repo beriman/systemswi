@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { exportElementToPDF, exportContentToPDF } from "@/lib/document/pdf-export";
 
 type LineItem = {
@@ -19,11 +19,17 @@ export default function InvoicePreview() {
   const [items, setItems] = useState<LineItem[]>(INITIAL_ITEMS);
   const [customerName, setCustomerName] = useState("PT Event Organizer Indonesia");
   const [customerAddress, setCustomerAddress] = useState("Jl. Kemang Raya No. 12, Jakarta Selatan");
+  const [customerPhone, setCustomerPhone] = useState("");
+  const [customerEmail, setCustomerEmail] = useState("");
   const [invoiceNumber, setInvoiceNumber] = useState("INV-2026-001");
   const [invoiceDate, setInvoiceDate] = useState("2026-06-14");
   const [dueDate, setDueDate] = useState("2026-06-28");
   const [notes, setNotes] = useState("Pembayaran via transfer ke BRI 201101000546304 a/n SWI HOLDING. Mohon konfirmasi setelah transfer.");
   const [isExporting, setIsExporting] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  const [savedInvoices, setSavedInvoices] = useState<any[]>([]);
+  const [showSaved, setShowSaved] = useState(false);
 
   const subtotal = items.reduce((sum, item) => sum + item.qty * item.unitPrice, 0);
   const tax = Math.round(subtotal * 0.11);
@@ -44,6 +50,54 @@ export default function InvoicePreview() {
   function formatCurrency(amount: number) {
     return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(amount);
   }
+
+  const loadSavedInvoices = useCallback(async () => {
+    try {
+      const res = await fetch("/api/invoice");
+      if (!res.ok) return;
+      const json = await res.json();
+      setSavedInvoices(json.invoices || []);
+    } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => { loadSavedInvoices(); }, [loadSavedInvoices]);
+
+  const handleSaveToSheets = useCallback(async () => {
+    setSaving(true);
+    setSaveMessage(null);
+    try {
+      const res = await fetch("/api/invoice", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          invoiceNumber,
+          invoiceDate,
+          dueDate,
+          customerName,
+          customerAddress,
+          customerEmail,
+          customerPhone,
+          items,
+          subtotal,
+          tax,
+          total,
+          paymentStatus: "draft",
+          notes,
+        }),
+      });
+      const json = await res.json();
+      if (res.ok) {
+        setSaveMessage(`[OK] Invoice tersimpan ke Google Sheets (id: ${json.invoice?.id?.slice(-8) || "ok"}).`);
+        await loadSavedInvoices();
+      } else {
+        setSaveMessage(`[FAIL] Gagal: ${json.error || json.details || "Unknown error"}`);
+      }
+    } catch (err) {
+      setSaveMessage(`[FAIL] Gagal menyimpan: ${String(err)}`);
+    } finally {
+      setSaving(false);
+    }
+  }, [invoiceNumber, invoiceDate, dueDate, customerName, customerAddress, customerEmail, customerPhone, items, subtotal, tax, total, notes, loadSavedInvoices]);
 
   /** Download visual PDF via html2canvas + jsPDF */
   const handleDownloadPDF = useCallback(async () => {
@@ -114,21 +168,38 @@ export default function InvoicePreview() {
           <p className="text-muted-foreground">Invoice profesional untuk penjualan produk SWI. Download PDF atau print langsung.</p>
         </div>
         <div className="flex gap-2 flex-wrap">
-          <button
-            onClick={handleDownloadPDF}
-            disabled={isExporting}
-            className="bg-primary text-primary-foreground px-4 py-2 rounded-md hover:bg-primary/90 text-sm font-medium disabled:opacity-50"
-          >
-            {isExporting ? "⏳ Export..." : "📥 Download PDF (Visual)"}
-          </button>
-          <button
-            onClick={handleDownloadTextPDF}
-            disabled={isExporting}
-            className="bg-secondary text-secondary-foreground px-4 py-2 rounded-md hover:bg-secondary/80 text-sm font-medium disabled:opacity-50"
-          >
-            📄 Download PDF (Text)
-          </button>
+        <button
+          onClick={handleSaveToSheets}
+          disabled={saving}
+          className="bg-emerald-600 text-white px-4 py-2 rounded-md hover:bg-emerald-700 text-sm font-medium disabled:opacity-50"
+        >
+          {saving ? "⏳ Menyimpan..." : "💾 Simpan ke Google Sheets"}
+        </button>
+        <button
+          onClick={handleDownloadPDF}
+          disabled={isExporting}
+          className="bg-primary text-primary-foreground px-4 py-2 rounded-md hover:bg-primary/90 text-sm font-medium disabled:opacity-50"
+        >
+          {isExporting ? "⏳ Export..." : "📥 Download PDF (Visual)"}
+        </button>
+        <button
+          onClick={handleDownloadTextPDF}
+          disabled={isExporting}
+          className="bg-secondary text-secondary-foreground px-4 py-2 rounded-md hover:bg-secondary/80 text-sm font-medium disabled:opacity-50"
+        >
+          📄 Download PDF (Text)
+        </button>
+        <button
+          onClick={() => setShowSaved(!showSaved)}
+          variant="outline"
+          className="bg-muted text-muted-foreground px-4 py-2 rounded-md hover:bg-muted/80 text-sm font-medium"
+        >
+          📋 Tersimpan ({savedInvoices.length})
+        </button>
         </div>
+        {saveMessage && (
+        <p className={`text-sm mt-2 ${saveMessage.startsWith("OK") ? "text-emerald-600" : "text-red-500"}`}>{saveMessage}</p>
+        )}
       </div>
 
       {/* Invoice Paper — printable area */}
@@ -223,6 +294,39 @@ export default function InvoicePreview() {
         </div>
       </div>
 
+      {/* Saved Invoices Table */}
+      {showSaved && savedInvoices.length > 0 && (
+        <div className="max-w-4xl mx-auto space-y-4">
+          <h3 className="text-lg font-semibold">Invoice Tersimpan di Google Sheets</h3>
+          <div className="overflow-x-auto border rounded-lg">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/50">
+                <tr>
+                  <th className="text-left p-2">No. Invoice</th>
+                  <th className="text-left p-2">Customer</th>
+                  <th className="text-left p-2">Tanggal</th>
+                  <th className="text-right p-2">Total</th>
+                  <th className="text-left p-2">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {savedInvoices.map((inv) => (
+                  <tr key={inv.id} className="border-t hover:bg-muted/30">
+                    <td className="p-2 font-mono text-xs">{inv.invoiceNumber}</td>
+                    <td className="p-2">{inv.customerName}</td>
+                    <td className="p-2">{inv.invoiceDate}</td>
+                    <td className="p-2 text-right">{formatCurrency(inv.total)}</td>
+                    <td className="p-2">
+                      <span className={`text-xs px-2 py-0.5 rounded-full ${inv.paymentStatus === "paid" ? "bg-emerald-100 text-emerald-700" : inv.paymentStatus === "overdue" ? "bg-red-100 text-red-700" : "bg-blue-100 text-blue-700"}`}>{inv.paymentStatus}</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {/* Edit Form */}
       <div className="max-w-4xl mx-auto space-y-4">
         <h3 className="text-lg font-semibold">Edit Invoice</h3>
@@ -262,6 +366,24 @@ export default function InvoicePreview() {
               className="w-full border rounded-md px-3 py-2 text-sm bg-background"
             />
           </div>
+        </div>
+
+        <div>
+          <label className="block text-xs text-muted-foreground mb-1">Email Customer</label>
+          <input
+            type="email"
+            value={customerEmail}
+            onChange={(e) => setCustomerEmail(e.target.value)}
+            className="w-full border rounded-md px-3 py-2 text-sm bg-background"
+          />
+        </div>
+        <div>
+          <label className="block text-xs text-muted-foreground mb-1">Telepon Customer</label>
+          <input
+            value={customerPhone}
+            onChange={(e) => setCustomerPhone(e.target.value)}
+            className="w-full border rounded-md px-3 py-2 text-sm bg-background"
+          />
         </div>
 
         <div>
