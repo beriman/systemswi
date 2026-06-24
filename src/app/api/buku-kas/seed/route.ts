@@ -9,31 +9,32 @@ const SHEET_NAME = "BukuKas";
 
 const HEADERS = [
   "EntryId", "Date", "Type", "Category", "Description",
-  "Debit", "Credit", "Saldo",
+  "Debit", "Credit", "Saldo", "Reference", "InputBy", "InputDate",
 ];
 
 // 20 sample transactions for June 2026
-const SEED_DATA: (string | number)[][] = [
-  ["BK-20260601-001", "2026-06-01", "Debit", "Sales", "Penjualan parfum Aroma Vanilla 120 pcs", 2400000, 0, 2400000],
-  ["BK-20260601-002", "2026-06-01", "Debit", "Sales", "Penjualan marketplace Shopee", 1800000, 0, 4200000],
-  ["BK-20260602-001", "2026-06-02", "Kredit", "Purchase", "Pembelian bahan baku alkohol 20L", 0, 3500000, 700000],
-  ["BK-20260602-002", "2026-06-02", "Kredit", "Purchase", "Pembelian kemasan botol 500pcs", 0, 1200000, -500000],
-  ["BK-20260603-001", "2026-06-03", "Debit", "Sales", "Penjualan langsung toko 80 pcs", 1600000, 0, 1100000],
-  ["BK-20260604-001", "2026-06-04", "Kredit", "Operating", "Biaya listrik & air kantor", 0, 850000, 250000],
-  ["BK-20260605-001", "2026-06-05", "Kredit", "Salary", "Gaji karyawan produksi Mei", 0, 8000000, -7750000],
-  ["BK-20260605-002", "2026-06-05", "Kredit", "Salary", "Gaji karyawan admin Mei", 0, 5000000, -12750000],
-  ["BK-20260606-001", "2026-06-06", "Debit", "Sales", "Penjualan parfum Aroma Rose 200 pcs", 3500000, 0, -9250000],
-  ["BK-20260607-001", "2026-06-07", "Kredit", "Transport", "Ongkos kirim ke Jakarta (5 paket)", 0, 750000, -10000000],
-  ["BK-20260608-001", "2026-06-08", "Debit", "Sales", "Penjualan grosir distributor Bandung", 5200000, 0, -4800000],
-  ["BK-20260609-001", "2026-06-09", "Kredit", "Purchase", "Pembelian pewangi essential oil", 0, 2800000, -7600000],
-  ["BK-20260610-001", "2026-06-10", "Debit", "Sales", "Penjualan parfum Aroma Ocean 150 pcs", 2700000, 0, -4900000],
-  ["BK-20260611-001", "2026-06-11", "Kredit", "Operating", "Biaya sewa gudang Juni", 0, 3000000, -7900000],
-  ["BK-20260612-001", "2026-06-12", "Kredit", "Transport", "BBM & toll pengiriman Surabaya", 0, 450000, -8350000],
-  ["BK-20260613-001", "2026-06-13", "Debit", "Sales", "Penjualan event pop-up store", 4100000, 0, -4250000],
-  ["BK-20260614-001", "2026-06-14", "Kredit", "Purchase", "Pembelian bahan baku glycerin 10L", 0, 950000, -5200000],
-  ["BK-20260615-001", "2026-06-15", "Debit", "Sales", "Penjualan online Tokopedia", 2200000, 0, -3000000],
-  ["BK-20260616-001", "2026-06-16", "Kredit", "Operating", "Biaya internet & telepon", 0, 350000, -3350000],
-  ["BK-20260617-001", "2026-06-17", "Debit", "Sales", "Penjualan parfum Aroma Musk 100 pcs", 2000000, 0, -1350000],
+const SEED_DATA = [
+  // [date, type, category, description, debit, credit, reference]
+  ["2026-06-01", "Debit", "Sales", "Penjualan parfum Aura 100ml", 15000000, 0, "INV-001"],
+  ["2026-06-01", "Kredit", "Purchase", "Pembelian bahan baku essential oil", 0, 8500000, "PO-001"],
+  ["2026-06-02", "Debit", "Sales", "Penjualan parfum Zen 50ml", 7500000, 0, "INV-002"],
+  ["2026-06-03", "Kredit", "Operating", "Biaya listrik pabrik", 0, 2500000, "OP-001"],
+  ["2026-06-04", "Kredit", "Salary", "Gaji karyawan produksi", 0, 12000000, "SAL-001"],
+  ["2026-06-05", "Debit", "Sales", "Penjualan parfum Bloom 100ml", 22000000, 0, "INV-003"],
+  ["2026-06-06", "Kredit", "Transport", "Ongkos kirim ke distributor", 0, 1800000, "TR-001"],
+  ["2026-06-07", "Kredit", "Purchase", "Pembelian packaging botol kaca", 0, 5500000, "PO-002"],
+  ["2026-06-08", "Debit", "Sales", "Penjualan parfum Fresh 50ml", 9500000, 0, "INV-004"],
+  ["2026-06-09", "Kredit", "Operating", "Biaya air dan telepon", 0, 1200000, "OP-002"],
+  ["2026-06-10", "Kredit", "Salary", "Gaji karyawan admin", 0, 8000000, "SAL-002"],
+  ["2026-06-11", "Debit", "Sales", "Penjualan parfum Night 100ml", 18500000, 0, "INV-005"],
+  ["2026-06-12", "Kredit", "Purchase", "Pembelian bahan pewangi", 0, 6800000, "PO-003"],
+  ["2026-06-13", "Kredit", "Transport", "Bensi operasional mobil", 0, 750000, "TR-002"],
+  ["2026-06-14", "Debit", "Sales", "Penjualan parfum Day 50ml", 6500000, 0, "INV-006"],
+  ["2026-06-15", "Kredit", "Operating", "Biaya maintenance mesin", 0, 3500000, "OP-003"],
+  ["2026-06-16", "Kredit", "Salary", "Gaji karyawan QC", 0, 6500000, "SAL-003"],
+  ["2026-06-17", "Debit", "Sales", "Penjualan parfum Sport 100ml", 11000000, 0, "INV-007"],
+  ["2026-06-18", "Kredit", "Purchase", "Pembelian bahan alkohol", 0, 4200000, "PO-004"],
+  ["2026-06-19", "Kredit", "Operating", "Biaya izin BPOM", 0, 5000000, "OP-004"],
 ];
 
 export async function POST(request: NextRequest) {
@@ -41,27 +42,48 @@ export async function POST(request: NextRequest) {
     // Check if data already exists
     const raw = await readSheet(SHEET_NAME);
     const hasHeader = raw.length > 0 && raw[0][0] === "EntryId";
-    if (!hasHeader) {
+    const dataRows = hasHeader ? raw.slice(1) : raw;
+    const existingIds = new Set(dataRows.filter((r) => r && r[0]).map((r) => r[0]));
+
+    if (existingIds.size > 0) {
+      return NextResponse.json({
+        source: `Google Sheets: ${SHEET_NAME}`,
+        sourceStatus: "live",
+        message: "Seed skipped — data already exists",
+        seeded: 0,
+        skipped: SEED_DATA.length,
+        existingCount: existingIds.size,
+      });
+    }
+
+    // Ensure header
+    if (raw.length === 0 || raw[0][0] !== "EntryId") {
       await appendRows(SHEET_NAME, [HEADERS]);
     }
 
-    const dataRows = hasHeader ? raw.slice(1) : raw;
-    const existingIds = new Set(
-      dataRows.filter((row) => row && row[0]).map((row) => row[0])
-    );
+    // Build rows with running saldo
+    let runningSaldo = 0;
+    const now = new Date().toISOString().slice(0, 19).replace("T", " ");
+    const rows: (string | number)[][] = [];
 
-    const toAdd = SEED_DATA.filter((row) => !existingIds.has(String(row[0])));
-    if (toAdd.length > 0) {
-      await appendRows(SHEET_NAME, toAdd);
+    for (const [date, type, category, description, debit, credit, reference] of SEED_DATA) {
+      runningSaldo += Number(debit) - Number(credit);
+      const entryId = `BK-SEED-${Date.now()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+      rows.push([
+        entryId, date, type, category, description,
+        debit, credit, runningSaldo, reference, "system", now,
+      ]);
     }
+
+    await appendRows(SHEET_NAME, rows);
 
     return NextResponse.json({
       source: `Google Sheets: ${SHEET_NAME}`,
       sourceStatus: "live",
-      message: `Seed complete: ${toAdd.length} entries added (${SEED_DATA.length - toAdd.length} already existed)`,
-      seeded: toAdd.length,
-      skipped: SEED_DATA.length - toAdd.length,
-      total: SEED_DATA.length,
+      message: "Seed completed successfully",
+      seeded: rows.length,
+      skipped: 0,
+      finalSaldo: runningSaldo,
     });
   } catch (error) {
     return NextResponse.json(

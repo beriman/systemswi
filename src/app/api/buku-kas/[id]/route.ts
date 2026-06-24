@@ -2,7 +2,7 @@
 // PUT /api/buku-kas/[id] — Update entry
 import { NextRequest, NextResponse } from "next/server";
 import { readSheet, updateRow } from "@/lib/sheets/sheets-real";
-import { googleWorkspaceWriteBlockedSource, googleWorkspaceDegradedSource, isGoogleWorkspaceAuthError } from "@/lib/api/google-workspace-error";
+import { googleWorkspaceWriteBlockedSource } from "@/lib/api/google-workspace-error";
 
 export const runtime = "nodejs";
 
@@ -18,6 +18,9 @@ function rowToEntry(row: string[], rowNumber: number) {
     debit: Number(row[5]) || 0,
     credit: Number(row[6]) || 0,
     saldo: Number(row[7]) || 0,
+    reference: row[8] || "",
+    inputBy: row[9] || "",
+    inputDate: row[10] || "",
     rowNumber,
   };
 }
@@ -40,16 +43,13 @@ export async function GET(
       );
     }
 
-    const rowNum = idx + (hasHeader ? 2 : 1);
+    const entry = rowToEntry(dataRows[idx], idx + (hasHeader ? 2 : 1));
     return NextResponse.json({
       source: `Google Sheets: ${SHEET_NAME}`,
       sourceStatus: "live",
-      data: rowToEntry(dataRows[idx], rowNum),
+      data: entry,
     });
   } catch (error) {
-    if (isGoogleWorkspaceAuthError(error)) {
-      return NextResponse.json(googleWorkspaceDegradedSource(SHEET_NAME, error), { status: 200 });
-    }
     return NextResponse.json(
       { error: "Failed to fetch buku kas entry", details: String(error) },
       { status: 500 }
@@ -79,18 +79,18 @@ export async function PUT(
     const rowNum = idx + (hasHeader ? 2 : 1);
     const existing = dataRows[idx];
 
-    const debit = body.debit !== undefined ? Number(body.debit) : Number(existing[5]) || 0;
-    const credit = body.credit !== undefined ? Number(body.credit) : Number(existing[6]) || 0;
-
-    const updatedRow: string[] = [
+    const updatedRow = [
       id,
       body.date ?? existing[1] ?? "",
       body.type ?? existing[2] ?? "",
       body.category ?? existing[3] ?? "",
       body.description ?? existing[4] ?? "",
-      String(debit),
-      String(credit),
-      String(body.saldo !== undefined ? Number(body.saldo) : Number(existing[7]) || 0),
+      body.debit !== undefined ? Number(body.debit) : Number(existing[5]) || 0,
+      body.credit !== undefined ? Number(body.credit) : Number(existing[6]) || 0,
+      body.saldo !== undefined ? Number(body.saldo) : Number(existing[7]) || 0,
+      body.reference ?? existing[8] ?? "",
+      body.inputBy ?? existing[9] ?? "",
+      new Date().toISOString().slice(0, 19).replace("T", " "),
     ];
 
     await updateRow(SHEET_NAME, rowNum, updatedRow);

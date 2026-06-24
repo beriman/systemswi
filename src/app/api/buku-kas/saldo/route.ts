@@ -1,7 +1,6 @@
 // GET /api/buku-kas/saldo — Get current saldo
 import { NextRequest, NextResponse } from "next/server";
 import { readSheet } from "@/lib/sheets/sheets-real";
-import { googleWorkspaceDegradedSource, isGoogleWorkspaceAuthError } from "@/lib/api/google-workspace-error";
 
 export const runtime = "nodejs";
 
@@ -13,39 +12,24 @@ export async function GET(request: NextRequest) {
     const hasHeader = raw.length > 0 && raw[0][0] === "EntryId";
     const dataRows = hasHeader ? raw.slice(1) : raw;
 
-    const entries = dataRows
-      .filter((row) => row && row[0])
-      .map((row) => ({
-        entryId: row[0] || "",
-        date: row[1] || "",
-        type: row[2] || "",
-        debit: Number(row[5]) || 0,
-        credit: Number(row[6]) || 0,
-        saldo: Number(row[7]) || 0,
-      }));
+    const entries = dataRows.filter((row) => row && row[0]);
+    const lastSaldo = entries.length > 0 ? (Number(entries[entries.length - 1][7]) || 0) : 0;
+    const lastEntryDate = entries.length > 0 ? entries[entries.length - 1][1] : null;
 
-    const currentSaldo = entries.length > 0 ? entries[entries.length - 1].saldo : 0;
-    const totalDebit = entries.reduce((s, e) => s + e.debit, 0);
-    const totalCredit = entries.reduce((s, e) => s + e.credit, 0);
-    const lastEntry = entries.length > 0 ? entries[entries.length - 1] : null;
+    const totalDebit = entries.reduce((s, r) => s + (Number(r[5]) || 0), 0);
+    const totalCredit = entries.reduce((s, r) => s + (Number(r[6]) || 0), 0);
 
     return NextResponse.json({
       source: `Google Sheets: ${SHEET_NAME}`,
       sourceStatus: "live",
       generatedAt: new Date().toISOString(),
-      saldo: {
-        current: currentSaldo,
-        totalDebit,
-        totalCredit,
-        entryCount: entries.length,
-        lastEntryDate: lastEntry?.date || null,
-        lastEntryId: lastEntry?.entryId || null,
-      },
+      saldo: lastSaldo,
+      totalDebit,
+      totalCredit,
+      entryCount: entries.length,
+      lastEntryDate,
     });
   } catch (error) {
-    if (isGoogleWorkspaceAuthError(error)) {
-      return NextResponse.json(googleWorkspaceDegradedSource(SHEET_NAME, error), { status: 200 });
-    }
     return NextResponse.json(
       { error: "Failed to fetch saldo", details: String(error) },
       { status: 500 }

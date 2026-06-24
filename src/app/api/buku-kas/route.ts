@@ -2,7 +2,7 @@
 // POST /api/buku-kas — Create new entry
 import { NextRequest, NextResponse } from "next/server";
 import { readSheet, appendRows } from "@/lib/sheets/sheets-real";
-import { googleWorkspaceWriteBlockedSource, googleWorkspaceDegradedSource, isGoogleWorkspaceAuthError } from "@/lib/api/google-workspace-error";
+import { googleWorkspaceWriteBlockedSource } from "@/lib/api/google-workspace-error";
 
 export const runtime = "nodejs";
 
@@ -10,10 +10,10 @@ const SHEET_NAME = "BukuKas";
 
 // Column order:
 // A: EntryId, B: Date, C: Type (Debit/Kredit), D: Category, E: Description,
-// F: Debit, G: Credit, H: Saldo
+// F: Debit, G: Credit, H: Saldo, I: Reference, J: InputBy, K: InputDate
 const HEADERS = [
   "EntryId", "Date", "Type", "Category", "Description",
-  "Debit", "Credit", "Saldo",
+  "Debit", "Credit", "Saldo", "Reference", "InputBy", "InputDate",
 ];
 
 function rowToEntry(row: string[], rowNumber: number) {
@@ -26,6 +26,9 @@ function rowToEntry(row: string[], rowNumber: number) {
     debit: Number(row[5]) || 0,
     credit: Number(row[6]) || 0,
     saldo: Number(row[7]) || 0,
+    reference: row[8] || "",
+    inputBy: row[9] || "",
+    inputDate: row[10] || "",
     rowNumber,
   };
 }
@@ -55,7 +58,9 @@ export async function GET(request: NextRequest) {
       .map((row, i) => rowToEntry(row, i + (hasHeader ? 2 : 1)));
 
     if (type) {
-      results = results.filter((r) => r.type.toLowerCase() === type.toLowerCase());
+      results = results.filter((r) =>
+        r.type.toLowerCase() === type.toLowerCase()
+      );
     }
     if (category) {
       results = results.filter((r) =>
@@ -76,14 +81,16 @@ export async function GET(request: NextRequest) {
       return a.entryId.localeCompare(b.entryId);
     });
 
-    if (limit) {
-      const n = parseInt(limit, 10);
-      if (n > 0) results = results.slice(-n);
-    }
-
     const totalDebit = results.reduce((s, r) => s + r.debit, 0);
     const totalCredit = results.reduce((s, r) => s + r.credit, 0);
     const saldoAkhir = results.length > 0 ? results[results.length - 1].saldo : 0;
+
+    if (limit) {
+      const lim = parseInt(limit, 10);
+      if (!isNaN(lim) && lim > 0) {
+        results = results.slice(-lim);
+      }
+    }
 
     return NextResponse.json({
       source: `Google Sheets: ${SHEET_NAME}`,
@@ -94,9 +101,6 @@ export async function GET(request: NextRequest) {
       data: results,
     });
   } catch (error) {
-    if (isGoogleWorkspaceAuthError(error)) {
-      return NextResponse.json(googleWorkspaceDegradedSource(SHEET_NAME, error), { status: 200 });
-    }
     return NextResponse.json(
       { error: "Failed to fetch buku kas", details: String(error) },
       { status: 500 }
@@ -107,11 +111,11 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { date, type, category, description, amount, reference } = body;
+    const { date, type, category, description, debit, credit, reference, inputBy } = body;
 
-    if (!date || !type || amount === undefined) {
+    if (!date || !type || (debit === undefined && credit === undefined)) {
       return NextResponse.json(
-        { error: "Missing required fields: date, type, amount are required" },
+        { error: "Missing required fields: date, type, and (debit or credit) are required" },
         { status: 400 }
       );
     }
@@ -123,10 +127,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const amt = Number(amount);
-    if (amt < 0) {
+    const debitAmt = Number(debit) || 0;
+    const creditAmt = Number(credit) || 0;
+    if (debitAmt < 0 || creditAmt < 0) {
       return NextResponse.json(
-        { error: "Amount must be non-negative" },
+        { error: "Debit and Credit must be non-negative" },
+        { status: 400 }
+      );
+    }
+    if (debitAmt === 0 && creditAmt === 0) {
+      return NextResponse.json(
+        { error: "Either debit or credit must be greater than 0" },
         { status: 400 }
       );
     }
@@ -139,15 +150,13 @@ export async function POST(request: NextRequest) {
     const dataRows = hasHeader ? raw.slice(1) : raw;
     const existing = dataRows.filter((row) => row && row[0]).map(rowToEntry);
     const lastSaldo = existing.length > 0 ? existing[existing.length - 1].saldo : 0;
-
-    const debit = type === "Debit" ? amt : 0;
-    const credit = type === "Kredit" ? amt : 0;
-    const newSaldo = lastSaldo + debit - credit;
+    const newSaldo = lastSaldo + debitAmt - creditAmt;
 
     const entryId = `BK-${Date.now()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
-    const row: string[] = [
-      entryId, date, type, category || "Lain-lain",
-      description || reference || "", String(debit), String(credit), String(newSaldo),
+    const now = new Date().toISOString().slice(0, 19).replace("T", " ");
+    const row: (string | number)[] = [
+      entryId, date, type, category || "Lain-lain", description || "",
+      debitAmt, creditAmt, newSaldo, reference || "", inputBy || "system", now,
     ];
 
     await appendRows(SHEET_NAME, [row]);
@@ -157,7 +166,7 @@ export async function POST(request: NextRequest) {
         source: `Google Sheets: ${SHEET_NAME}`,
         sourceStatus: "live",
         message: "Buku kas entry created successfully",
-        data: rowToEntry(row, 0),
+        data: rowToEntry(row as string[], 0),
       },
       { status: 201 }
     );
