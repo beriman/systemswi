@@ -1,19 +1,21 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState, useCallback } from "react";
-import { ClipboardCheck, BarChart3, Package, FileText, Plus, RefreshCw } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { useState, useEffect, useCallback, type FormEvent } from "react";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
-type QcResult = {
-  id: string;
+/* ── Types ── */
+
+type QCResult = {
+  resultId: string;
   batchCode: string;
   productionId: string;
   date: string;
@@ -29,7 +31,7 @@ type QcResult = {
   followUpRequired: string;
 };
 
-type QcSummary = {
+type QCSummary = {
   total: number;
   passed: number;
   failed: number;
@@ -38,619 +40,663 @@ type QcSummary = {
 };
 
 type ChecklistCategory = {
-  name: string;
-  description: string;
-  maxScore: number;
+  category: string;
+  items: { id: string; category: string; item: string; description: string; type: string; order: number }[];
 };
 
-type ChecklistTemplate = {
-  title: string;
-  categories: ChecklistCategory[];
-  gradingRules: { pass: string; conditional: string; fail: string };
-};
-
-type BatchInfo = {
+type BatchHistory = {
   batchCode: string;
-  product: string;
-  date: string;
-  qcStatus: string;
-  inspector: string;
+  summary: { total: number; passed: number; failed: number; conditional: number; avgOverall: number; latestStatus: string };
+  data: QCResult[];
 };
 
-const statusBadgeVariant: Record<string, "default" | "secondary" | "destructive" | "outline" | "success" | "warning"> = {
-  Pass: "success",
-  Conditional: "warning",
-  Fail: "destructive",
-};
+/* ── Helpers ── */
 
-const statusLabel: Record<string, string> = {
-  Pass: "✅ Pass",
-  Conditional: "⚠️ Conditional",
-  Fail: "❌ Fail",
-};
+function statusVariant(s: string): "default" | "destructive" | "outline" | "secondary" {
+  const v = s.toLowerCase();
+  if (v === "pass") return "default";
+  if (v === "fail") return "destructive";
+  if (v === "conditional") return "secondary";
+  return "outline";
+}
 
-function ScoreInput({ label, value, onChange, description }: {
-  label: string;
-  value: number;
-  onChange: (v: number) => void;
-  description?: string;
-}) {
+function scoreColor(score: number): string {
+  if (score >= 7) return "text-green-600";
+  if (score >= 5) return "text-amber-600";
+  return "text-red-600";
+}
+
+/* ── KPI Card ── */
+
+function KpiCard({ title, value, note, accent }: { title: string; value: string; note?: string; accent?: string }) {
   return (
-    <div>
-      <Label>{label} <span className="text-muted-foreground text-xs">({description})</span></Label>
-      <div className="flex items-center gap-2 mt-1">
-        <input
-          type="range"
-          min={1}
-          max={10}
-          value={value}
-          onChange={(e) => onChange(Number(e.target.value))}
-          className="flex-1"
-        />
-        <span className="w-8 text-center font-bold text-lg">{value}</span>
-      </div>
-    </div>
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm text-muted-foreground">{title}</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className={`text-2xl font-bold ${accent || ""}`}>{value}</div>
+        {note && <p className="text-xs text-muted-foreground mt-1">{note}</p>}
+      </CardContent>
+    </Card>
   );
 }
 
-export default function QcPage() {
-  const [results, setResults] = useState<QcResult[]>([]);
-  const [summary, setSummary] = useState<QcSummary | null>(null);
-  const [checklist, setChecklist] = useState<ChecklistTemplate | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+/* ── Main Component ── */
+
+export default function QCPage() {
   const [activeTab, setActiveTab] = useState("dashboard");
-  const [filterStatus, setFilterStatus] = useState("");
-  const [filterBatch, setFilterBatch] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // QC Form state
-  const [showQcForm, setShowQcForm] = useState(false);
-  const [batchCode, setBatchCode] = useState("");
-  const [productionId, setProductionId] = useState("");
-  const [inspector, setInspector] = useState("HemuHemu/OWL");
-  const [aromaScore, setAromaScore] = useState(7);
-  const [warnaScore, setWarnaScore] = useState(7);
-  const [kejernihanScore, setKejernihanScore] = useState(7);
-  const [packagingScore, setPackagingScore] = useState(7);
-  const [sealIntegrityScore, setSealIntegrityScore] = useState(7);
-  const [qcNotes, setQcNotes] = useState("");
+  // Data states
+  const [summary, setSummary] = useState<QCSummary | null>(null);
+  const [qcResults, setQcResults] = useState<QCResult[]>([]);
+  const [checklist, setChecklist] = useState<ChecklistCategory[]>([]);
+  const [batchHistory, setBatchHistory] = useState<BatchHistory | null>(null);
 
-  // Batch tracking
+  // Form state
+  const [formBatchCode, setFormBatchCode] = useState("");
+  const [formProductionId, setFormProductionId] = useState("");
+  const [formInspector, setFormInspector] = useState("");
+  const [formDate, setFormDate] = useState(new Date().toISOString().slice(0, 10));
+  const [formScores, setFormScores] = useState({ aroma: 7, warna: 7, kejernihan: 7, packaging: 7, seal: 7 });
+  const [formNotes, setFormNotes] = useState("");
+  const [formFollowUp, setFormFollowUp] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitSuccess, setSubmitSuccess] = useState<string | null>(null);
+
+  // Batch tracking filter
   const [batchSearch, setBatchSearch] = useState("");
-  const [batchHistory, setBatchHistory] = useState<QcResult[] | null>(null);
-  const [batchCodeSearch, setBatchCodeSearch] = useState("");
+  const [batchLoading, setBatchLoading] = useState(false);
 
-  const overallScore = useMemo(() => {
-    const scores = [aromaScore, warnaScore, kejernihanScore, packagingScore, sealIntegrityScore];
-    return Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 100) / 100;
-  }, [aromaScore, warnaScore, kejernihanScore, packagingScore, sealIntegrityScore]);
-
-  const calcStatus = (score: number) => {
-    if (score >= 7) return "Pass";
-    if (score >= 5) return "Conditional";
-    return "Fail";
-  };
-
-  const loadQcData = useCallback(async () => {
+  const loadDashboard = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
-      const params = new URLSearchParams();
-      if (filterBatch) params.set("batch", filterBatch);
-      if (filterStatus) params.set("status", filterStatus);
-      const res = await fetch(`/api/qc?${params}`, { cache: "no-store" });
-      const json = await res.json();
-      setResults(json.results || []);
-      setSummary(json.summary || { total: 0, passed: 0, failed: 0, conditional: 0, passRate: 0 });
-    } catch (error) {
-      setMessage({ type: "error", text: `❌ Gagal load QC data: ${String(error)}` });
+      const [qcRes, clRes] = await Promise.all([
+        fetch("/api/qc", { cache: "no-store" }),
+        fetch("/api/qc/checklist", { cache: "no-store" }),
+      ]);
+
+      if (qcRes.ok) {
+        const qcJson = await qcRes.json();
+        setSummary(qcJson.summary || null);
+        setQcResults(qcJson.data || []);
+      }
+      if (clRes.ok) {
+        const clJson = await clRes.json();
+        setChecklist(clJson.categories || []);
+      }
+    } catch (err) {
+      setError(String(err));
     } finally {
       setLoading(false);
-    }
-  }, [filterBatch, filterStatus]);
-
-  const loadChecklist = useCallback(async () => {
-    try {
-      const res = await fetch("/api/qc/checklist", { cache: "no-store" });
-      const json = await res.json();
-      setChecklist(json.template || null);
-    } catch {
-      // ignore
     }
   }, []);
 
   useEffect(() => {
-    loadQcData();
-    loadChecklist();
-  }, [loadQcData, loadChecklist]);
+    loadDashboard();
+  }, [loadDashboard]);
 
-  // Build batch tracking data from results
-  const batchTracking = useMemo(() => {
-    const batchMap = new Map<string, BatchInfo>();
-    results.forEach((r) => {
-      if (!batchMap.has(r.batchCode) || r.date > batchMap.get(r.batchCode)!.date) {
-        batchMap.set(r.batchCode, {
-          batchCode: r.batchCode,
-          product: r.productionId || "—",
-          date: r.date,
-          qcStatus: r.status,
-          inspector: r.inspector,
-        });
-      }
-    });
-    return Array.from(batchMap.values()).filter((b) => {
-      if (batchSearch) {
-        return b.batchCode.toLowerCase().includes(batchSearch.toLowerCase()) ||
-          b.product.toLowerCase().includes(batchSearch.toLowerCase());
-      }
-      return true;
-    });
-  }, [results, batchSearch]);
+  // Auto-calculate overall
+  const overallScore = Math.round(
+    ((formScores.aroma + formScores.warna + formScores.kejernihan + formScores.packaging + formScores.seal) / 5) * 100
+  ) / 100;
+  const overallStatus = overallScore >= 7 ? "Pass" : overallScore >= 5 ? "Conditional" : "Fail";
 
-  async function handleSubmitQc(e: FormEvent) {
+  // Submit QC form
+  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    setSaving(true);
-    setMessage(null);
+    if (!formBatchCode) {
+      setError("Batch Code wajib diisi");
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    setSubmitSuccess(null);
     try {
       const res = await fetch("/api/qc", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          action: "submit-qc",
-          batchCode,
-          productionId,
-          inspector,
-          aromaScore,
-          warnaScore,
-          kejernihanScore,
-          packagingScore,
-          sealIntegrityScore,
-          notes: qcNotes,
+          batchCode: formBatchCode,
+          productionId: formProductionId,
+          inspector: formInspector,
+          date: formDate,
+          aromaScore: formScores.aroma,
+          warnaScore: formScores.warna,
+          kejernihanScore: formScores.kejernihan,
+          packagingScore: formScores.packaging,
+          sealIntegrityScore: formScores.seal,
+          notes: formNotes,
+          followUpRequired: formFollowUp,
         }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Gagal submit QC");
-      setMessage({ type: "success", text: `✅ QC submitted: ${json.result?.id} — Overall: ${json.result?.overallScore} (${json.result?.status})` });
-      setShowQcForm(false);
+      setSubmitSuccess(`QC ${json.data?.resultId || ""} berhasil disubmit — Status: ${json.data?.status || overallStatus}`);
       // Reset form
-      setBatchCode("");
-      setProductionId("");
-      setAromaScore(7);
-      setWarnaScore(7);
-      setKejernihanScore(7);
-      setPackagingScore(7);
-      setSealIntegrityScore(7);
-      setQcNotes("");
-      await loadQcData();
-    } catch (error) {
-      setMessage({ type: "error", text: `❌ ${String(error)}` });
+      setFormBatchCode("");
+      setFormProductionId("");
+      setFormNotes("");
+      setFormFollowUp(false);
+      setFormScores({ aroma: 7, warna: 7, kejernihan: 7, packaging: 7, seal: 7 });
+      await loadDashboard();
+    } catch (err) {
+      setError(String(err));
     } finally {
-      setSaving(false);
+      setSubmitting(false);
     }
   }
 
-  async function handleSeed() {
-    setSaving(true);
-    setMessage(null);
-    try {
-      const res = await fetch("/api/qc", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "seed" }),
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Gagal seed data");
-      setMessage({ type: "success", text: `✅ Seeded ${json.seeded} QC results` });
-      await loadQcData();
-    } catch (error) {
-      setMessage({ type: "error", text: `❌ ${String(error)}` });
-    } finally {
-      setSaving(false);
-    }
-  }
-
+  // Load batch history
   async function loadBatchHistory(code: string) {
-    setBatchCodeSearch(code);
+    if (!code) return;
+    setBatchLoading(true);
+    setError(null);
     try {
       const res = await fetch(`/api/qc/batch/${encodeURIComponent(code)}`, { cache: "no-store" });
+      if (!res.ok) throw new Error("Gagal load batch history");
       const json = await res.json();
-      setBatchHistory(json.results || []);
-    } catch {
-      setBatchHistory([]);
+      setBatchHistory(json);
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setBatchLoading(false);
     }
+  }
+
+  // Seed data handler
+  async function handleSeed() {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/qc/seed", { method: "POST" });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Gagal seed data");
+      setSubmitSuccess(`Seed: ${json.seeded || 0} data ditambahkan (${json.skipped || 0} sudah ada)`);
+      await loadDashboard();
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // Print report
+  function handlePrint() {
+    window.print();
   }
 
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <ClipboardCheck className="h-7 w-7" />
-            Quality Control
-          </h1>
-          <p className="text-muted-foreground">Sistem quality control untuk produksi parfum</p>
+          <h2 className="text-2xl font-bold">🔬 QC — Quality Control</h2>
+          <p className="text-muted-foreground">
+            Sistem quality control produksi parfum: checklist, tracking, dan reporting.
+          </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={loadQcData} disabled={loading}>
-            <RefreshCw className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`} />
-            Refresh
-          </Button>
-          <Button variant="outline" onClick={handleSeed} disabled={saving}>
+          <Button onClick={handleSeed} variant="outline" disabled={loading}>
             🌱 Seed Data
           </Button>
-          <Dialog open={showQcForm} onOpenChange={setShowQcForm}>
-            <DialogTrigger asChild>
-              <Button>
-                <Plus className="h-4 w-4 mr-2" />
-                New QC Check
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-              <DialogHeader>
-                <DialogTitle>QC Checklist — New Inspection</DialogTitle>
-                <DialogDescription>Isi skor untuk setiap parameter QC (1-10)</DialogDescription>
-              </DialogHeader>
-              <form onSubmit={handleSubmitQc} className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="qc-batch">Batch Code</Label>
-                    <Input id="qc-batch" value={batchCode} onChange={(e) => setBatchCode(e.target.value)} required placeholder="BATCH-001" />
-                  </div>
-                  <div>
-                    <Label htmlFor="qc-prod">Production ID</Label>
-                    <Input id="qc-prod" value={productionId} onChange={(e) => setProductionId(e.target.value)} placeholder="PROD-001" />
-                  </div>
-                </div>
-                <div>
-                  <Label htmlFor="qc-inspector">Inspector</Label>
-                  <Input id="qc-inspector" value={inspector} onChange={(e) => setInspector(e.target.value)} />
-                </div>
-
-                <div className="space-y-3 border rounded-lg p-4">
-                  <h3 className="font-semibold text-sm">QC Scores (1-10)</h3>
-                  <ScoreInput label="Aroma" value={aromaScore} onChange={setAromaScore} description="Kesesuaian aroma" />
-                  <ScoreInput label="Warna" value={warnaScore} onChange={setWarnaScore} description="Konsistensi warna" />
-                  <ScoreInput label="Kejernihan" value={kejernihanScore} onChange={setKejernihanScore} description="Kejernihan cairan" />
-                  <ScoreInput label="Packaging" value={packagingScore} onChange={setPackagingScore} description="Kualitas packaging" />
-                  <ScoreInput label="Seal Integrity" value={sealIntegrityScore} onChange={setSealIntegrityScore} description="Kekedapan segel" />
-                </div>
-
-                <div className="bg-muted rounded-lg p-3 flex items-center justify-between">
-                  <div>
-                    <span className="text-sm text-muted-foreground">Overall Score</span>
-                    <p className="text-2xl font-bold">{overallScore}</p>
-                  </div>
-                  <Badge variant={statusBadgeVariant[calcStatus(overallScore)]} className="text-lg px-4 py-1">
-                    {calcStatus(overallScore)}
-                  </Badge>
-                </div>
-
-                <div>
-                  <Label htmlFor="qc-notes">Notes</Label>
-                  <Textarea id="qc-notes" value={qcNotes} onChange={(e) => setQcNotes(e.target.value)} rows={2} placeholder="Catatan tambahan..." />
-                </div>
-
-                <DialogFooter>
-                  <Button type="button" variant="outline" onClick={() => setShowQcForm(false)}>Batal</Button>
-                  <Button type="submit" disabled={saving}>
-                    {saving ? "Menyimpan..." : "Submit QC"}
-                  </Button>
-                </DialogFooter>
-              </form>
-            </DialogContent>
-          </Dialog>
+          <Button onClick={loadDashboard} disabled={loading} variant="outline">
+            {loading ? "Memuat..." : "↻ Refresh"}
+          </Button>
         </div>
       </div>
 
-      {/* Message */}
-      {message && (
-        <div className={`p-3 rounded-lg text-sm ${message.type === "success" ? "bg-green-50 text-green-800 border border-green-200" : "bg-red-50 text-red-800 border border-red-200"}`}>
-          {message.text}
-        </div>
+      {error && (
+        <Card className="border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/30">
+          <CardContent className="py-4 text-red-700 dark:text-red-300 text-sm">{error}</CardContent>
+        </Card>
+      )}
+
+      {submitSuccess && (
+        <Card className="border-green-200 bg-green-50 dark:border-green-900 dark:bg-green-950/30">
+          <CardContent className="py-4 text-green-700 dark:text-green-300 text-sm">{submitSuccess}</CardContent>
+        </Card>
       )}
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-4">
-          <TabsTrigger value="dashboard"><BarChart3 className="h-4 w-4 mr-2" />Dashboard</TabsTrigger>
-          <TabsTrigger value="checklist"><ClipboardCheck className="h-4 w-4 mr-2" />QC Checklist</TabsTrigger>
-          <TabsTrigger value="tracking"><Package className="h-4 w-4 mr-2" />Batch Tracking</TabsTrigger>
-          <TabsTrigger value="reports"><FileText className="h-4 w-4 mr-2" />QC Reports</TabsTrigger>
+        <TabsList className="grid w-full grid-cols-4 lg:w-auto">
+          <TabsTrigger value="dashboard">📊 Dashboard</TabsTrigger>
+          <TabsTrigger value="checklist">✅ QC Checklist</TabsTrigger>
+          <TabsTrigger value="tracking">📦 Batch Tracking</TabsTrigger>
+          <TabsTrigger value="reports">📋 QC Reports</TabsTrigger>
         </TabsList>
 
-        {/* Tab 1: Dashboard */}
-        <TabsContent value="dashboard" className="space-y-4">
-          {summary && (
-            <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-              <Card>
-                <CardContent className="pt-6">
-                  <p className="text-sm text-muted-foreground">Total QC</p>
-                  <p className="text-3xl font-bold">{summary.total}</p>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="pt-6">
-                  <p className="text-sm text-muted-foreground">Pass Rate</p>
-                  <p className="text-3xl font-bold text-green-600">{summary.passRate}%</p>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="pt-6">
-                  <p className="text-sm text-muted-foreground">Passed</p>
-                  <p className="text-3xl font-bold text-green-600">{summary.passed}</p>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="pt-6">
-                  <p className="text-sm text-muted-foreground">Conditional</p>
-                  <p className="text-3xl font-bold text-yellow-600">{summary.conditional}</p>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="pt-6">
-                  <p className="text-sm text-muted-foreground">Failed</p>
-                  <p className="text-3xl font-bold text-red-600">{summary.failed}</p>
-                </CardContent>
-              </Card>
-            </div>
-          )}
+        {/* ── Dashboard Tab ── */}
+        <TabsContent value="dashboard" className="space-y-4 mt-4">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <KpiCard
+              title="Total QC"
+              value={loading ? "..." : String(summary?.total || 0)}
+              note="semua batch"
+            />
+            <KpiCard
+              title="Pass Rate"
+              value={loading ? "..." : `${summary?.passRate || 0}%`}
+              note={`${summary?.passed || 0} passed`}
+              accent="text-green-600"
+            />
+            <KpiCard
+              title="Fail Count"
+              value={loading ? "..." : String(summary?.failed || 0)}
+              note="perlu follow-up"
+              accent={summary && summary.failed > 0 ? "text-red-600" : ""}
+            />
+            <KpiCard
+              title="Conditional"
+              value={loading ? "..." : String(summary?.conditional || 0)}
+              note="review required"
+              accent={summary && summary.conditional > 0 ? "text-amber-600" : ""}
+            />
+          </div>
 
+          {/* Recent QC Results */}
           <Card>
             <CardHeader>
               <CardTitle>Recent QC Results</CardTitle>
+              <CardDescription>Hasil QC terbaru</CardDescription>
             </CardHeader>
             <CardContent>
               {loading ? (
-                <p className="text-muted-foreground">Loading...</p>
-              ) : results.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  <p>Belum ada QC results. Klik "Seed Data" untuk menambahkan data awal.</p>
-                </div>
+                <Skeleton className="h-32 w-full" />
+              ) : qcResults.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-8">Belum ada data QC — klik Seed Data untuk mengisi sample</p>
               ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>ID</TableHead>
-                      <TableHead>Batch</TableHead>
-                      <TableHead>Date</TableHead>
-                      <TableHead>Inspector</TableHead>
-                      <TableHead className="text-center">Aroma</TableHead>
-                      <TableHead className="text-center">Warna</TableHead>
-                      <TableHead className="text-center">Jernih</TableHead>
-                      <TableHead className="text-center">Package</TableHead>
-                      <TableHead className="text-center">Seal</TableHead>
-                      <TableHead className="text-center">Overall</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Follow-up</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {results.slice(-10).reverse().map((r) => (
-                      <TableRow key={r.id}>
-                        <TableCell className="font-mono text-xs">{r.id}</TableCell>
-                        <TableCell className="font-medium">{r.batchCode}</TableCell>
-                        <TableCell>{r.date}</TableCell>
-                        <TableCell>{r.inspector}</TableCell>
-                        <TableCell className="text-center">{r.aromaScore}</TableCell>
-                        <TableCell className="text-center">{r.warnaScore}</TableCell>
-                        <TableCell className="text-center">{r.kejernihanScore}</TableCell>
-                        <TableCell className="text-center">{r.packagingScore}</TableCell>
-                        <TableCell className="text-center">{r.sealIntegrityScore}</TableCell>
-                        <TableCell className="text-center font-bold">{r.overallScore}</TableCell>
-                        <TableCell>
-                          <Badge variant={statusBadgeVariant[r.status] || "default"}>
-                            {statusLabel[r.status] || r.status}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>{r.followUpRequired === "Yes" ? "⚠️ Yes" : "—"}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Tab 2: QC Checklist */}
-        <TabsContent value="checklist" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>QC Checklist Template</CardTitle>
-              <CardDescription>Parameter evaluasi quality control untuk produksi parfum</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {checklist ? (
-                <div className="space-y-4">
-                  <div className="bg-muted rounded-lg p-4">
-                    <h3 className="font-semibold mb-2">{checklist.title}</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-sm">
-                      <div className="bg-green-100 text-green-800 rounded px-3 py-1">
-                        <strong>Pass:</strong> {checklist.gradingRules.pass}
-                      </div>
-                      <div className="bg-yellow-100 text-yellow-800 rounded px-3 py-1">
-                        <strong>Conditional:</strong> {checklist.gradingRules.conditional}
-                      </div>
-                      <div className="bg-red-100 text-red-800 rounded px-3 py-1">
-                        <strong>Fail:</strong> {checklist.gradingRules.fail}
-                      </div>
-                    </div>
-                  </div>
-
+                <div className="overflow-x-auto">
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Parameter</TableHead>
-                        <TableHead>Deskripsi</TableHead>
-                        <TableHead className="text-center">Max Score</TableHead>
+                        <TableHead>Result ID</TableHead>
+                        <TableHead>Batch Code</TableHead>
+                        <TableHead>Date</TableHead>
+                        <TableHead>Inspector</TableHead>
+                        <TableHead className="text-right">Overall</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Follow-up</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {checklist.categories.map((cat) => (
-                        <TableRow key={cat.name}>
-                          <TableCell className="font-medium">{cat.name}</TableCell>
-                          <TableCell className="text-sm text-muted-foreground">{cat.description}</TableCell>
-                          <TableCell className="text-center">{cat.maxScore}</TableCell>
+                      {qcResults.slice(0, 10).map((r) => (
+                        <TableRow key={r.resultId}>
+                          <TableCell className="font-mono text-xs">{r.resultId}</TableCell>
+                          <TableCell className="font-mono text-xs">{r.batchCode}</TableCell>
+                          <TableCell>{r.date}</TableCell>
+                          <TableCell>{r.inspector}</TableCell>
+                          <TableCell className={`text-right font-semibold ${scoreColor(r.overallScore)}`}>
+                            {r.overallScore.toFixed(1)}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant={statusVariant(r.status)}>{r.status}</Badge>
+                          </TableCell>
+                          <TableCell>{r.followUpRequired === "Yes" ? "⚠️ Yes" : "No"}</TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
                   </Table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-                  <div className="flex justify-end">
-                    <Button onClick={() => setShowQcForm(true)}>
-                      <Plus className="h-4 w-4 mr-2" />
-                      New QC Inspection
-                    </Button>
+        {/* ── QC Checklist Tab ── */}
+        <TabsContent value="checklist" className="space-y-4 mt-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>QC Checklist Form</CardTitle>
+              <CardDescription>Form quality control — isi skor 1-10 per kategori</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={handleSubmit} className="space-y-6">
+                {/* Batch info */}
+                <div className="grid gap-4 md:grid-cols-3">
+                  <div>
+                    <Label className="mb-1 block text-xs text-muted-foreground">Batch Code *</Label>
+                    <Input
+                      value={formBatchCode}
+                      onChange={(e) => setFormBatchCode(e.target.value)}
+                      placeholder="BATCH-2026-06-01-AB100"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <Label className="mb-1 block text-xs text-muted-foreground">Production ID</Label>
+                    <Input
+                      value={formProductionId}
+                      onChange={(e) => setFormProductionId(e.target.value)}
+                      placeholder="PROD-2026-001"
+                    />
+                  </div>
+                  <div>
+                    <Label className="mb-1 block text-xs text-muted-foreground">Inspector</Label>
+                    <Input
+                      value={formInspector}
+                      onChange={(e) => setFormInspector(e.target.value)}
+                      placeholder="Nama inspector"
+                    />
                   </div>
                 </div>
-              ) : (
-                <p className="text-muted-foreground">Loading checklist template...</p>
-              )}
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <Label className="mb-1 block text-xs text-muted-foreground">Tanggal QC</Label>
+                    <Input
+                      type="date"
+                      value={formDate}
+                      onChange={(e) => setFormDate(e.target.value)}
+                    />
+                  </div>
+                  <div className="flex items-end">
+                    <div className="text-sm">
+                      <span className="text-muted-foreground">Overall Score: </span>
+                      <span className={`text-lg font-bold ${scoreColor(overallScore)}`}>
+                        {overallScore.toFixed(1)}
+                      </span>
+                      <span className="ml-2">
+                        <Badge variant={statusVariant(overallStatus)}>{overallStatus}</Badge>
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Score inputs per category */}
+                <div className="space-y-4">
+                  <h4 className="font-semibold text-sm">Scores (1-10)</h4>
+                  {[
+                    { key: "aroma" as const, label: "🌸 Aroma Score", desc: "Kesesuaian & kekuatan aroma" },
+                    { key: "warna" as const, label: "🎨 Warna Score", desc: "Konsistensi warna & kejernihan visual" },
+                    { key: "kejernihan" as const, label: "💧 Kejernihan Score", desc: "Kejernihan cairan, tidak ada partikel" },
+                    { key: "packaging" as const, label: "📦 Packaging Score", desc: "Kualitas botol, label, kartu" },
+                    { key: "seal" as const, label: "🔒 Seal Integrity Score", desc: "Keutuhan seal & tidak bocor" },
+                  ].map(({ key, label, desc }) => (
+                    <div key={key} className="flex items-center gap-4">
+                      <div className="w-48">
+                        <Label className="text-sm font-medium">{label}</Label>
+                        <p className="text-xs text-muted-foreground">{desc}</p>
+                      </div>
+                      <div className="flex gap-1">
+                        {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
+                          <button
+                            key={n}
+                            type="button"
+                            onClick={() => setFormScores((prev) => ({ ...prev, [key]: n }))}
+                            className={`w-8 h-8 rounded text-xs font-medium transition-colors ${
+                              formScores[key] === n
+                                ? "bg-primary text-primary-foreground"
+                                : "bg-muted hover:bg-accent"
+                            }`}
+                          >
+                            {n}
+                          </button>
+                        ))}
+                      </div>
+                      <span className={`text-sm font-bold ${scoreColor(formScores[key])}`}>
+                        {formScores[key]}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Notes */}
+                <div>
+                  <Label className="mb-1 block text-xs text-muted-foreground">Notes</Label>
+                  <Textarea
+                    value={formNotes}
+                    onChange={(e) => setFormNotes(e.target.value)}
+                    rows={3}
+                    placeholder="Catatan tambahan, temuan, rekomendasi..."
+                  />
+                </div>
+
+                {/* Follow-up */}
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="followUp"
+                    checked={formFollowUp}
+                    onChange={(e) => setFormFollowUp(e.target.checked)}
+                    className="rounded"
+                  />
+                  <Label htmlFor="followUp" className="text-sm">Follow-up Required</Label>
+                </div>
+
+                <Button type="submit" disabled={submitting} className="w-full">
+                  {submitting ? "Menyimpan..." : "🔬 Submit QC Result"}
+                </Button>
+              </form>
             </CardContent>
           </Card>
+
+          {/* Checklist Template Reference */}
+          {checklist.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle>QC Checklist Template</CardTitle>
+                <CardDescription>Referensi item QC per kategori</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                  {checklist.map((cat) => (
+                    <div key={cat.category} className="space-y-2">
+                      <h4 className="font-semibold text-sm">{cat.category}</h4>
+                      <ul className="space-y-1">
+                        {cat.items.map((item) => (
+                          <li key={item.id} className="text-xs text-muted-foreground">
+                            • {item.item}: {item.description}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
 
-        {/* Tab 3: Batch Tracking */}
-        <TabsContent value="tracking" className="space-y-4">
+        {/* ── Batch Tracking Tab ── */}
+        <TabsContent value="tracking" className="space-y-4 mt-4">
           <Card>
             <CardHeader>
-              <CardTitle>Batch Tracking</CardTitle>
-              <CardDescription>Status QC per batch produksi</CardDescription>
+              <CardTitle>Batch QC Tracking</CardTitle>
+              <CardDescription>Cari riwayat QC per batch code</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="flex gap-2 mb-4">
                 <Input
-                  placeholder="Cari batch atau produk..."
                   value={batchSearch}
                   onChange={(e) => setBatchSearch(e.target.value)}
-                  className="max-w-sm"
-                />
-              </div>
-              {batchTracking.length === 0 ? (
-                <p className="text-muted-foreground text-center py-8">Tidak ada batch data. Seed data terlebih dahulu.</p>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Batch Code</TableHead>
-                      <TableHead>Product</TableHead>
-                      <TableHead>Date</TableHead>
-                      <TableHead>QC Status</TableHead>
-                      <TableHead>Inspector</TableHead>
-                      <TableHead>Action</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {batchTracking.map((b) => (
-                      <TableRow key={b.batchCode}>
-                        <TableCell className="font-medium font-mono">{b.batchCode}</TableCell>
-                        <TableCell>{b.product}</TableCell>
-                        <TableCell>{b.date}</TableCell>
-                        <TableCell>
-                          <Badge variant={statusBadgeVariant[b.qcStatus] || "default"}>
-                            {statusLabel[b.qcStatus] || b.qcStatus}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>{b.inspector}</TableCell>
-                        <TableCell>
-                          <Button variant="outline" size="sm" onClick={() => {
-                            loadBatchHistory(b.batchCode);
-                            setActiveTab("reports");
-                          }}>
-                            View History
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Tab 4: QC Reports */}
-        <TabsContent value="reports" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>QC Reports — Batch History</CardTitle>
-              <CardDescription>Detail QC per batch dan historical trend</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="flex gap-2 mb-4">
-                <Input
                   placeholder="Masukkan batch code..."
-                  value={batchCodeSearch}
-                  onChange={(e) => setBatchCodeSearch(e.target.value)}
                   className="max-w-sm"
                 />
-                <Button variant="outline" onClick={() => batchCodeSearch && loadBatchHistory(batchCodeSearch)}>
-                  Search
+                <Button onClick={() => loadBatchHistory(batchSearch)} disabled={batchLoading}>
+                  {batchLoading ? "Mencari..." : "🔍 Cari"}
                 </Button>
               </div>
 
-              {batchHistory === null ? (
-                <p className="text-muted-foreground text-center py-8">Masukkan batch code untuk melihat history QC.</p>
-              ) : batchHistory.length === 0 ? (
-                <p className="text-muted-foreground text-center py-8">Tidak ada QC history untuk batch ini.</p>
-              ) : (
+              {batchHistory && (
                 <div className="space-y-4">
-                  <div className="bg-muted rounded-lg p-4">
-                    <h3 className="font-semibold">Batch: {batchHistory[0]?.batchCode}</h3>
-                    <p className="text-sm text-muted-foreground">
-                      Total Inspections: {batchHistory.length} | Latest Status: {batchHistory[batchHistory.length - 1]?.status} | Latest Overall: {batchHistory[batchHistory.length - 1]?.overallScore}
-                    </p>
+                  {/* Batch summary */}
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                    <KpiCard title="Batch" value={batchHistory.batchCode} />
+                    <KpiCard title="Total QC" value={String(batchHistory.summary.total)} />
+                    <KpiCard
+                      title="Latest Status"
+                      value={batchHistory.summary.latestStatus}
+                      accent={
+                        batchHistory.summary.latestStatus === "Pass"
+                          ? "text-green-600"
+                          : batchHistory.summary.latestStatus === "Fail"
+                          ? "text-red-600"
+                          : "text-amber-600"
+                      }
+                    />
+                    <KpiCard
+                      title="Avg Overall"
+                      value={batchHistory.summary.avgOverall.toFixed(1)}
+                      accent={scoreColor(batchHistory.summary.avgOverall)}
+                    />
                   </div>
 
+                  {/* QC history table */}
+                  {batchHistory.data.length > 0 ? (
+                    <div className="overflow-x-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Result ID</TableHead>
+                            <TableHead>Date</TableHead>
+                            <TableHead>Inspector</TableHead>
+                            <TableHead className="text-right">Aroma</TableHead>
+                            <TableHead className="text-right">Warna</TableHead>
+                            <TableHead className="text-right">Kejernihan</TableHead>
+                            <TableHead className="text-right">Packaging</TableHead>
+                            <TableHead className="text-right">Seal</TableHead>
+                            <TableHead className="text-right">Overall</TableHead>
+                            <TableHead>Status</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {batchHistory.data.map((r) => (
+                            <TableRow key={r.resultId}>
+                              <TableCell className="font-mono text-xs">{r.resultId}</TableCell>
+                              <TableCell>{r.date}</TableCell>
+                              <TableCell>{r.inspector}</TableCell>
+                              <TableCell className="text-right">{r.aromaScore}</TableCell>
+                              <TableCell className="text-right">{r.warnaScore}</TableCell>
+                              <TableCell className="text-right">{r.kejernihanScore}</TableCell>
+                              <TableCell className="text-right">{r.packagingScore}</TableCell>
+                              <TableCell className="text-right">{r.sealIntegrityScore}</TableCell>
+                              <TableCell className={`text-right font-semibold ${scoreColor(r.overallScore)}`}>
+                                {r.overallScore.toFixed(1)}
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant={statusVariant(r.status)}>{r.status}</Badge>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground text-center py-4">Tidak ada riwayat QC untuk batch ini</p>
+                  )}
+                </div>
+              )}
+
+              {!batchHistory && (
+                <p className="text-sm text-muted-foreground text-center py-8">Masukkan batch code untuk melihat riwayat QC</p>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* ── QC Reports Tab ── */}
+        <TabsContent value="reports" className="space-y-4 mt-4">
+          <div className="flex justify-end">
+            <Button onClick={handlePrint} variant="outline">🖨️ Print Report</Button>
+          </div>
+
+          {/* All QC Results Report */}
+          <Card>
+            <CardHeader>
+              <CardTitle>QC Report — All Results</CardTitle>
+              <CardDescription>Laporan lengkap semua hasil quality control</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {loading ? (
+                <Skeleton className="h-64 w-full" />
+              ) : qcResults.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-8">Belum ada data QC</p>
+              ) : (
+                <div className="overflow-x-auto">
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>QC ID</TableHead>
+                        <TableHead>Result ID</TableHead>
+                        <TableHead>Batch Code</TableHead>
+                        <TableHead>Production ID</TableHead>
                         <TableHead>Date</TableHead>
                         <TableHead>Inspector</TableHead>
-                        <TableHead className="text-center">Aroma</TableHead>
-                        <TableHead className="text-center">Warna</TableHead>
-                        <TableHead className="text-center">Jernih</TableHead>
-                        <TableHead className="text-center">Package</TableHead>
-                        <TableHead className="text-center">Seal</TableHead>
-                        <TableHead className="text-center">Overall</TableHead>
+                        <TableHead className="text-right">Aroma</TableHead>
+                        <TableHead className="text-right">Warna</TableHead>
+                        <TableHead className="text-right">Kejernihan</TableHead>
+                        <TableHead className="text-right">Packaging</TableHead>
+                        <TableHead className="text-right">Seal</TableHead>
+                        <TableHead className="text-right">Overall</TableHead>
                         <TableHead>Status</TableHead>
                         <TableHead>Notes</TableHead>
+                        <TableHead>Follow-up</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {batchHistory.map((r) => (
-                        <TableRow key={r.id}>
-                          <TableCell className="font-mono text-xs">{r.id}</TableCell>
+                      {qcResults.map((r) => (
+                        <TableRow key={r.resultId}>
+                          <TableCell className="font-mono text-xs">{r.resultId}</TableCell>
+                          <TableCell className="font-mono text-xs">{r.batchCode}</TableCell>
+                          <TableCell className="font-mono text-xs">{r.productionId}</TableCell>
                           <TableCell>{r.date}</TableCell>
                           <TableCell>{r.inspector}</TableCell>
-                          <TableCell className="text-center">{r.aromaScore}</TableCell>
-                          <TableCell className="text-center">{r.warnaScore}</TableCell>
-                          <TableCell className="text-center">{r.kejernihanScore}</TableCell>
-                          <TableCell className="text-center">{r.packagingScore}</TableCell>
-                          <TableCell className="text-center">{r.sealIntegrityScore}</TableCell>
-                          <TableCell className="text-center font-bold">{r.overallScore}</TableCell>
-                          <TableCell>
-                            <Badge variant={statusBadgeVariant[r.status] || "default"}>
-                              {statusLabel[r.status] || r.status}
-                            </Badge>
+                          <TableCell className="text-right">{r.aromaScore}</TableCell>
+                          <TableCell className="text-right">{r.warnaScore}</TableCell>
+                          <TableCell className="text-right">{r.kejernihanScore}</TableCell>
+                          <TableCell className="text-right">{r.packagingScore}</TableCell>
+                          <TableCell className="text-right">{r.sealIntegrityScore}</TableCell>
+                          <TableCell className={`text-right font-semibold ${scoreColor(r.overallScore)}`}>
+                            {r.overallScore.toFixed(1)}
                           </TableCell>
-                          <TableCell className="text-sm text-muted-foreground max-w-xs truncate">{r.notes}</TableCell>
+                          <TableCell>
+                            <Badge variant={statusVariant(r.status)}>{r.status}</Badge>
+                          </TableCell>
+                          <TableCell className="max-w-[200px] truncate text-xs">{r.notes}</TableCell>
+                          <TableCell>{r.followUpRequired === "Yes" ? "⚠️" : "—"}</TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
                   </Table>
-
-                  <div className="flex justify-end">
-                    <Button variant="outline" onClick={() => window.print()}>
-                      🖨️ Print Report
-                    </Button>
-                  </div>
                 </div>
               )}
             </CardContent>
           </Card>
+
+          {/* Status breakdown */}
+          <div className="grid gap-4 md:grid-cols-3">
+            <Card className="border-green-200 dark:border-green-900">
+              <CardHeader>
+                <CardTitle className="text-green-700 dark:text-green-400">✅ Pass</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-3xl font-bold text-green-600">{summary?.passed || 0}</div>
+                <p className="text-xs text-muted-foreground mt-1">Score &ge; 7.0</p>
+              </CardContent>
+            </Card>
+            <Card className="border-amber-200 dark:border-amber-900">
+              <CardHeader>
+                <CardTitle className="text-amber-700 dark:text-amber-400">⚠️ Conditional</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-3xl font-bold text-amber-600">{summary?.conditional || 0}</div>
+                <p className="text-xs text-muted-foreground mt-1">Score 5.0 — 6.99</p>
+              </CardContent>
+            </Card>
+            <Card className="border-red-200 dark:border-red-900">
+              <CardHeader>
+                <CardTitle className="text-red-700 dark:text-red-400">❌ Fail</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-3xl font-bold text-red-600">{summary?.failed || 0}</div>
+                <p className="text-xs text-muted-foreground mt-1">Score &lt; 5.0</p>
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
       </Tabs>
     </div>
