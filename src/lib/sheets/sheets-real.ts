@@ -189,6 +189,18 @@ function loadServiceAccount() {
     }
   }
 
+  // 3. Try relative path in project (deployed with repo)
+  try {
+    const path = require("path");
+    const projectRoot = process.cwd();
+    const relPath = path.resolve(projectRoot, "service-account.json");
+    const raw = fs.readFileSync(relPath, "utf-8");
+    const sa = JSON.parse(raw);
+    if (sa.type === "service_account") return sa;
+  } catch {
+    // fall through
+  }
+
   return null;
 }
 
