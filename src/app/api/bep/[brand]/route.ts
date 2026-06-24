@@ -1,47 +1,45 @@
-// GET /api/bep/[brand] — Get BEP detail for a specific brand
+// GET /api/bep/[brand] — BEP detail per brand
 import { NextRequest, NextResponse } from "next/server";
 import { getBEPByBrand } from "@/lib/sheets/bep-sheets";
-import { isGoogleWorkspaceAuthError, googleWorkspaceDegradedSource } from "@/lib/api/google-workspace-error";
 
 export const runtime = "nodejs";
 
 export async function GET(
-  req: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ brand: string }> }
 ) {
   try {
     const { brand } = await params;
     const decodedBrand = decodeURIComponent(brand);
+    const data = await getBEPByBrand(decodedBrand);
 
-    const calculations = await getBEPByBrand(decodedBrand);
-
-    if (calculations.length === 0) {
-      return NextResponse.json({
-        source: "Google Sheets: BEP_Calculations",
-        sourceStatus: "live",
-        generatedAt: new Date().toISOString(),
-        brand: decodedBrand,
-        count: 0,
-        calculations: [],
-        message: `No BEP calculations found for brand: ${decodedBrand}`,
-      });
+    if (data.length === 0) {
+      return NextResponse.json(
+        { error: `No BEP data found for brand: ${decodedBrand}` },
+        { status: 404 }
+      );
     }
+
+    const totalFixedCost = data.reduce((s, r) => s + r.fixedCost, 0);
+    const totalProfitLoss = data.reduce((s, r) => s + r.profitLoss, 0);
+    const totalCurrentSales = data.reduce((s, r) => s + r.currentSales, 0);
 
     return NextResponse.json({
       source: "Google Sheets: BEP_Calculations",
       sourceStatus: "live",
       generatedAt: new Date().toISOString(),
       brand: decodedBrand,
-      count: calculations.length,
-      calculations,
+      summary: {
+        productCount: data.length,
+        totalFixedCost,
+        totalProfitLoss,
+        totalCurrentSales,
+        profitable: data.filter((r) => r.profitLoss > 0).length,
+        loss: data.filter((r) => r.profitLoss < 0).length,
+      },
+      products: data,
     });
   } catch (error) {
-    if (isGoogleWorkspaceAuthError(error)) {
-      return NextResponse.json({
-        ...googleWorkspaceDegradedSource("Google Sheets: BEP_Calculations", error),
-        calculations: [],
-      });
-    }
     return NextResponse.json(
       { error: "Failed to fetch BEP by brand", details: String(error) },
       { status: 500 }

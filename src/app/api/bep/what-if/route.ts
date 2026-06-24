@@ -1,70 +1,42 @@
-// POST /api/bep/what-if — Run a what-if scenario analysis
+// POST /api/bep/what-if — What-if scenario analysis
 import { NextRequest, NextResponse } from "next/server";
 import { createWhatIfScenario } from "@/lib/sheets/bep-sheets";
-import { isGoogleWorkspaceAuthError, googleWorkspaceWriteBlockedSource } from "@/lib/api/google-workspace-error";
 
 export const runtime = "nodejs";
 
-export async function POST(req: NextRequest) {
+export async function POST(request: NextRequest) {
   try {
-    const body = await req.json();
-    const brand = String(body.brand || "").trim();
-    const product = String(body.product || "Scenario").trim();
-    const fixedCost = Number(body.fixedCost) || 0;
-    const variableCostPerUnit = Number(body.variableCostPerUnit) || 0;
-    const sellingPricePerUnit = Number(body.sellingPricePerUnit) || 0;
-    const currentSales = Number(body.currentSales) || 0;
-    const priceChange = Number(body.priceChange) || 0;
-    const volumeChange = Number(body.volumeChange) || 0;
-    const costChange = Number(body.costChange) || 0;
+    const body = await request.json();
+    const { brand, product, fixedCost, variableCostPerUnit, sellingPricePerUnit, currentSales, priceChange, volumeChange, costChange } = body;
 
-    if (!brand) {
+    if (!brand || fixedCost === undefined || variableCostPerUnit === undefined || sellingPricePerUnit === undefined) {
       return NextResponse.json(
-        { error: "brand is required" },
-        { status: 400 }
-      );
-    }
-    if (fixedCost <= 0) {
-      return NextResponse.json(
-        { error: "fixedCost must be greater than 0" },
-        { status: 400 }
-      );
-    }
-    if (variableCostPerUnit <= 0) {
-      return NextResponse.json(
-        { error: "variableCostPerUnit must be greater than 0" },
-        { status: 400 }
-      );
-    }
-    if (sellingPricePerUnit <= 0) {
-      return NextResponse.json(
-        { error: "sellingPricePerUnit must be greater than 0" },
+        { error: "Missing required fields: brand, fixedCost, variableCostPerUnit, sellingPricePerUnit" },
         { status: 400 }
       );
     }
 
     const scenario = await createWhatIfScenario({
       brand,
-      product,
-      fixedCost,
-      variableCostPerUnit,
-      sellingPricePerUnit,
-      currentSales,
-      priceChange,
-      volumeChange,
-      costChange,
+      product: product || "Scenario",
+      fixedCost: Number(fixedCost),
+      variableCostPerUnit: Number(variableCostPerUnit),
+      sellingPricePerUnit: Number(sellingPricePerUnit),
+      currentSales: Number(currentSales) || 0,
+      priceChange: Number(priceChange) || 0,
+      volumeChange: Number(volumeChange) || 0,
+      costChange: Number(costChange) || 0,
     });
 
-    return NextResponse.json({ success: true, scenario }, { status: 201 });
+    return NextResponse.json({
+      source: "Google Sheets: BEP_Calculations",
+      sourceStatus: "live",
+      message: "What-if scenario calculated",
+      scenario,
+    });
   } catch (error) {
-    if (isGoogleWorkspaceAuthError(error)) {
-      return NextResponse.json(
-        googleWorkspaceWriteBlockedSource("Google Sheets: BEP_Calculations", error),
-        { status: 503 }
-      );
-    }
     return NextResponse.json(
-      { error: "Failed to create what-if scenario", details: String(error) },
+      { error: "Failed to calculate what-if scenario", details: String(error) },
       { status: 500 }
     );
   }
