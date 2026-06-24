@@ -2,6 +2,7 @@
 // Shows: integration status, pending approvals, recent audit trail, draft queues
 import { NextRequest, NextResponse } from "next/server";
 import { readRange } from "@/lib/sheets/sheets-real";
+import { checkApprovalSLA } from "@/lib/agent/approval-sla-monitor";
 
 export const runtime = "nodejs";
 
@@ -153,7 +154,30 @@ export async function GET(_request: NextRequest) {
     { phase: 4, name: "WhatsApp Business", file: "phase4-scaffold.ts", description: "Auto-reply + broadcast" },
     { phase: 4, name: "Sukuk Payment", file: "phase4-scaffold.ts", description: "Profit distribution" },
     { phase: 5, name: "Agent Health Widget", file: "health-stats/route.ts", description: "Real-time uptime & duration per module" },
+    { phase: 5, name: "Approval SLA Monitor", file: "approval-sla-monitor.ts", description: "Track time-to-approval, escalate >2h" },
   ];
+
+  // ── Approval SLA status ──────────────────────────────────────────
+  let slaReport: {
+    status: string;
+    totalPending: number;
+    breachedSLA: number;
+    criticalEscalation: number;
+    averageWaitTimeMinutes: number;
+  } | null = null;
+
+  try {
+    const rawSLAResult = await checkApprovalSLA();
+    slaReport = {
+      status: rawSLAResult.status,
+      totalPending: rawSLAResult.totalPending,
+      breachedSLA: rawSLAResult.breachedSLA,
+      criticalEscalation: rawSLAResult.criticalEscalation,
+      averageWaitTimeMinutes: rawSLAResult.averageWaitTimeMinutes,
+    };
+  } catch (error) {
+    console.error("[Dashboard] Failed to check SLA:", error);
+  }
 
   return NextResponse.json({
     ok: true,
@@ -163,7 +187,8 @@ export async function GET(_request: NextRequest) {
       activeIntegrations: activeCount,
       pendingApprovals: pendingApprovals.length,
       totalModules: modules.length,
-      phasesComplete: 4,
+      phasesComplete: 5,
+      sla: slaReport,
     },
     integrations,
     pendingApprovals,

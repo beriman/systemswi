@@ -44,5 +44,11 @@ export type { TaxAnalysisItem, TaxOptimizationResult } from "./tax-optimization"
 export { runPhase4Checks, isEFakturConfigured, isBPOMConfigured, isBRIConfigured, isWhatsAppConfigured, isSukukConfigured } from "./phase4-scaffold";
 export type { EFakturDraft, BPOMStatus, BRITransaction, WhatsAppMessage, SukukPayment } from "./phase4-scaffold";
 
-// ── Phase 1+2 Orchestrator ─────────────────────────────────────────
-export { dailyHealthCheck, dailyTransactionDetection, dailyStockAlert, requestApproval, runFullDailyAgent, getAgentHealthStats, APPROVAL_THRESHOLD } from "./orchestrator";
+// ── Phase 5: Agent Reliability ─────────────────────────────────────
+export { checkApprovalSLA, runApprovalSLAMonitor, formatSLAReportForDashboard } from "./approval-sla-monitor";
+export type { ApprovalSLAReport, BreachedApproval } from "./approval-sla-monitor";
+export { executeWithRetry, agentHealthTracker, sheetsCircuitBreaker, telegramCircuitBreaker } from "./error-recovery";
+export type { RetryConfig, ExecutionResult } from "./error-recovery";
+
+// ── Phase 1+2+3+4+5 Orchestrator ───────────────────────────────────
+export { dailyHealthCheck, dailyTransactionDetection, dailyStockAlert, requestApproval, runFullDailyAgent, APPROVAL_THRESHOLD } from "./orchestrator";

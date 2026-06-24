@@ -28,6 +28,9 @@ import { analyzeTaxOptimization, formatTaxOptimizationForTelegram } from "./tax-
 // ── Phase 4 import ────────────────────────────────────────────────
 import { runPhase4Checks } from "./phase4-scaffold";
 
+// ── Phase 5 import ────────────────────────────────────────────────
+import { runApprovalSLAMonitor, formatSLAReportForDashboard } from "./approval-sla-monitor";
+
 export const APPROVAL_THRESHOLD = 10_000_000; // Rp 10 juta
 
 // ── Daily Health Check (Task 1.1) ──
@@ -294,7 +297,7 @@ export async function dailyEventWorkflow(): Promise<void> {
   }
 }
 
-// ── Full Daily Run — executes all Phase 1 + Phase 2 + Phase 3 + Phase 4 tasks ──
+// ── Full Daily Run — executes all Phase 1 + Phase 2 + Phase 3 + Phase 4 + Phase 5 tasks ──
 export async function runFullDailyAgent(): Promise<{
   health: boolean;
   transactions: boolean;
@@ -313,6 +316,7 @@ export async function runFullDailyAgent(): Promise<{
   customerSegmentation: boolean;
   taxOptimization: boolean;
   phase4: boolean;
+  approvalSLA: boolean;
 }> {
   const results = {
     health: false,
@@ -332,6 +336,7 @@ export async function runFullDailyAgent(): Promise<{
     customerSegmentation: false,
     taxOptimization: false,
     phase4: false,
+    approvalSLA: false,
   };
   const timestamp = new Date().toISOString();
 
@@ -555,6 +560,28 @@ export async function runFullDailyAgent(): Promise<{
     });
   } catch (error) {
     console.error("[Agent] Phase 4 integration run failed:", error);
+  }
+
+  // ── Phase 5: Approval SLA Monitor ──
+  try {
+    const slaReport = await runApprovalSLAMonitor();
+    results.approvalSLA = true;
+
+    await logAgentActionSafe({
+      timestamp,
+      agent: "HemuHemu/OWL",
+      action: "Approval SLA Monitor",
+      target: "Agent_Approvals",
+      status: slaReport.status === "healthy" ? "success" : "partial",
+      humanApproved: "n/a",
+      notes: `Pending: ${slaReport.totalPending}, Within SLA: ${slaReport.withinSLA}, Breached: ${slaReport.breachedSLA}, Critical: ${slaReport.criticalEscalation}, Avg wait: ${slaReport.averageWaitTimeMinutes}min`,
+    });
+
+    if (isTelegramConfigured() && slaReport.breachedItems.length > 0) {
+      await sendTelegramMessage(formatSLAReportForDashboard(slaReport));
+    }
+  } catch (error) {
+    console.error("[Agent] Approval SLA monitor failed:", error);
   }
 
   // ── Summary ──
