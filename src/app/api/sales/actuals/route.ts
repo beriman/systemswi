@@ -1,113 +1,129 @@
-// GET /api/sales/actuals — List actual sales (filter: year, brandId)
-// POST /api/sales/actuals — Create an actual sale record
+// GET /api/sales/actuals?year=YYYY — List sales actual transactions
+// POST /api/sales/actuals — Record a sale
 import { NextRequest, NextResponse } from "next/server";
-import {
-  getSalesActuals,
-  createActual,
-  recalculateAchievement,
-  ensureSalesSheetsInitialized,
-} from "@/lib/sheets/sales-sheets";
-import { isGoogleWorkspaceAuthError, googleWorkspaceDegradedSource } from "@/lib/api/google-workspace-error";
+import { googleWorkspaceDegradedSource, googleWorkspaceWriteBlockedSource, isGoogleWorkspaceAuthError } from "@/lib/api/google-workspace-error";
+import { appendRows, readRange, updateRow } from "@/lib/sheets/sheets-real";
+import { appendSwiMemoryLog } from "@/lib/google/audit-log";
 
 export const runtime = "nodejs";
 
-export async function GET(req: NextRequest) {
-  try {
-    const { searchParams } = new URL(req.url);
-    const year = searchParams.get("year");
-    const brandId = searchParams.get("brandId") || undefined;
+const SOURCE = "Google Sheets: Sales_Actuals";
 
-    await ensureSalesSheetsInitialized();
-    const actuals = await getSalesActuals(
-      year ? Number(year) : undefined,
-      brandId
-    );
+const text = (v: unknown) => String(v ?? "").trim();
+const num = (v: unknown) => {
+  if (typeof v === "number") return Number.isFinite(v) ? v : 0;
+  if (typeof v !== "string") return 0;
+  return Number(v.replace(/[^\d.-]/g, "")) || 0;
+};
+
+function parseActuals(rows: string[][]) {
+  return rows.slice(1).filter((r) => r.some(Boolean)).map((row, idx) => ({
+    rowNumber: idx + 2,
+    actualId: text(row[0]) || `SA-${idx + 1}`,
+    date: text(row[1]) || "",
+    brandId: text(row[2]) || "",
+    brandName: text(row[3]) || "",
+    productSku: text(row[4]) || "",
+    productName: text(row[5]) || "",
+    qtySold: num(row[6]) || 0,
+    unitPrice: num(row[7]) || 0,
+    totalRevenue: num(row[8]) || 0,
+    channel: text(row[9]) || "Store",
+    notes: text(row[10]) || "",
+  }));
+}
+
+export async function GET(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const year = searchParams.get("year");
+
+    const rows = await readRange("Sales_Actuals!A1:J1000");
+    let actuals = parseActuals(rows);
+
+    if (year) {
+      const yNum = parseInt(year);
+      if (!Number.isNaN(yNum)) {
+        actuals = actuals.filter((a) => a.date.startsWith(year));
+      }
+    }
+
+    const totalRevenue = actuals.reduce((sum, a) => sum + a.totalRevenue, 0);
+    const totalUnits = actuals.reduce((sum, a) => sum + a.qtySold, 0);
 
     return NextResponse.json({
-      source: "Google Sheets: Sales_Actuals",
+      source: SOURCE,
       sourceStatus: "live",
-      generatedAt: new Date().toISOString(),
-      filters: { year: year || undefined, brandId: brandId || undefined },
-      count: actuals.length,
+      year: year ? parseInt(year) : null,
       actuals,
+      totalRevenue,
+      totalUnits,
+      count: actuals.length,
     });
   } catch (error) {
     if (isGoogleWorkspaceAuthError(error)) {
       return NextResponse.json({
-        ...googleWorkspaceDegradedSource("Google Sheets: Sales_Actuals", error),
+        ...googleWorkspaceDegradedSource(SOURCE, error),
         actuals: [],
+        totalRevenue: 0,
+        totalUnits: 0,
+        count: 0,
       });
     }
-    return NextResponse.json(
-      { error: "Failed to fetch sales actuals", details: String(error) },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Gagal mengambil sales actuals", details: String(error) }, { status: 500 });
   }
 }
 
-export async function POST(req: NextRequest) {
+export async function POST(request: NextRequest) {
   try {
-    const body = await req.json();
-    const date = String(body.date || "").trim();
-    const brandId = String(body.brandId || "").trim();
-    const brandName = String(body.brandName || "").trim();
-    const productSku = String(body.productSku || "").trim();
-    const qtySold = Number(body.qtySold) || 0;
-    const unitPrice = Number(body.unitPrice) || 0;
-    const channel = String(body.channel || "").trim();
-    const notes = String(body.notes || "");
+    const body = await request.json();
+    const now = new Date().toISOString().split("T")[0];
 
-    if (!date || !brandId || !brandName) {
-      return NextResponse.json(
-        { error: "date, brandId, and brandName are required" },
-        { status: 400 }
-      );
-    }
-    if (qtySold <= 0 || unitPrice <= 0) {
-      return NextResponse.json(
-        { error: "qtySold and unitPrice must be greater than 0" },
-        { status: 400 }
-      );
+    const actualId = body.actualId || `SA-${Date.now().toString(36).toUpperCase()}`;
+    const totalRevenue = (body.qtySold || 0) * (body.unitPrice || 0);
+
+    const row = [
+      actualId,
+      body.date || now,
+      body.brandId || "TBA",
+      body.brandName || "",
+      body.productSku || "",
+      body.productName || "",
+      body.qtySold || 0,
+      body.unitPrice || 0,
+      totalRevenue,
+      body.channel || "Store",
+      body.notes || "",
+    ];
+
+    // Check if actualId exists
+    const existing = await readRange("Sales_Actuals!A1:J1000");
+    const existingRowIdx = existing.findIndex((r) => text(r[0]) === actualId);
+
+    if (existingRowIdx > 0) {
+      await updateRow("Sales_Actuals", existingRowIdx + 1, row);
+    } else {
+      await appendRows("Sales_Actuals", [row]);
     }
 
-    await ensureSalesSheetsInitialized();
-    const result = await createActual({
-      date,
-      brandId,
-      brandName,
-      productSku,
-      qtySold,
-      unitPrice,
-      channel,
-      notes,
+    await appendSwiMemoryLog({
+      action: "sales_actual_upsert",
+      target: "Sales_Actuals",
+      summary: `Sale ${actualId} — ${body.brandName || "TBA"} — ${body.productName || ""} — ${body.qtySold || 0} × Rp ${(body.unitPrice || 0).toLocaleString("id-ID")} = Rp ${totalRevenue.toLocaleString("id-ID")}`,
     });
 
-    // Recalculate achievement for the affected month
-    const d = new Date(date);
-    const year = d.getFullYear();
-    const month = d.getMonth() + 1;
-    try {
-      await recalculateAchievement(brandId, year, month);
-    } catch {
-      // Non-blocking: achievement recalc failure shouldn't fail the create
-    }
-
-    return NextResponse.json({ success: true, data: result }, { status: 201 });
+    return NextResponse.json({
+      success: true,
+      source: SOURCE,
+      actual: { actualId, ...body, totalRevenue },
+      action: existingRowIdx > 0 ? "updated" : "created",
+    }, { status: existingRowIdx > 0 ? 200 : 201 });
   } catch (error) {
     if (isGoogleWorkspaceAuthError(error)) {
-      return NextResponse.json(
-        {
-          sourceStatus: "blocked",
-          source: "Google Sheets: Sales_Actuals",
-          error: "Google Workspace OAuth perlu re-auth sebelum bisa menambah actual sales",
-          details: String(error),
-        },
-        { status: 503 }
-      );
+      return NextResponse.json({
+        ...googleWorkspaceWriteBlockedSource(SOURCE, error),
+      }, { status: 503 });
     }
-    return NextResponse.json(
-      { error: "Failed to create actual sale", details: String(error) },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Gagal menyimpan sales actual", details: String(error) }, { status: 500 });
   }
 }
