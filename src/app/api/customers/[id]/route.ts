@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { googleWorkspaceDegradedSource, isGoogleWorkspaceAuthError } from "@/lib/api/google-workspace-error";
-import { appendRows, readRange, updateRow } from "@/lib/sheets/sheets-real";
+import { isGoogleWorkspaceAuthError } from "@/lib/api/google-workspace-error";
+import { readRange, updateRow, appendRows } from "@/lib/sheets/sheets-real";
 import { appendSwiMemoryLog } from "@/lib/google/audit-log";
-import { ensureCustomerTables } from "@/lib/customer/init-db";
 
 export const runtime = "nodejs";
 
@@ -48,13 +47,6 @@ const numberValue = (value: unknown) => {
 };
 const normalizeWa = (value: unknown) => text(value).replace(/[^\d+]/g, "");
 
-function segmentFromPurchases(count: number): CustomerSegment {
-  if (count >= 10) return "vip";
-  if (count >= 5) return "loyal";
-  if (count >= 2) return "regular";
-  return "new";
-}
-
 function safeConsent(value: unknown): ConsentStatus {
   const v = text(value).toLowerCase();
   if (["yes", "ya", "true", "consent"].includes(v)) return "yes";
@@ -62,13 +54,17 @@ function safeConsent(value: unknown): ConsentStatus {
   return "TBA";
 }
 
-function makeCustomerId(name: string, whatsapp: string, existing: Customer[]) {
-  const phone = normalizeWa(whatsapp).replace(/^\+?62/, "0");
-  const phoneTail = phone.slice(-4);
-  const slug = name.toUpperCase().replace(/[^A-Z0-9]+/g, "").slice(0, 6) || "CUST";
-  const base = `CUST-${slug}${phoneTail ? `-${phoneTail}` : ""}`;
-  const duplicateCount = existing.filter((customer) => customer.id.startsWith(base)).length;
-  return duplicateCount ? `${base}-${duplicateCount + 1}` : base;
+function segmentFromPurchases(count: number): CustomerSegment {
+  if (count >= 10) return "vip";
+  if (count >= 5) return "loyal";
+  if (count >= 2) return "regular";
+  return "new";
+}
+
+function makeInteractionId(existing: Interaction[]) {
+  const today = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+  const sameDay = existing.filter((interaction) => interaction.interactionId.includes(today)).length + 1;
+  return `CI-${today}-${String(sameDay).padStart(3, "0")}`;
 }
 
 function parseCustomers(rows: string[][]): Customer[] {
@@ -123,7 +119,7 @@ function customerRow(customer: Omit<Customer, "rowNumber">) {
   ];
 }
 
-// ── SQLite helpers ──
+// ── SQLite helpers ──────────────────────────────────────────────
 function getDbSafe(): any {
   try {
     const Database = require("better-sqlite3");
@@ -134,6 +130,7 @@ function getDbSafe(): any {
     if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir, { recursive: true });
     const db = new Database(dbPath);
     db.pragma("journal_mode = WAL");
+    const { ensureCustomerTables } = require("@/lib/customer/init-db");
     ensureCustomerTables(db);
     return db;
   } catch {
@@ -187,13 +184,13 @@ function writeCustomerToSqlite(customer: Omit<Customer, "rowNumber">) {
   const db = getDbSafe();
   if (!db) return false;
   try {
-    const existing = db.prepare("SELECT id FROM customers WHERE id = ? OR whatsapp = ?").get(customer.id, customer.whatsapp);
+    const existing = db.prepare("SELECT id FROM customers WHERE id = ?").get(customer.id);
     if (existing) {
       db.prepare(`UPDATE customers SET name=?, whatsapp=?, segment=?, interest=?, source=?, consent=?, last_contact=?, total_purchases=?, clv=?, recommended_formula=?, notes=?, updated_at=? WHERE id=?`)
         .run(customer.name, customer.whatsapp, customer.segment, customer.interest, customer.source, customer.consent, customer.lastContact, customer.totalPurchases, customer.clv, customer.recommendedFormula, customer.notes, customer.updatedAt, customer.id);
     } else {
       db.prepare(`INSERT INTO customers (id, name, whatsapp, segment, interest, source, consent, last_contact, total_purchases, clv, recommended_formula, notes, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-        .run(customer.id, customer.name, customer.whatsapp, customer.segment, customer.interest, customer.source, customer.consent, customer.lastContact, customer.totalPurchases, customer.clv, customer.recommendedFormula, customer.notes, customer.updatedAt);
+        .run(customer.id, customer.whatsapp, customer.segment, customer.interest, customer.source, customer.consent, customer.lastContact, customer.totalPurchases, customer.clv, customer.recommendedFormula, customer.notes, customer.updatedAt, customer.name, customer.id);
     }
     return true;
   } catch {
@@ -217,7 +214,6 @@ function writeInteractionToSqlite(interaction: Interaction) {
   }
 }
 
-// ── Google Sheets fallback ──
 async function readCrmFromSheets() {
   const [customerRows, interactionRows] = await Promise.all([
     readRange("Customer_Master!A1:M1000"),
@@ -249,19 +245,18 @@ async function readCrm() {
   }
 }
 
-// ── GET /api/customers/[id] — detail + interactions ──
-export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+// ── GET: Single customer detail ──────────────────────────────────
+export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
   try {
-    const { id } = await params;
     const { customers, interactions, sourceStatus, source } = await readCrm();
+    const customer = customers.find((c) => c.id === params.id);
 
-    const customer = customers.find((c) => c.id === id);
     if (!customer) {
       return NextResponse.json({ error: "Customer tidak ditemukan" }, { status: 404 });
     }
 
     const customerInteractions = interactions
-      .filter((ix) => ix.customerId === id)
+      .filter((ix) => ix.customerId === customer.id)
       .sort((a, b) => b.timestamp.localeCompare(a.timestamp));
 
     return NextResponse.json({
@@ -269,49 +264,54 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       sourceStatus,
       customer,
       interactions: customerInteractions,
-      interactionCount: customerInteractions.length,
     });
   } catch (error) {
     if (isGoogleWorkspaceAuthError(error)) {
       return NextResponse.json({
-        ...googleWorkspaceDegradedSource(SOURCE, error),
-        customer: null,
-        interactions: [],
-      });
+        sourceStatus: "degraded",
+        source: SOURCE,
+        error: "Google Workspace OAuth perlu re-auth",
+        details: String(error),
+      }, { status: 503 });
     }
     return NextResponse.json({ error: "Gagal membaca detail customer", details: String(error) }, { status: 500 });
   }
 }
 
-// ── PUT /api/customers/[id] — update customer ──
-export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+// ── PUT: Update customer ─────────────────────────────────────────
+export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
   try {
-    const { id } = await params;
     const body = await request.json();
-    const { customers, interactions } = await readCrm();
+    const { customers, interactions, source } = await readCrm();
+    const existing = customers.find((c) => c.id === params.id);
 
-    const existing = customers.find((c) => c.id === id);
     if (!existing) {
       return NextResponse.json({ error: "Customer tidak ditemukan" }, { status: 404 });
     }
 
-    const now = new Date().toISOString();
-    const totalPurchases = Math.max(numberValue(body.totalPurchases), existing.totalPurchases);
-    const clv = Math.max(numberValue(body.clv), existing.clv);
+    const name = text(body.name) || existing.name;
+    const whatsapp = body.whatsapp ? normalizeWa(body.whatsapp) : existing.whatsapp;
+    const totalPurchases = body.totalPurchases !== undefined
+      ? Math.max(numberValue(body.totalPurchases), existing.totalPurchases)
+      : existing.totalPurchases;
+    const clv = body.clv !== undefined
+      ? Math.max(numberValue(body.clv), existing.clv)
+      : existing.clv;
+
     const updated: Omit<Customer, "rowNumber"> = {
-      id,
-      name: text(body.name) || existing.name,
-      whatsapp: normalizeWa(body.whatsapp) || existing.whatsapp,
+      id: existing.id,
+      name,
+      whatsapp,
       segment: (text(body.segment) as CustomerSegment) || segmentFromPurchases(totalPurchases),
       interest: text(body.interest) || existing.interest,
       source: text(body.source) || existing.source,
       consent: safeConsent(body.consent || existing.consent),
-      lastContact: text(body.lastContact) || now.slice(0, 10),
+      lastContact: text(body.lastContact) || new Date().toISOString().slice(0, 10),
       totalPurchases,
       clv,
       recommendedFormula: text(body.recommendedFormula) || existing.recommendedFormula,
-      notes: text(body.notes) || existing.notes,
-      updatedAt: now,
+      notes: text(body.notes) !== "" ? text(body.notes) : existing.notes,
+      updatedAt: new Date().toISOString(),
     };
 
     // Write to SQLite
@@ -326,30 +326,30 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       // Non-fatal
     }
 
-    let auditStatus = "ok";
+    // Audit log
     try {
       await appendSwiMemoryLog({
         action: "Customer Update",
-        target: `Customer_Master:${id}`,
-        summary: `Updated customer ${updated.name}; consent=${updated.consent}; segment=${updated.segment}; sqlite=${sqliteOk}; sheets=${sheetsOk}`,
+        target: `Customer_Master:${updated.id}`,
+        summary: `Updated customer ${updated.name}; segment=${updated.segment}; clv=${updated.clv}; sqlite=${sqliteOk}; sheets=${sheetsOk}`,
       });
-    } catch (auditError) {
-      auditStatus = `failed: ${String(auditError)}`;
+    } catch {
+      // Non-fatal
     }
 
     return NextResponse.json({
       success: true,
       customer: updated,
-      auditStatus,
       sqlite: sqliteOk,
       sheets: sheetsOk,
+      source,
     });
   } catch (error) {
     if (isGoogleWorkspaceAuthError(error)) {
       return NextResponse.json({
         sourceStatus: "blocked",
         source: SOURCE,
-        error: "Google Workspace OAuth perlu re-auth sebelum update customer.",
+        error: "Google Workspace OAuth perlu re-auth sebelum update.",
         details: String(error),
       }, { status: 503 });
     }

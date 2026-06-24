@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { googleWorkspaceDegradedSource, isGoogleWorkspaceAuthError } from "@/lib/api/google-workspace-error";
+import { isGoogleWorkspaceAuthError } from "@/lib/api/google-workspace-error";
 import { readRange } from "@/lib/sheets/sheets-real";
-import { ensureCustomerTables } from "@/lib/customer/init-db";
 
 export const runtime = "nodejs";
 
@@ -21,7 +20,6 @@ type Customer = {
   recommendedFormula: string;
   notes: string;
   updatedAt: string;
-  rowNumber: number;
 };
 
 const SOURCE = "SQLite + Google Sheets: Customer_Master";
@@ -33,7 +31,7 @@ const numberValue = (value: unknown) => {
 };
 
 function parseCustomers(rows: string[][]): Customer[] {
-  return rows.slice(1).filter((row) => row.some(Boolean)).map((row, index) => ({
+  return rows.slice(1).filter((row) => row.some(Boolean)).map((row) => ({
     id: text(row[0]),
     name: text(row[1]),
     whatsapp: text(row[2]).replace(/[^\d+]/g, ""),
@@ -47,11 +45,10 @@ function parseCustomers(rows: string[][]): Customer[] {
     recommendedFormula: text(row[10]) || "TBA",
     notes: text(row[11]),
     updatedAt: text(row[12]),
-    rowNumber: index + 2,
   })).filter((customer) => customer.id && customer.name);
 }
 
-// ── SQLite helpers ──
+// ── SQLite helper ───────────────────────────────────────────────
 function getDbSafe(): any {
   try {
     const Database = require("better-sqlite3");
@@ -62,6 +59,7 @@ function getDbSafe(): any {
     if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir, { recursive: true });
     const db = new Database(dbPath);
     db.pragma("journal_mode = WAL");
+    const { ensureCustomerTables } = require("@/lib/customer/init-db");
     ensureCustomerTables(db);
     return db;
   } catch {
@@ -69,11 +67,11 @@ function getDbSafe(): any {
   }
 }
 
-function readCustomersFromSqlite(): Customer[] | null {
+function readCustomersFromSqlite(): Customer[] {
   const db = getDbSafe();
-  if (!db) return null;
+  if (!db) return [];
   try {
-    const rows = db.prepare("SELECT * FROM customers ORDER BY updated_at DESC").all();
+    const rows = db.prepare("SELECT * FROM customers ORDER BY clv DESC").all();
     return rows.map((r: any) => ({
       id: r.id,
       name: r.name,
@@ -88,82 +86,105 @@ function readCustomersFromSqlite(): Customer[] | null {
       recommendedFormula: r.recommended_formula || "TBA",
       notes: r.notes || "",
       updatedAt: r.updated_at || "",
-      rowNumber: 0,
     }));
   } catch {
-    return null;
+    return [];
   } finally {
     try { db.close(); } catch { /* ignore */ }
   }
 }
 
-async function readCustomersFromSheets(): Promise<Customer[]> {
-  const rows = await readRange("Customer_Master!A1:M1000");
-  return parseCustomers(rows);
+function readCustomersFromSheets(): Promise<Customer[]> {
+  return readRange("Customer_Master!A1:M1000").then(parseCustomers);
 }
 
-async function getCustomers(): Promise<{ customers: Customer[]; source: string; sourceStatus: string }> {
+async function readCustomers(): Promise<{ customers: Customer[]; source: string; sourceStatus: "live" | "degraded" }> {
   // Try SQLite first
   const sqliteCustomers = readCustomersFromSqlite();
-  if (sqliteCustomers && sqliteCustomers.length > 0) {
+  if (sqliteCustomers.length > 0) {
     return { customers: sqliteCustomers, source: "SQLite (local DB)", sourceStatus: "live" };
   }
+
   // Fallback to Google Sheets
   try {
     const sheetsCustomers = await readCustomersFromSheets();
-    return { customers: sheetsCustomers, source: "Google Sheets", sourceStatus: "live" };
+    if (sheetsCustomers.length > 0) {
+      return { customers: sheetsCustomers, source: "Google Sheets", sourceStatus: "live" };
+    }
   } catch (error) {
     if (isGoogleWorkspaceAuthError(error)) {
-      // Last-resort: try SQLite even if empty (might have data on this instance)
-      const sqliteFallback = readCustomersFromSqlite();
-      if (sqliteFallback && sqliteFallback.length > 0) {
-        return { customers: sqliteFallback, source: "SQLite (fallback)", sourceStatus: "live" };
-      }
-      return { customers: [], source: "Google Sheets (blocked)", sourceStatus: "degraded" };
+      return {
+        customers: sqliteCustomers,
+        source: "SQLite (fallback)",
+        sourceStatus: sqliteCustomers.length > 0 ? "live" : "degraded",
+      };
     }
     throw error;
   }
+
+  return { customers: [], source: "none", sourceStatus: "live" };
 }
 
-function segmentCriteria(segment: CustomerSegment): string {
-  switch (segment) {
-    case "vip": return "≥10 purchases";
-    case "loyal": return "5–9 purchases";
-    case "regular": return "2–4 purchases";
-    case "new": return "0–1 purchases";
-  }
-}
+// ── Segment criteria ────────────────────────────────────────────
+const SEGMENT_CRITERIA: Record<CustomerSegment, string> = {
+  vip: "≥10 purchases OR CLV ≥ Rp 50.000.000",
+  loyal: "5–9 purchases OR CLV Rp 10–50 juta",
+  regular: "2–4 purchases OR CLV Rp 2–10 juta",
+  new: "0–1 purchases, CLV < Rp 2 juta",
+};
 
-// ── GET /api/customers/segments ──
+// ── GET: Segmentation summary ───────────────────────────────────
 export async function GET() {
   try {
-    const { customers, source, sourceStatus } = await getCustomers();
-
-    const segments = {
-      vip: { count: 0, customers: [] as Customer[], totalClv: 0, criteria: segmentCriteria("vip") },
-      loyal: { count: 0, customers: [] as Customer[], totalClv: 0, criteria: segmentCriteria("loyal") },
-      regular: { count: 0, customers: [] as Customer[], totalClv: 0, criteria: segmentCriteria("regular") },
-      new: { count: 0, customers: [] as Customer[], totalClv: 0, criteria: segmentCriteria("new") },
-    };
-
-    for (const customer of customers) {
-      const seg = segments[customer.segment] || segments.new;
-      seg.count += 1;
-      seg.customers.push(customer);
-      seg.totalClv += customer.clv;
-    }
-
-    // Sort each segment by CLV descending
-    for (const seg of Object.values(segments)) {
-      seg.customers.sort((a, b) => b.clv - a.clv);
-    }
+    const { customers, source, sourceStatus } = await readCustomers();
 
     const totalCustomers = customers.length;
     const totalClv = customers.reduce((sum, c) => sum + c.clv, 0);
-    const bySegment = customers.reduce<Record<string, number>>((acc, c) => {
-      acc[c.segment] = (acc[c.segment] || 0) + 1;
-      return acc;
-    }, {});
+
+    // Group by segment
+    const bySegment: Record<CustomerSegment, Customer[]> = {
+      vip: [],
+      loyal: [],
+      regular: [],
+      new: [],
+    };
+
+    for (const c of customers) {
+      const seg = c.segment as CustomerSegment;
+      if (bySegment[seg]) {
+        bySegment[seg].push(c);
+      } else {
+        bySegment.new.push(c);
+      }
+    }
+
+    // Build segment summary
+    const segments = {
+      vip: {
+        count: bySegment.vip.length,
+        customers: bySegment.vip,
+        totalClv: bySegment.vip.reduce((s, c) => s + c.clv, 0),
+        criteria: SEGMENT_CRITERIA.vip,
+      },
+      loyal: {
+        count: bySegment.loyal.length,
+        customers: bySegment.loyal,
+        totalClv: bySegment.loyal.reduce((s, c) => s + c.clv, 0),
+        criteria: SEGMENT_CRITERIA.loyal,
+      },
+      regular: {
+        count: bySegment.regular.length,
+        customers: bySegment.regular,
+        totalClv: bySegment.regular.reduce((s, c) => s + c.clv, 0),
+        criteria: SEGMENT_CRITERIA.regular,
+      },
+      new: {
+        count: bySegment.new.length,
+        customers: bySegment.new,
+        totalClv: bySegment.new.reduce((s, c) => s + c.clv, 0),
+        criteria: SEGMENT_CRITERIA.new,
+      },
+    };
 
     return NextResponse.json({
       source,
@@ -171,21 +192,25 @@ export async function GET() {
       totalCustomers,
       totalClv,
       segments,
-      bySegment,
+      bySegment: {
+        vip: bySegment.vip.length,
+        loyal: bySegment.loyal.length,
+        regular: bySegment.regular.length,
+        new: bySegment.new.length,
+      },
     });
   } catch (error) {
     if (isGoogleWorkspaceAuthError(error)) {
       return NextResponse.json({
-        ...googleWorkspaceDegradedSource(SOURCE, error),
+        sourceStatus: "degraded",
+        source: SOURCE,
+        error: "Google Workspace OAuth perlu re-auth",
         totalCustomers: 0,
         totalClv: 0,
         segments: null,
-        bySegment: {},
+        bySegment: { vip: 0, loyal: 0, regular: 0, new: 0 },
       });
     }
-    return NextResponse.json(
-      { error: "Gagal membaca segmentasi customer", details: String(error) },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Gagal membaca segmentasi", details: String(error) }, { status: 500 });
   }
 }
