@@ -1,15 +1,15 @@
-// GET /api/sukuk/schedule — List payment schedule from Sukuk_Payment_Schedule!A1:L25
+// GET /api/sukuk/schedule — List payment schedule
+// Tries Google Sheets first, falls back to local data store
 import { NextRequest, NextResponse } from "next/server";
 import { readRange } from "@/lib/sheets/sheets-real";
+import { getLocalSchedule } from "@/lib/sheets/sukuk-local-data";
 
-export async function GET() {
+async function getScheduleFromSheets() {
   try {
     const rows = await readRange("Sukuk_Payment_Schedule!A1:L25");
-    if (!rows || rows.length === 0) {
-      return NextResponse.json({ schedule: [], source: "sheets" });
-    }
+    if (!rows || rows.length === 0) return null;
     const dataRows = rows[0]?.[0] === "ID" ? rows.slice(1) : rows;
-    const schedule = dataRows
+    return dataRows
       .filter((r) => r && r[0])
       .map((r) => ({
         id: r[0] || "",
@@ -24,11 +24,21 @@ export async function GET() {
         tanggal_bayar: r[9] || "",
         catatan: r[10] || "",
       }));
-    return NextResponse.json({ schedule, source: "sheets" });
+  } catch {
+    return null;
+  }
+}
+
+export async function GET() {
+  try {
+    const sheetData = await getScheduleFromSheets();
+    if (sheetData && sheetData.length > 0) {
+      return NextResponse.json({ schedule: sheetData, source: "sheets" });
+    }
+    const localData = getLocalSchedule();
+    return NextResponse.json({ schedule: localData, source: "local" });
   } catch (error) {
-    return NextResponse.json(
-      { error: "Failed to fetch schedule", details: String(error) },
-      { status: 500 }
-    );
+    const localData = getLocalSchedule();
+    return NextResponse.json({ schedule: localData, source: "local-fallback" });
   }
 }

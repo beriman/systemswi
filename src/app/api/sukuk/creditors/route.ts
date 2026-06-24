@@ -1,15 +1,15 @@
-// GET /api/sukuk/creditors — List all creditors from Sukuk_Creditor!A1:Z20
+// GET /api/sukuk/creditors — List all creditors
+// Tries Google Sheets first, falls back to local data store
 import { NextRequest, NextResponse } from "next/server";
 import { readRange } from "@/lib/sheets/sheets-real";
+import { getLocalCreditors } from "@/lib/sheets/sukuk-local-data";
 
-export async function GET() {
+async function getCreditorsFromSheets() {
   try {
     const rows = await readRange("Sukuk_Creditor!A1:Z20");
-    if (!rows || rows.length === 0) {
-      return NextResponse.json({ creditors: [], source: "sheets" });
-    }
+    if (!rows || rows.length === 0) return null;
     const dataRows = rows[0]?.[0] === "ID" ? rows.slice(1) : rows;
-    const creditors = dataRows
+    return dataRows
       .filter((r) => r && r[0])
       .map((r) => ({
         id: r[0] || "",
@@ -29,11 +29,22 @@ export async function GET() {
         tanggal_akad: r[14] || "",
         catatan: r[15] || "",
       }));
-    return NextResponse.json({ creditors, source: "sheets" });
+  } catch {
+    return null;
+  }
+}
+
+export async function GET() {
+  try {
+    const sheetData = await getCreditorsFromSheets();
+    if (sheetData && sheetData.length > 0) {
+      return NextResponse.json({ creditors: sheetData, source: "sheets" });
+    }
+    // Fallback to local data
+    const localData = getLocalCreditors();
+    return NextResponse.json({ creditors: localData, source: "local" });
   } catch (error) {
-    return NextResponse.json(
-      { error: "Failed to fetch creditors", details: String(error) },
-      { status: 500 }
-    );
+    const localData = getLocalCreditors();
+    return NextResponse.json({ creditors: localData, source: "local-fallback" });
   }
 }

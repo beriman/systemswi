@@ -1,16 +1,16 @@
-// GET /api/sukuk/investors — List all investors from SukukStore!A12:O26
+// GET /api/sukuk/investors — List all investors
 // POST /api/sukuk/investors — Add new investor
+// Tries Google Sheets first, falls back to local data store
 import { NextRequest, NextResponse } from "next/server";
 import { readRange, appendRows } from "@/lib/sheets/sheets-real";
+import { getLocalInvestors, addLocalInvestor } from "@/lib/sheets/sukuk-local-data";
 
-export async function GET() {
+async function getInvestorsFromSheets() {
   try {
     const rows = await readRange("SukukStore!A13:O26");
-    if (!rows || rows.length === 0) {
-      return NextResponse.json({ investors: [], source: "sheets" });
-    }
+    if (!rows || rows.length === 0) return null;
     const dataRows = rows[0]?.[0] === "ID" ? rows.slice(1) : rows;
-    const investors = dataRows
+    return dataRows
       .filter((r) => r && r[0])
       .map((r) => ({
         id: r[0] || "",
@@ -28,37 +28,56 @@ export async function GET() {
         tanggal_daftar: r[12] || "",
         catatan: r[13] || "",
       }));
-    return NextResponse.json({ investors, source: "sheets" });
+  } catch {
+    return null;
+  }
+}
+
+export async function GET() {
+  try {
+    const sheetData = await getInvestorsFromSheets();
+    if (sheetData && sheetData.length > 0) {
+      return NextResponse.json({ investors: sheetData, source: "sheets" });
+    }
+    // Fallback to local data
+    const localData = getLocalInvestors();
+    return NextResponse.json({ investors: localData, source: "local" });
   } catch (error) {
-    return NextResponse.json(
-      { error: "Failed to fetch investors", details: String(error) },
-      { status: 500 }
-    );
+    // Final fallback
+    const localData = getLocalInvestors();
+    return NextResponse.json({ investors: localData, source: "local-fallback" });
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const id = body.id || `INV-${Date.now()}`;
-    const row = [
-      id,
-      body.nama || "",
-      body.email || "",
-      body.telepon || "",
-      body.alamat || "",
-      body.npwp || "",
-      body.bank || "",
-      body.no_rekening || "",
-      Number(body.saldo_investasi) || 0,
-      Number(body.total_profit) || 0,
-      body.status || "aktif",
-      body.consent ? "1" : "0",
-      body.tanggal_daftar || new Date().toISOString().slice(0, 10),
-      body.catatan || "",
-    ];
-    await appendRows("SukukInvestor", [row]);
-    return NextResponse.json({ investor: { id, ...body }, source: "sheets" }, { status: 201 });
+    // Try Google Sheets first
+    try {
+      const id = body.id || `INV-${Date.now()}`;
+      const row = [
+        id,
+        body.nama || "",
+        body.email || "",
+        body.telepon || "",
+        body.alamat || "",
+        body.npwp || "",
+        body.bank || "",
+        body.no_rekening || "",
+        Number(body.saldo_investasi) || 0,
+        Number(body.total_profit) || 0,
+        body.status || "aktif",
+        body.consent ? "1" : "0",
+        body.tanggal_daftar || new Date().toISOString().slice(0, 10),
+        body.catatan || "",
+      ];
+      await appendRows("SukukInvestor", [row]);
+      return NextResponse.json({ investor: { id, ...body }, source: "sheets" }, { status: 201 });
+    } catch {
+      // Sheets failed — use local store
+      const newInvestor = addLocalInvestor(body);
+      return NextResponse.json({ investor: newInvestor, source: "local" }, { status: 201 });
+    }
   } catch (error) {
     return NextResponse.json(
       { error: "Failed to add investor", details: String(error) },

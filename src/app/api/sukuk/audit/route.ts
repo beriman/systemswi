@@ -1,15 +1,15 @@
-// GET /api/sukuk/audit — List audit trail from Sukuk_Audit!A1:H50
+// GET /api/sukuk/audit — List audit trail
+// Tries Google Sheets first, falls back to local data store
 import { NextRequest, NextResponse } from "next/server";
 import { readRange } from "@/lib/sheets/sheets-real";
+import { getLocalAudit } from "@/lib/sheets/sukuk-local-data";
 
-export async function GET() {
+async function getAuditFromSheets() {
   try {
     const rows = await readRange("Sukuk_Audit!A1:H50");
-    if (!rows || rows.length === 0) {
-      return NextResponse.json({ audit: [], source: "sheets" });
-    }
+    if (!rows || rows.length === 0) return null;
     const dataRows = rows[0]?.[0] === "ID" ? rows.slice(1) : rows;
-    const audit = dataRows
+    return dataRows
       .filter((r) => r && r[0])
       .map((r) => ({
         id: r[0] || "",
@@ -21,11 +21,22 @@ export async function GET() {
         details: r[6] || "",
         ip_address: r[7] || "",
       }));
-    return NextResponse.json({ audit, source: "sheets" });
+  } catch {
+    return null;
+  }
+}
+
+export async function GET() {
+  try {
+    const sheetData = await getAuditFromSheets();
+    if (sheetData && sheetData.length > 0) {
+      return NextResponse.json({ audit: sheetData, source: "sheets" });
+    }
+    // Fallback to local data
+    const localData = getLocalAudit();
+    return NextResponse.json({ audit: localData, source: "local" });
   } catch (error) {
-    return NextResponse.json(
-      { error: "Failed to fetch audit", details: String(error) },
-      { status: 500 }
-    );
+    const localData = getLocalAudit();
+    return NextResponse.json({ audit: localData, source: "local-fallback" });
   }
 }

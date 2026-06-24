@@ -1,15 +1,15 @@
-// GET /api/sukuk/rab — List RAB entries from Sukuk_RAB!A1:Z30
+// GET /api/sukuk/rab — List RAB entries
+// Tries Google Sheets first, falls back to local data store
 import { NextRequest, NextResponse } from "next/server";
 import { readRange } from "@/lib/sheets/sheets-real";
+import { getLocalRAB } from "@/lib/sheets/sukuk-local-data";
 
-export async function GET() {
+async function getRABFromSheets() {
   try {
     const rows = await readRange("Sukuk_RAB!A1:Z30");
-    if (!rows || rows.length === 0) {
-      return NextResponse.json({ rab: [], source: "sheets" });
-    }
+    if (!rows || rows.length === 0) return null;
     const dataRows = rows[0]?.[0] === "ID" ? rows.slice(1) : rows;
-    const rab = dataRows
+    return dataRows
       .filter((r) => r && r[0])
       .map((r) => ({
         id: r[0] || "",
@@ -24,11 +24,21 @@ export async function GET() {
         status: r[9] || "",
         catatan: r[10] || "",
       }));
-    return NextResponse.json({ rab, source: "sheets" });
+  } catch {
+    return null;
+  }
+}
+
+export async function GET() {
+  try {
+    const sheetData = await getRABFromSheets();
+    if (sheetData && sheetData.length > 0) {
+      return NextResponse.json({ rab: sheetData, source: "sheets" });
+    }
+    const localData = getLocalRAB();
+    return NextResponse.json({ rab: localData, source: "local" });
   } catch (error) {
-    return NextResponse.json(
-      { error: "Failed to fetch RAB", details: String(error) },
-      { status: 500 }
-    );
+    const localData = getLocalRAB();
+    return NextResponse.json({ rab: localData, source: "local-fallback" });
   }
 }

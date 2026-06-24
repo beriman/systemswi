@@ -1,15 +1,15 @@
-// GET /api/sukuk/store — List store performance from SukukStore!A4:O9
+// GET /api/sukuk/store — List store performance
+// Tries Google Sheets first, falls back to local data store
 import { NextRequest, NextResponse } from "next/server";
 import { readRange } from "@/lib/sheets/sheets-real";
+import { getLocalStore } from "@/lib/sheets/sukuk-local-data";
 
-export async function GET() {
+async function getStoreFromSheets() {
   try {
     const rows = await readRange("SukukStore!A4:O9");
-    if (!rows || rows.length === 0) {
-      return NextResponse.json({ store: [], source: "sheets" });
-    }
+    if (!rows || rows.length === 0) return null;
     const dataRows = rows[0]?.[0] === "ID" ? rows.slice(1) : rows;
-    const store = dataRows
+    return dataRows
       .filter((r) => r && r[0])
       .map((r) => ({
         id: r[0] || "",
@@ -25,11 +25,21 @@ export async function GET() {
         status: r[10] || "",
         catatan: r[11] || "",
       }));
-    return NextResponse.json({ store, source: "sheets" });
+  } catch {
+    return null;
+  }
+}
+
+export async function GET() {
+  try {
+    const sheetData = await getStoreFromSheets();
+    if (sheetData && sheetData.length > 0) {
+      return NextResponse.json({ store: sheetData, source: "sheets" });
+    }
+    const localData = getLocalStore();
+    return NextResponse.json({ store: localData, source: "local" });
   } catch (error) {
-    return NextResponse.json(
-      { error: "Failed to fetch store", details: String(error) },
-      { status: 500 }
-    );
+    const localData = getLocalStore();
+    return NextResponse.json({ store: localData, source: "local-fallback" });
   }
 }

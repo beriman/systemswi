@@ -1,15 +1,15 @@
-// GET /api/sukuk/proyeksi — List projections from SukukStore!A29:O44
+// GET /api/sukuk/proyeksi — List projections
+// Tries Google Sheets first, falls back to local data store
 import { NextRequest, NextResponse } from "next/server";
 import { readRange } from "@/lib/sheets/sheets-real";
+import { getLocalProyeksi } from "@/lib/sheets/sukuk-local-data";
 
-export async function GET() {
+async function getProyeksiFromSheets() {
   try {
     const rows = await readRange("SukukStore!A29:O44");
-    if (!rows || rows.length === 0) {
-      return NextResponse.json({ proyeksi: [], source: "sheets" });
-    }
+    if (!rows || rows.length === 0) return null;
     const dataRows = rows[0]?.[0] === "ID" ? rows.slice(1) : rows;
-    const proyeksi = dataRows
+    return dataRows
       .filter((r) => r && r[0])
       .map((r) => ({
         id: r[0] || "",
@@ -27,11 +27,21 @@ export async function GET() {
         status: r[12] || "",
         catatan: r[13] || "",
       }));
-    return NextResponse.json({ proyeksi, source: "sheets" });
+  } catch {
+    return null;
+  }
+}
+
+export async function GET() {
+  try {
+    const sheetData = await getProyeksiFromSheets();
+    if (sheetData && sheetData.length > 0) {
+      return NextResponse.json({ proyeksi: sheetData, source: "sheets" });
+    }
+    const localData = getLocalProyeksi();
+    return NextResponse.json({ proyeksi: localData, source: "local" });
   } catch (error) {
-    return NextResponse.json(
-      { error: "Failed to fetch proyeksi", details: String(error) },
-      { status: 500 }
-    );
+    const localData = getLocalProyeksi();
+    return NextResponse.json({ proyeksi: localData, source: "local-fallback" });
   }
 }
