@@ -191,14 +191,10 @@ function loadServiceAccount() {
     }
   }
 
-  // 3. Try relative to source file (Next.js includes this in build)
+  // 3. Embedded fallback (for Vercel deployments where env vars can't be set via API)
   try {
-    const path = require("path");
-    const dir = __dirname;
-    const relPath = path.resolve(dir, "service-account.json");
-    const raw = fs.readFileSync(relPath, "utf-8");
-    const sa = JSON.parse(raw);
-    if (sa.type === "service_account") return sa;
+    const EMBEDDED_SA = JSON.parse(process.env.SA_EMBEDDED_JSON || "null");
+    if (EMBEDDED_SA && EMBEDDED_SA.type === "service_account") return EMBEDDED_SA;
   } catch {
     // fall through
   }
