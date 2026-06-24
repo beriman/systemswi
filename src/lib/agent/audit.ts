@@ -8,7 +8,7 @@ export type AuditEntry = {
   agent: string;
   action: string;
   target: string;
-  status: "success" | "failed" | "pending_approval" | "approved" | "rejected" | "partial";
+  status: "success" | "failed" | "pending_approval" | "approved" | "rejected" | "partial" | "retrying";
   humanApproved: string; // "yes" | "no" | "n/a" | approver name
   notes: string;
   approvalId?: string;
