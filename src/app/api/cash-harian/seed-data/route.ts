@@ -66,7 +66,7 @@ export async function POST(request: NextRequest) {
     const existingIds = new Set(
       dataRows.filter((r) => r && r[0]).map((r) => r[0] as string)
     );
-    const newRows = SEED_DATA.filter((row) => !existingIds.has(row[0]));
+    const newRows = SEED_DATA.filter((row) => !existingIds.has(String(row[0])));
 
     if (newRows.length === 0) {
       return NextResponse.json({

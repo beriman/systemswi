@@ -1,11 +1,10 @@
-// Break-Even Point Analysis — Google Sheets data layer
-// Uses BEP_Calculations and Break_Even_Analysis sheets
+// BEP Sheets helper — read/write BEP_Calculations sheet
+// Provides functions consumed by /api/bep/* routes
+import { readRange, writeRange, appendRows } from "@/lib/sheets/sheets-real";
 
-import { readRange, writeRange, appendRows } from "./sheets-real";
+export const BEP_SHEET = "BEP_Calculations";
 
-// ── Types ──────────────────────────────────────────────────────────
-
-export interface BEPCalculation {
+export interface BEPRow {
   calculationId: string;
   brand: string;
   product: string;
@@ -18,175 +17,82 @@ export interface BEPCalculation {
   currentSales: number;
   marginOfSafety: number;
   profitLoss: number;
-  createdAt: string;
-  updatedAt: string;
 }
 
-export interface WhatIfScenario {
-  scenarioId: string;
-  baseCalculationId: string;
+export interface WhatIfInput {
   brand: string;
   product: string;
   fixedCost: number;
   variableCostPerUnit: number;
   sellingPricePerUnit: number;
   currentSales: number;
-  contributionMargin: number;
-  bepUnits: number;
-  bepRevenue: number;
-  marginOfSafety: number;
-  profitLoss: number;
   priceChange: number;
   volumeChange: number;
   costChange: number;
-  createdAt: string;
 }
 
-export interface BEPSummary {
-  brand: string;
-  product: string;
-  fixedCost: number;
-  variableCostPerUnit: number;
-  sellingPricePerUnit: number;
-  contributionMargin: number;
-  bepUnits: number;
-  bepRevenue: number;
-  currentSales: number;
-  marginOfSafety: number;
-  profitLoss: number;
-  status: "profit" | "loss" | "break-even";
-}
+const text = (v: unknown): string => String(v ?? "").trim();
+const num = (v: unknown): number => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+};
 
-// ── Constants ───────────────────────────────────────────────────────
-
-const BEP_HEADERS = [
-  "Calculation ID", "Brand", "Product",
-  "Fixed Cost", "Variable Cost/Unit", "Selling Price/Unit",
-  "Contribution Margin", "BEP (units)", "BEP (revenue)",
-  "Current Sales", "Margin of Safety %", "Profit/Loss",
-  "Created At", "Updated At",
-];
-
-const WHAT_IF_HEADERS = [
-  "Scenario ID", "Base Calculation ID", "Brand", "Product",
-  "Fixed Cost", "Variable Cost/Unit", "Selling Price/Unit", "Current Sales",
-  "Contribution Margin", "BEP (units)", "BEP (revenue)",
-  "Margin of Safety %", "Profit/Loss",
-  "Price Change %", "Volume Change %", "Cost Change %",
-  "Created At",
-];
-
-// ── Helpers ─────────────────────────────────────────────────────────
-
-function n(value: unknown): number {
-  if (typeof value === "number") return value;
-  if (!value) return 0;
-  return Number(String(value).replace(/[^0-9.-]/g, "")) || 0;
-}
-
-function today(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function generateId(prefix: string): string {
-  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
+// ── Pure BEP formula ────────────────────────────────────────────────
 export function calcBEP(
   fixedCost: number,
   variableCostPerUnit: number,
   sellingPricePerUnit: number,
   currentSales: number = 0,
-): {
-  contributionMargin: number;
-  bepUnits: number;
-  bepRevenue: number;
-  marginOfSafety: number;
-  profitLoss: number;
-} {
+) {
   const contributionMargin = sellingPricePerUnit - variableCostPerUnit;
-  const bepUnits = contributionMargin > 0 ? Math.ceil(fixedCost / contributionMargin) : 0;
+  if (contributionMargin <= 0) {
+    return { contributionMargin: 0, bepUnits: 0, bepRevenue: 0, marginOfSafety: 0, profitLoss: 0 };
+  }
+  const bepUnits = Math.ceil(fixedCost / contributionMargin);
   const bepRevenue = bepUnits * sellingPricePerUnit;
   const marginOfSafety =
     currentSales > 0
       ? Math.round(((currentSales - bepUnits) / currentSales) * 100 * 100) / 100
       : 0;
   const profitLoss = currentSales * contributionMargin - fixedCost;
+  return { contributionMargin, bepUnits, bepRevenue, marginOfSafety, profitLoss };
+}
 
+// ── Parse sheet row to BEPRow ───────────────────────────────────────
+function parseRow(row: string[]): BEPRow {
   return {
-    contributionMargin,
-    bepUnits,
-    bepRevenue,
-    marginOfSafety,
-    profitLoss,
+    calculationId: text(row[0]),
+    brand: text(row[1]),
+    product: text(row[2]),
+    fixedCost: num(row[3]),
+    variableCostPerUnit: num(row[4]),
+    sellingPricePerUnit: num(row[5]),
+    contributionMargin: num(row[6]),
+    bepUnits: num(row[7]),
+    bepRevenue: num(row[8]),
+    currentSales: num(row[9]),
+    marginOfSafety: num(row[10]),
+    profitLoss: num(row[11]),
   };
 }
 
-// ── Initialize sheets ───────────────────────────────────────────────
+// ── Public functions ────────────────────────────────────────────────
 
-export async function ensureBEPSheetsInitialized(): Promise<void> {
-  try {
-    const rows = await readRange("BEP_Calculations!A1:N1");
-    if (!rows || rows.length === 0 || !rows[0][0]) {
-      await writeRange("BEP_Calculations!A1:N1", [BEP_HEADERS]);
-    }
-  } catch {
-    await writeRange("BEP_Calculations!A1:N1", [BEP_HEADERS]);
-  }
+export async function getAllBEPCalculations(): Promise<BEPRow[]> {
+  const rows = await readRange("BEP_Calculations!A1:L1000");
+  if (rows.length <= 1) return [];
+  return rows
+    .slice(1)
+    .filter((r) => r.some((c) => text(c) !== ""))
+    .map(parseRow);
 }
 
-// ── Read all BEP calculations ───────────────────────────────────────
-
-export async function getAllBEPCalculations(): Promise<BEPCalculation[]> {
-  try {
-    const rows = await readRange("BEP_Calculations!A2:N1000");
-    if (!rows || rows.length === 0) return [];
-
-    return rows.filter((r) => r.some(Boolean)).map((row) => {
-      const fixedCost = n(row[3]);
-      const variableCost = n(row[4]);
-      const sellingPrice = n(row[5]);
-      const currentSales = n(row[9]);
-
-      // Use stored values if available, otherwise recalculate
-      const contributionMargin = n(row[6]) || sellingPrice - variableCost;
-      const bepUnits = n(row[7]) || (contributionMargin > 0 ? Math.ceil(fixedCost / contributionMargin) : 0);
-      const bepRevenue = n(row[8]) || bepUnits * sellingPrice;
-      const marginOfSafety = n(row[10]) || (currentSales > 0 ? Math.round(((currentSales - bepUnits) / currentSales) * 100 * 100) / 100 : 0);
-      const profitLoss = n(row[11]) || (currentSales * contributionMargin - fixedCost);
-
-      return {
-        calculationId: row[0] || "",
-        brand: row[1] || "",
-        product: row[2] || "",
-        fixedCost,
-        variableCostPerUnit: variableCost,
-        sellingPricePerUnit: sellingPrice,
-        contributionMargin,
-        bepUnits,
-        bepRevenue,
-        currentSales,
-        marginOfSafety,
-        profitLoss,
-        createdAt: row[12] || "",
-        updatedAt: row[13] || "",
-      };
-    });
-  } catch {
-    return [];
-  }
-}
-
-// ── Read BEP by brand ───────────────────────────────────────────────
-
-export async function getBEPByBrand(brand: string): Promise<BEPCalculation[]> {
+export async function getBEPByBrand(brand: string): Promise<BEPRow[]> {
   const all = await getAllBEPCalculations();
   return all.filter(
-    (b) => b.brand.toLowerCase() === brand.toLowerCase()
+    (r) => r.brand.toLowerCase() === brand.toLowerCase()
   );
 }
-
-// ── Create BEP calculation ──────────────────────────────────────────
 
 export async function createBEPCalculation(data: {
   brand: string;
@@ -194,41 +100,22 @@ export async function createBEPCalculation(data: {
   fixedCost: number;
   variableCostPerUnit: number;
   sellingPricePerUnit: number;
-  currentSales?: number;
-}): Promise<BEPCalculation> {
-  await ensureBEPSheetsInitialized();
-
+  currentSales: number;
+}): Promise<BEPRow> {
   const calc = calcBEP(
     data.fixedCost,
     data.variableCostPerUnit,
     data.sellingPricePerUnit,
-    data.currentSales || 0,
+    data.currentSales
   );
 
-  const calculationId = generateId("BEP");
-  const now = today();
+  // Read existing to determine next ID
+  const rows = await readRange("BEP_Calculations!A1:L1000");
+  const dataRows = rows.slice(1).filter((r) => r.some((c) => text(c) !== ""));
+  const nextId = dataRows.length + 1;
 
-  const row = [
-    calculationId,
-    data.brand,
-    data.product,
-    data.fixedCost,
-    data.variableCostPerUnit,
-    data.sellingPricePerUnit,
-    calc.contributionMargin,
-    calc.bepUnits,
-    calc.bepRevenue,
-    data.currentSales || 0,
-    calc.marginOfSafety,
-    calc.profitLoss,
-    now,
-    now,
-  ];
-
-  await appendRows("BEP_Calculations", [row]);
-
-  return {
-    calculationId,
+  const row: BEPRow = {
+    calculationId: `bep-${String(nextId).padStart(4, "0")}`,
     brand: data.brand,
     product: data.product,
     fixedCost: data.fixedCost,
@@ -237,153 +124,116 @@ export async function createBEPCalculation(data: {
     contributionMargin: calc.contributionMargin,
     bepUnits: calc.bepUnits,
     bepRevenue: calc.bepRevenue,
-    currentSales: data.currentSales || 0,
+    currentSales: data.currentSales,
     marginOfSafety: calc.marginOfSafety,
     profitLoss: calc.profitLoss,
-    createdAt: now,
-    updatedAt: now,
   };
+
+  // Append row to sheet
+  await appendRows(BEP_SHEET, [[
+    row.calculationId,
+    row.brand,
+    row.product,
+    row.fixedCost,
+    row.variableCostPerUnit,
+    row.sellingPricePerUnit,
+    row.contributionMargin,
+    row.bepUnits,
+    row.bepRevenue,
+    row.currentSales,
+    row.marginOfSafety,
+    row.profitLoss,
+  ]]);
+
+  return row;
 }
 
-// ── What-if scenario ────────────────────────────────────────────────
-
-export async function createWhatIfScenario(data: {
-  baseCalculationId?: string;
-  brand: string;
-  product: string;
-  fixedCost: number;
-  variableCostPerUnit: number;
-  sellingPricePerUnit: number;
-  currentSales: number;
-  priceChange?: number;
-  volumeChange?: number;
-  costChange?: number;
-}): Promise<WhatIfScenario> {
-  await ensureBEPSheetsInitialized();
-
-  // Apply change factors
-  const priceMultiplier = 1 + (data.priceChange || 0) / 100;
-  const volumeMultiplier = 1 + (data.volumeChange || 0) / 100;
-  const costMultiplier = 1 + (data.costChange || 0) / 100;
-
-  const adjustedPrice = data.sellingPricePerUnit * priceMultiplier;
-  const adjustedCurrentSales = data.currentSales * volumeMultiplier;
-  const adjustedVariableCost = data.variableCostPerUnit * costMultiplier;
-  const adjustedFixedCost = data.fixedCost * costMultiplier;
-
-  const calc = calcBEP(
-    adjustedFixedCost,
-    adjustedVariableCost,
-    adjustedPrice,
-    adjustedCurrentSales,
+export async function createWhatIfScenario(input: WhatIfInput) {
+  const base = calcBEP(
+    input.fixedCost,
+    input.variableCostPerUnit,
+    input.sellingPricePerUnit,
+    input.currentSales
   );
 
-  const scenarioId = generateId("WIF");
-  const now = today();
+  const priceMult = 1 + input.priceChange / 100;
+  const volMult = 1 + input.volumeChange / 100;
+  const costMult = 1 + input.costChange / 100;
 
-  const row = [
-    scenarioId,
-    data.baseCalculationId || "",
-    data.brand,
-    data.product,
-    Math.round(adjustedFixedCost),
-    Math.round(adjustedVariableCost * 100) / 100,
-    Math.round(adjustedPrice * 100) / 100,
-    Math.round(adjustedCurrentSales),
-    calc.contributionMargin,
-    calc.bepUnits,
-    calc.bepRevenue,
-    calc.marginOfSafety,
-    calc.profitLoss,
-    data.priceChange || 0,
-    data.volumeChange || 0,
-    data.costChange || 0,
-    now,
-  ];
-
-  await appendRows("BEP_Calculations", [row]);
+  const scenario = calcBEP(
+    input.fixedCost * costMult,
+    input.variableCostPerUnit * costMult,
+    input.sellingPricePerUnit * priceMult,
+    input.currentSales * volMult
+  );
 
   return {
-    scenarioId,
-    baseCalculationId: data.baseCalculationId || "",
-    brand: data.brand,
-    product: data.product,
-    fixedCost: adjustedFixedCost,
-    variableCostPerUnit: adjustedVariableCost,
-    sellingPricePerUnit: adjustedPrice,
-    currentSales: adjustedCurrentSales,
-    contributionMargin: calc.contributionMargin,
-    bepUnits: calc.bepUnits,
-    bepRevenue: calc.bepRevenue,
-    marginOfSafety: calc.marginOfSafety,
-    profitLoss: calc.profitLoss,
-    priceChange: data.priceChange || 0,
-    volumeChange: data.volumeChange || 0,
-    costChange: data.costChange || 0,
-    createdAt: now,
+    scenarioId: `whatif-${Date.now()}`,
+    brand: input.brand,
+    product: input.product,
+    fixedCost: input.fixedCost * costMult,
+    variableCostPerUnit: input.variableCostPerUnit * costMult,
+    sellingPricePerUnit: input.sellingPricePerUnit * priceMult,
+    currentSales: input.currentSales * volMult,
+    contributionMargin: scenario.contributionMargin,
+    bepUnits: scenario.bepUnits,
+    bepRevenue: scenario.bepRevenue,
+    marginOfSafety: scenario.marginOfSafety,
+    profitLoss: scenario.profitLoss,
+    priceChange: input.priceChange,
+    volumeChange: input.volumeChange,
+    costChange: input.costChange,
   };
 }
 
-// ── Summary ─────────────────────────────────────────────────────────
-
-export async function getBEPSummary(): Promise<{
-  brands: BEPSummary[];
-  totalFixedCosts: number;
-  totalProfitLoss: number;
-  profitableCount: number;
-  lossCount: number;
-}> {
+export async function getBEPSummary() {
   const all = await getAllBEPCalculations();
 
-  const brandMap = new Map<string, BEPSummary>();
+  const brandMap = new Map<string, {
+    brand: string;
+    product: string;
+    fixedCost: number;
+    variableCostPerUnit: number;
+    sellingPricePerUnit: number;
+    contributionMargin: number;
+    bepUnits: number;
+    bepRevenue: number;
+    currentSales: number;
+    marginOfSafety: number;
+    profitLoss: number;
+    status: "profit" | "loss" | "break-even";
+  }>();
 
-  for (const calc of all) {
-    const existing = brandMap.get(calc.brand);
-    if (existing) {
-      existing.fixedCost += calc.fixedCost;
-      existing.currentSales += calc.currentSales;
-      existing.profitLoss += calc.profitLoss;
-      // Weighted average for per-unit metrics
-      const totalWeight = existing.currentSales + calc.currentSales;
-      if (totalWeight > 0) {
-        existing.sellingPricePerUnit =
-          (existing.sellingPricePerUnit * existing.currentSales +
-            calc.sellingPricePerUnit * calc.currentSales) / totalWeight;
-        existing.variableCostPerUnit =
-          (existing.variableCostPerUnit * existing.currentSales +
-            calc.variableCostPerUnit * calc.currentSales) / totalWeight;
-      }
-    } else {
-      brandMap.set(calc.brand, {
-        brand: calc.brand,
-        product: calc.product,
-        fixedCost: calc.fixedCost,
-        variableCostPerUnit: calc.variableCostPerUnit,
-        sellingPricePerUnit: calc.sellingPricePerUnit,
-        contributionMargin: calc.contributionMargin,
-        bepUnits: calc.bepUnits,
-        bepRevenue: calc.bepRevenue,
-        currentSales: calc.currentSales,
-        marginOfSafety: calc.marginOfSafety,
-        profitLoss: calc.profitLoss,
-        status: calc.profitLoss > 0 ? "profit" : calc.profitLoss < 0 ? "loss" : "break-even",
+  for (const row of all) {
+    const existing = brandMap.get(row.brand);
+    const status = row.profitLoss > 0 ? "profit" : row.profitLoss < 0 ? "loss" : "break-even";
+    if (!existing) {
+      brandMap.set(row.brand, {
+        brand: row.brand,
+        product: row.product,
+        fixedCost: row.fixedCost,
+        variableCostPerUnit: row.variableCostPerUnit,
+        sellingPricePerUnit: row.sellingPricePerUnit,
+        contributionMargin: row.contributionMargin,
+        bepUnits: row.bepUnits,
+        bepRevenue: row.bepRevenue,
+        currentSales: row.currentSales,
+        marginOfSafety: row.marginOfSafety,
+        profitLoss: row.profitLoss,
+        status,
       });
+    } else {
+      // Aggregate: sum fixed costs, weighted avg for rest
+      existing.fixedCost += row.fixedCost;
+      existing.profitLoss += row.profitLoss;
+      existing.currentSales += row.currentSales;
+      existing.bepUnits += row.bepUnits;
+      existing.bepRevenue += row.bepRevenue;
+      if (existing.profitLoss < 0) existing.status = "loss";
     }
   }
 
-  const brands = Array.from(brandMap.values()).map((b) => {
-    // Recalculate BEP with aggregated values
-    const aggCalc = calcBEP(b.fixedCost, b.variableCostPerUnit, b.sellingPricePerUnit, b.currentSales);
-    return {
-      ...b,
-      contributionMargin: aggCalc.contributionMargin,
-      bepUnits: aggCalc.bepUnits,
-      bepRevenue: aggCalc.bepRevenue,
-      marginOfSafety: aggCalc.marginOfSafety,
-      status: b.profitLoss > 0 ? "profit" as const : b.profitLoss < 0 ? "loss" as const : "break-even" as const,
-    };
-  });
-
+  const brands = Array.from(brandMap.values());
   const totalFixedCosts = brands.reduce((s, b) => s + b.fixedCost, 0);
   const totalProfitLoss = brands.reduce((s, b) => s + b.profitLoss, 0);
   const profitableCount = brands.filter((b) => b.status === "profit").length;
@@ -392,76 +242,50 @@ export async function getBEPSummary(): Promise<{
   return { brands, totalFixedCosts, totalProfitLoss, profitableCount, lossCount };
 }
 
-// ── Seed data ───────────────────────────────────────────────────────
+export async function seedBEPData(): Promise<BEPRow[]> {
+  const rows = await readRange("BEP_Calculations!A1:L1000");
+  const hasData = rows.length > 1 && rows.slice(1).some((r) => r.some((c) => text(c) !== ""));
+  if (hasData) return getAllBEPCalculations();
 
-export async function seedBEPData(): Promise<void> {
-  await ensureBEPSheetsInitialized();
-
-  const existing = await getAllBEPCalculations();
-  if (existing.length > 0) return; // Already seeded
-
-  const seedData: Array<{
-    brand: string;
-    product: string;
-    fixedCost: number;
-    variableCostPerUnit: number;
-    sellingPricePerUnit: number;
-    currentSales: number;
-  }> = [
-    // Brand 1: MABRUK
-    {
-      brand: "MABRUK",
-      product: "Mabruk Classic 100ml",
-      fixedCost: 150_000_000,
-      variableCostPerUnit: 45_000,
-      sellingPricePerUnit: 120_000,
-      currentSales: 2_500,
-    },
-    {
-      brand: "MABRUK",
-      product: "Mabruk Premium 50ml",
-      fixedCost: 80_000_000,
-      variableCostPerUnit: 28_000,
-      sellingPricePerUnit: 75_000,
-      currentSales: 3_200,
-    },
-    // Brand 2: ALMONDZ
-    {
-      brand: "ALMONDZ",
-      product: "Almondz Oud 100ml",
-      fixedCost: 200_000_000,
-      variableCostPerUnit: 60_000,
-      sellingPricePerUnit: 180_000,
-      currentSales: 2_000,
-    },
-    {
-      brand: "ALMONDZ",
-      product: "Almondz Rose 50ml",
-      fixedCost: 90_000_000,
-      variableCostPerUnit: 32_000,
-      sellingPricePerUnit: 85_000,
-      currentSales: 4_500,
-    },
-    // Brand 3: KAYA
-    {
-      brand: "KAYA",
-      product: "Kaya Signature 100ml",
-      fixedCost: 120_000_000,
-      variableCostPerUnit: 38_000,
-      sellingPricePerUnit: 95_000,
-      currentSales: 1_800,
-    },
-    {
-      brand: "KAYA",
-      product: "Kaya Travel Size 30ml",
-      fixedCost: 50_000_000,
-      variableCostPerUnit: 15_000,
-      sellingPricePerUnit: 40_000,
-      currentSales: 6_000,
-    },
+  // No data — seed from seed route data
+  const seedData = [
+    { brand: "Wangi Signature", product: "Eau de Parfum 50ml", fixedCost: 45_000_000, variableCostPerUnit: 85_000, sellingPricePerUnit: 180_000, currentSales: 320 },
+    { brand: "Wangi Signature", product: "Eau de Toilette 30ml", fixedCost: 30_000_000, variableCostPerUnit: 45_000, sellingPricePerUnit: 95_000, currentSales: 480 },
+    { brand: "Wangi Signature", product: "Body Mist 100ml", fixedCost: 20_000_000, variableCostPerUnit: 22_000, sellingPricePerUnit: 55_000, currentSales: 650 },
+    { brand: "Aroma Nusantara", product: "Eau de Parfum 30ml", fixedCost: 35_000_000, variableCostPerUnit: 55_000, sellingPricePerUnit: 120_000, currentSales: 380 },
+    { brand: "Aroma Nusantara", product: "Roll-On 10ml", fixedCost: 15_000_000, variableCostPerUnit: 12_000, sellingPricePerUnit: 35_000, currentSales: 720 },
+    { brand: "Aroma Nusantara", product: "Hair Mist 50ml", fixedCost: 18_000_000, variableCostPerUnit: 18_000, sellingPricePerUnit: 45_000, currentSales: 550 },
+    { brand: "Scent of SWI", product: "Mini Discovery Set", fixedCost: 25_000_000, variableCostPerUnit: 35_000, sellingPricePerUnit: 80_000, currentSales: 420 },
+    { brand: "Scent of SWI", product: "Travel Size 15ml", fixedCost: 12_000_000, variableCostPerUnit: 20_000, sellingPricePerUnit: 48_000, currentSales: 380 },
+    { brand: "Scent of SWI", product: "Gift Box Set", fixedCost: 40_000_000, variableCostPerUnit: 120_000, sellingPricePerUnit: 280_000, currentSales: 180 },
   ];
 
-  for (const data of seedData) {
-    await createBEPCalculation(data);
+  const newRows: (string | number)[][] = [];
+  let idCounter = 1;
+
+  for (const item of seedData) {
+    const calc = calcBEP(item.fixedCost, item.variableCostPerUnit, item.sellingPricePerUnit, item.currentSales);
+    const id = `bep-${String(idCounter).padStart(4, "0")}`;
+    newRows.push([
+      id, item.brand, item.product, item.fixedCost, item.variableCostPerUnit,
+      item.sellingPricePerUnit, calc.contributionMargin, calc.bepUnits, calc.bepRevenue,
+      item.currentSales, calc.marginOfSafety, calc.profitLoss,
+    ]);
+    idCounter++;
   }
+
+  const headers = ["ID", "Brand", "Product", "Fixed Cost", "Variable Cost/Unit", "Selling Price/Unit", "Contribution Margin", "BEP (units)", "BEP (revenue)", "Current Sales", "Margin of Safety", "Profit/Loss"];
+  const allRows: (string | number)[][] = [headers, ...newRows];
+
+  // Pad
+  const paddedRows = allRows.map((row) => {
+    const padded = [...row];
+    while (padded.length < 12) padded.push("");
+    return padded;
+  });
+  while (paddedRows.length < 1000) paddedRows.push(Array(12).fill(""));
+
+  await writeRange("BEP_Calculations!A1:L1000", paddedRows);
+
+  return getAllBEPCalculations();
 }
