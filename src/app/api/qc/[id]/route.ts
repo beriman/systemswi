@@ -1,38 +1,9 @@
-// GET /api/qc/[id] — QC detail by resultId
+// GET /api/qc/[id] — QC detail
 // PUT /api/qc/[id] — Update QC result
 import { NextRequest, NextResponse } from "next/server";
-import { readSheet, updateRow, SHEETS } from "@/lib/sheets/sheets-real";
-import { googleWorkspaceWriteBlockedSource } from "@/lib/api/google-workspace-error";
+import { readRange, updateRow } from "@/lib/sheets/sheets-real";
 
 export const runtime = "nodejs";
-
-const SHEET_NAME = "QC_Results";
-
-function rowToQC(row: string[], rowNumber: number) {
-  return {
-    resultId: row[0] || "",
-    batchCode: row[1] || "",
-    productionId: row[2] || "",
-    date: row[3] || "",
-    inspector: row[4] || "",
-    aromaScore: Number(row[5]) || 0,
-    warnaScore: Number(row[6]) || 0,
-    kejernihanScore: Number(row[7]) || 0,
-    packagingScore: Number(row[8]) || 0,
-    sealIntegrityScore: Number(row[9]) || 0,
-    overallScore: Number(row[10]) || 0,
-    status: row[11] || "",
-    notes: row[12] || "",
-    followUpRequired: row[13] || "",
-    rowNumber,
-  };
-}
-
-function calcOverall(scores: number[]): number {
-  if (scores.length === 0) return 0;
-  const sum = scores.reduce((a, b) => a + b, 0);
-  return Math.round((sum / scores.length) * 100) / 100;
-}
 
 function calcStatus(overall: number): string {
   if (overall >= 7) return "Pass";
@@ -40,98 +11,101 @@ function calcStatus(overall: number): string {
   return "Fail";
 }
 
-export async function GET(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+async function findQCRow(resultId: string): Promise<{ rowNumber: number; row: string[] } | null> {
+  const rows = await readRange("QC_Results!A1:N1000");
+  if (!rows || rows.length === 0) return null;
+
+  const startIdx = rows[0]?.[0] === "Result ID" ? 1 : 0;
+  for (let i = startIdx; i < rows.length; i++) {
+    if (rows[i] && rows[i][0] === resultId) {
+      return { rowNumber: i + 1, row: rows[i] };
+    }
+  }
+  return null;
+}
+
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
-    const raw = await readSheet(SHEET_NAME);
-    const hasHeader = raw.length > 0 && raw[0][0] === "Result ID";
-    const dataRows = hasHeader ? raw.slice(1) : raw;
-
-    const found = dataRows.find((row) => row && row[0] === id);
+    const found = await findQCRow(id);
     if (!found) {
-      return NextResponse.json(
-        { error: `QC result not found: ${id}` },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: "QC result not found" }, { status: 404 });
     }
 
-    const rowNum = dataRows.indexOf(found) + (hasHeader ? 2 : 1);
+    const r = found.row;
     return NextResponse.json({
-      source: `Google Sheets: ${SHEET_NAME}`,
-      sourceStatus: "live",
-      data: rowToQC(found, rowNum),
+      data: {
+        resultId: r[0] || "",
+        batchCode: r[1] || "",
+        productionId: r[2] || "",
+        date: r[3] || "",
+        inspector: r[4] || "",
+        aromaScore: Number(r[5]) || 0,
+        warnaScore: Number(r[6]) || 0,
+        kejernihanScore: Number(r[7]) || 0,
+        packagingScore: Number(r[8]) || 0,
+        sealIntegrityScore: Number(r[9]) || 0,
+        overallScore: Number(r[10]) || 0,
+        status: r[11] || "",
+        notes: r[12] || "",
+        followUpRequired: r[13] || "No",
+      },
     });
   } catch (error) {
     return NextResponse.json(
-      { error: "Failed to fetch QC detail", details: String(error) },
+      { error: "Failed to read QC detail", details: String(error) },
       { status: 500 }
     );
   }
 }
 
-export async function PUT(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
     const body = await request.json();
-    const raw = await readSheet(SHEET_NAME);
-    const hasHeader = raw.length > 0 && raw[0][0] === "Result ID";
-    const dataRows = hasHeader ? raw.slice(1) : raw;
-
-    const idx = dataRows.findIndex((row) => row && row[0] === id);
-    if (idx === -1) {
-      return NextResponse.json(
-        { error: `QC result not found: ${id}` },
-        { status: 404 }
-      );
+    const found = await findQCRow(id);
+    if (!found) {
+      return NextResponse.json({ error: "QC result not found" }, { status: 404 });
     }
 
-    const rowNum = idx + (hasHeader ? 2 : 1);
-    const existing = dataRows[idx];
+    const r = found.row;
+    const aroma = body.aromaScore !== undefined ? Number(body.aromaScore) : Number(r[5]) || 0;
+    const warna = body.warnaScore !== undefined ? Number(body.warnaScore) : Number(r[6]) || 0;
+    const kejernihan = body.kejernihanScore !== undefined ? Number(body.kejernihanScore) : Number(r[7]) || 0;
+    const packaging = body.packagingScore !== undefined ? Number(body.packagingScore) : Number(r[8]) || 0;
+    const seal = body.sealIntegrityScore !== undefined ? Number(body.sealIntegrityScore) : Number(r[9]) || 0;
 
-    // Build updated row — keep existing values for fields not provided
-    const aromaScore = body.aromaScore !== undefined ? Number(body.aromaScore) : (Number(existing[5]) || 0);
-    const warnaScore = body.warnaScore !== undefined ? Number(body.warnaScore) : (Number(existing[6]) || 0);
-    const kejernihanScore = body.kejernihanScore !== undefined ? Number(body.kejernihanScore) : (Number(existing[7]) || 0);
-    const packagingScore = body.packagingScore !== undefined ? Number(body.packagingScore) : (Number(existing[8]) || 0);
-    const sealIntegrityScore = body.sealIntegrityScore !== undefined ? Number(body.sealIntegrityScore) : (Number(existing[9]) || 0);
-
-    const overall = calcOverall([aromaScore, warnaScore, kejernihanScore, packagingScore, sealIntegrityScore]);
+    const clamp = (n: number) => Math.min(10, Math.max(1, n));
+    const scores = [aroma, warna, kejernihan, packaging, seal].map(clamp);
+    const overall = Math.round((scores.reduce((a, b) => a + b, 0) / 5) * 100) / 100;
     const status = calcStatus(overall);
 
-    const updatedRow = [
-      id,
-      body.batchCode ?? existing[1] ?? "",
-      body.productionId ?? existing[2] ?? "",
-      body.date ?? existing[3] ?? "",
-      body.inspector ?? existing[4] ?? "",
-      aromaScore,
-      warnaScore,
-      kejernihanScore,
-      packagingScore,
-      sealIntegrityScore,
+    const updated = [
+      r[0],
+      body.batchCode ?? r[1],
+      body.productionId ?? r[2],
+      body.date ?? r[3],
+      body.inspector ?? r[4],
+      scores[0],
+      scores[1],
+      scores[2],
+      scores[3],
+      scores[4],
       overall,
       status,
-      body.notes ?? existing[12] ?? "",
-      body.followUpRequired ? "Yes" : (existing[13] ?? "No"),
+      body.notes ?? r[12],
+      body.followUpRequired ? "Yes" : (r[13] || "No"),
     ];
 
-    await updateRow(SHEET_NAME, rowNum, updatedRow);
+    await updateRow("QC_Results", found.rowNumber, updated);
 
     return NextResponse.json({
-      source: `Google Sheets: ${SHEET_NAME}`,
-      sourceStatus: "live",
-      message: "QC result updated successfully",
-      data: rowToQC(updatedRow, rowNum),
+      success: true,
+      data: { resultId: id, overallScore: overall, status },
     });
   } catch (error) {
     return NextResponse.json(
-      googleWorkspaceWriteBlockedSource(SHEET_NAME, error),
+      { error: "Failed to update QC result", details: String(error) },
       { status: 500 }
     );
   }

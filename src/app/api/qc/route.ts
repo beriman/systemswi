@@ -1,55 +1,25 @@
 // GET /api/qc — List QC results (filter: batch, status)
-// POST /api/qc — Submit new QC result
+// POST /api/qc — Submit QC result
 import { NextRequest, NextResponse } from "next/server";
-import { readSheet, appendRows, SHEETS } from "@/lib/sheets/sheets-real";
-import { googleWorkspaceWriteBlockedSource } from "@/lib/api/google-workspace-error";
+import { readRange, appendRows } from "@/lib/sheets/sheets-real";
 
 export const runtime = "nodejs";
 
-const SHEET_NAME = "QC_Results";
-
-// Column order per plan:
-// A: Result ID, B: Batch Code, C: Production ID, D: Date, E: Inspector
-// F: Aroma Score, G: Warna Score, H: Kejernihan Score
-// I: Packaging Score, J: Seal Integrity Score, K: Overall Score
-// L: Status, M: Notes, N: Follow-up Required
-const HEADERS = [
+const SHEET = "QC_Results";
+const HEADER = [
   "Result ID", "Batch Code", "Production ID", "Date", "Inspector",
   "Aroma Score", "Warna Score", "Kejernihan Score",
   "Packaging Score", "Seal Integrity Score", "Overall Score",
   "Status", "Notes", "Follow-up Required",
 ];
 
-function rowToQC(row: string[], rowNumber: number) {
-  const aroma = Number(row[5]) || 0;
-  const warna = Number(row[6]) || 0;
-  const kejernihan = Number(row[7]) || 0;
-  const packaging = Number(row[8]) || 0;
-  const seal = Number(row[9]) || 0;
-  const overall = Number(row[10]) || 0;
-  return {
-    resultId: row[0] || "",
-    batchCode: row[1] || "",
-    productionId: row[2] || "",
-    date: row[3] || "",
-    inspector: row[4] || "",
-    aromaScore: aroma,
-    warnaScore: warna,
-    kejernihanScore: kejernihan,
-    packagingScore: packaging,
-    sealIntegrityScore: seal,
-    overallScore: overall,
-    status: row[11] || "",
-    notes: row[12] || "",
-    followUpRequired: row[13] || "",
-    rowNumber,
-  };
-}
-
-function calcOverall(scores: number[]): number {
-  if (scores.length === 0) return 0;
-  const sum = scores.reduce((a, b) => a + b, 0);
-  return Math.round((sum / scores.length) * 100) / 100;
+function generateResultId(): string {
+  const now = new Date();
+  const ts = now.getFullYear().toString().slice(2) +
+    String(now.getMonth() + 1).padStart(2, "0") +
+    String(now.getDate()).padStart(2, "0");
+  const rand = Math.random().toString(36).substring(2, 6).toUpperCase();
+  return `QC-${ts}-${rand}`;
 }
 
 function calcStatus(overall: number): string {
@@ -58,67 +28,64 @@ function calcStatus(overall: number): string {
   return "Fail";
 }
 
-async function ensureHeader() {
-  const raw = await readSheet(SHEET_NAME);
-  if (raw.length === 0 || raw[0][0] !== "Result ID") {
-    await appendRows(SHEET_NAME, [HEADERS]);
+async function getQCFromSheets(): Promise<string[][]> {
+  try {
+    const rows = await readRange("QC_Results!A1:N1000");
+    if (!rows || rows.length === 0) return [];
+    const first = rows[0];
+    if (first && first[0] === "Result ID") return rows.slice(1);
+    return rows;
+  } catch {
+    return [];
   }
 }
 
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const batchCode = searchParams.get("batchCode") || "";
-    const status = searchParams.get("status") || "";
-    const brand = searchParams.get("brand") || "";
+    const batchFilter = searchParams.get("batch")?.toLowerCase() || "";
+    const statusFilter = searchParams.get("status")?.toLowerCase() || "";
 
-    const raw = await readSheet(SHEET_NAME);
-    // First row is header if present
-    const hasHeader = raw.length > 0 && raw[0][0] === "Result ID";
-    const dataRows = hasHeader ? raw.slice(1) : raw;
+    const rows = await getQCFromSheets();
 
-    let results = dataRows
-      .filter((row) => row && row[0])
-      .map((row, i) => rowToQC(row, i + (hasHeader ? 2 : 1)));
+    const data = rows
+      .filter((r) => r && r[0])
+      .map((r) => ({
+        resultId: r[0] || "",
+        batchCode: r[1] || "",
+        productionId: r[2] || "",
+        date: r[3] || "",
+        inspector: r[4] || "",
+        aromaScore: Number(r[5]) || 0,
+        warnaScore: Number(r[6]) || 0,
+        kejernihanScore: Number(r[7]) || 0,
+        packagingScore: Number(r[8]) || 0,
+        sealIntegrityScore: Number(r[9]) || 0,
+        overallScore: Number(r[10]) || 0,
+        status: r[11] || "",
+        notes: r[12] || "",
+        followUpRequired: r[13] || "No",
+      }))
+      .filter((r) => {
+        if (batchFilter && !r.batchCode.toLowerCase().includes(batchFilter)) return false;
+        if (statusFilter && r.status.toLowerCase() !== statusFilter) return false;
+        return true;
+      });
 
-    if (batchCode) {
-      results = results.filter((r) =>
-        r.batchCode.toLowerCase().includes(batchCode.toLowerCase())
-      );
-    }
-    if (status) {
-      results = results.filter(
-        (r) => r.status.toLowerCase() === status.toLowerCase()
-      );
-    }
-    if (brand) {
-      // Brand info comes from ProductBatches join — for now filter by batchCode prefix
-      results = results.filter((r) =>
-        r.batchCode.toLowerCase().includes(brand.toLowerCase())
-      );
-    }
-
-    // Sort by date descending (newest first)
-    results.sort((a, b) => b.date.localeCompare(a.date));
-
-    // Compute summary stats
-    const total = results.length;
-    const passed = results.filter((r) => r.status === "Pass").length;
-    const failed = results.filter((r) => r.status === "Fail").length;
-    const conditional = results.filter((r) => r.status === "Conditional").length;
-    const passRate = total > 0 ? Math.round((passed / total) * 10000) / 100 : 0;
+    const total = data.length;
+    const passed = data.filter((r) => r.status === "Pass").length;
+    const failed = data.filter((r) => r.status === "Fail").length;
+    const conditional = data.filter((r) => r.status === "Conditional").length;
+    const passRate = total > 0 ? Math.round((passed / total) * 100) : 0;
 
     return NextResponse.json({
-      source: `Google Sheets: ${SHEET_NAME}`,
-      sourceStatus: "live",
-      generatedAt: new Date().toISOString(),
+      data,
       summary: { total, passed, failed, conditional, passRate },
-      count: results.length,
-      data: results,
+      source: "Google Sheets: QC_Results",
     });
   } catch (error) {
     return NextResponse.json(
-      { error: "Failed to fetch QC results", details: String(error) },
+      { error: "Failed to read QC results", details: String(error) },
       { status: 500 }
     );
   }
@@ -127,52 +94,30 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const {
-      batchCode,
-      productionId,
-      date,
-      inspector,
-      aromaScore,
-      warnaScore,
-      kejernihanScore,
-      packagingScore,
-      sealIntegrityScore,
-      notes,
-      followUpRequired,
-    } = body;
 
+    const batchCode = (body.batchCode || "").trim();
     if (!batchCode) {
-      return NextResponse.json(
-        { error: "Missing required field: batchCode" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "batchCode is required" }, { status: 400 });
     }
 
-    // Validate scores (1-10)
-    const scores = [aromaScore, warnaScore, kejernihanScore, packagingScore, sealIntegrityScore]
-      .map((s) => Number(s) || 0);
-    for (const s of scores) {
-      if (s < 0 || s > 10) {
-        return NextResponse.json(
-          { error: "All scores must be between 0 and 10" },
-          { status: 400 }
-        );
-      }
-    }
+    const aroma = Number(body.aromaScore) || 0;
+    const warna = Number(body.warnaScore) || 0;
+    const kejernihan = Number(body.kejernihanScore) || 0;
+    const packaging = Number(body.packagingScore) || 0;
+    const seal = Number(body.sealIntegrityScore) || 0;
 
-    const overall = calcOverall(scores);
+    const clamp = (n: number) => Math.min(10, Math.max(1, n));
+    const scores = [aroma, warna, kejernihan, packaging, seal].map(clamp);
+    const overall = Math.round((scores.reduce((a, b) => a + b, 0) / 5) * 100) / 100;
     const status = calcStatus(overall);
-    const resultId = `QC-${Date.now()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
-    const qcDate = date || new Date().toISOString().slice(0, 10);
+    const resultId = generateResultId();
 
-    await ensureHeader();
-
-    const newRow = [
+    const row = [
       resultId,
       batchCode,
-      productionId || "",
-      qcDate,
-      inspector || "system",
+      (body.productionId || "").trim(),
+      body.date || new Date().toISOString().slice(0, 10),
+      (body.inspector || "").trim(),
       scores[0],
       scores[1],
       scores[2],
@@ -180,21 +125,24 @@ export async function POST(request: NextRequest) {
       scores[4],
       overall,
       status,
-      notes || "",
-      followUpRequired ? "Yes" : "No",
+      (body.notes || "").trim(),
+      body.followUpRequired ? "Yes" : "No",
     ];
 
-    await appendRows(SHEET_NAME, [newRow]);
+    await appendRows(SHEET, [row]);
 
     return NextResponse.json({
-      source: `Google Sheets: ${SHEET_NAME}`,
-      sourceStatus: "live",
-      message: "QC result submitted successfully",
-      data: rowToQC(newRow, 0),
+      success: true,
+      data: {
+        resultId,
+        batchCode,
+        overallScore: overall,
+        status,
+      },
     }, { status: 201 });
   } catch (error) {
     return NextResponse.json(
-      googleWorkspaceWriteBlockedSource(SHEET_NAME, error),
+      { error: "Failed to submit QC result", details: String(error) },
       { status: 500 }
     );
   }
