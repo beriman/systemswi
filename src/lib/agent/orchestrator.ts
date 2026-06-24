@@ -28,8 +28,9 @@ import { analyzeTaxOptimization, formatTaxOptimizationForTelegram } from "./tax-
 // ── Phase 4 import ────────────────────────────────────────────────
 import { runPhase4Checks } from "./phase4-scaffold";
 
-// ── Phase 5 import ────────────────────────────────────────────────
+// ── Phase 5 imports ───────────────────────────────────────────────
 import { runApprovalSLAMonitor, formatSLAReportForDashboard } from "./approval-sla-monitor";
+import { runWeeklyReport, formatWeeklyReportForTelegram, generateWeeklyReport } from "./weekly-report";
 
 export const APPROVAL_THRESHOLD = 10_000_000; // Rp 10 juta
 
@@ -317,6 +318,7 @@ export async function runFullDailyAgent(): Promise<{
   taxOptimization: boolean;
   phase4: boolean;
   approvalSLA: boolean;
+  weeklyReportGenerated: boolean;
 }> {
   const results = {
     health: false,
@@ -337,6 +339,7 @@ export async function runFullDailyAgent(): Promise<{
     taxOptimization: false,
     phase4: false,
     approvalSLA: false,
+    weeklyReportGenerated: false,
   };
   const timestamp = new Date().toISOString();
 
@@ -582,6 +585,27 @@ export async function runFullDailyAgent(): Promise<{
     }
   } catch (error) {
     console.error("[Agent] Approval SLA monitor failed:", error);
+  }
+
+  // ── Phase 5: Weekly Report (generate on Monday = day 1) ──
+  const today = new Date().getDay(); // 0=Sun, 1=Mon
+  if (today === 1) {
+    try {
+      const weeklyReport = await runWeeklyReport();
+      results.weeklyReportGenerated = true;
+
+      await logAgentActionSafe({
+        timestamp,
+        agent: "HemuHemu/OWL",
+        action: "Weekly Agent Report",
+        target: "Agent_Audit_Log",
+        status: "success",
+        humanApproved: "n/a",
+        notes: `Week ${weeklyReport.weekStart} to ${weeklyReport.weekEnd}: ${weeklyReport.totalActions} actions, ${weeklyReport.successfulActions} success, ${weeklyReport.failedActions} failed. Sent via Telegram.`,
+      });
+    } catch (error) {
+      console.error("[Agent] Weekly report generation failed:", error);
+    }
   }
 
   // ── Summary ──

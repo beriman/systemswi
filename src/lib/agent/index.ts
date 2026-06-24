@@ -47,6 +47,8 @@ export type { EFakturDraft, BPOMStatus, BRITransaction, WhatsAppMessage, SukukPa
 // ── Phase 5: Agent Reliability ─────────────────────────────────────
 export { checkApprovalSLA, runApprovalSLAMonitor, formatSLAReportForDashboard } from "./approval-sla-monitor";
 export type { ApprovalSLAReport, BreachedApproval } from "./approval-sla-monitor";
+export { generateWeeklyReport, runWeeklyReport, formatWeeklyReportForTelegram } from "./weekly-report";
+export type { WeeklyAgentReport } from "./weekly-report";
 export { executeWithRetry, agentHealthTracker, sheetsCircuitBreaker, telegramCircuitBreaker } from "./error-recovery";
 export type { RetryConfig, ExecutionResult } from "./error-recovery";
 

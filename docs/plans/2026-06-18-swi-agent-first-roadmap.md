@@ -214,7 +214,7 @@ SWI saat ini punya **systemswi** — ERP dashboard yang sudah 31 modul. Tapi ini
 | 5.1 | **Error Recovery Integration** | ✅ DONE | Integrated `executeWithRetry` + `agentHealthTracker` into orchestrator. Health check now retries with exponential backoff. Circuit breaker ready for Google Sheets & Telegram. |
 | 5.2 | **Agent Health Dashboard Widget** | ✅ DONE | `src/app/api/agent/health-stats/route.ts` + Agent Dashboard "💓 Health Stats" tab — Real-time uptime %, avg duration, total runs, last status per module. Reads from `agentHealthTracker` singleton. Summary cards (Healthy/Degraded/Critical) + per-module table. |
 | 5.3 | **Approval SLA Monitor** | ✅ DONE | `src/lib/agent/approval-sla-monitor.ts` + `src/app/api/agent/approval-sla/route.ts` — Reads Agent_Approvals sheet, tracks wait time per pending approval. Warning at >2h (high severity alert), critical at >4h (critical escalation). Sends Telegram alerts with approval ID, wait time, and summary. Integrated into orchestrator daily run. Dashboard shows SLA status in summary. |
-| 5.4 | **Weekly Agent Report** | 🟡 Planned | Auto-generated weekly summary: tasks run, failures, approvals, time saved |
+| 5.4 | **Weekly Agent Report** | ✅ DONE | `src/lib/agent/weekly-report.ts` + `src/app/api/agent/weekly-report/route.ts` — Reads Agent_Audit_Log for the week, generates summary: total actions, success rate, failures, approvals, health check summary, daily activity chart, top actions. Auto-generated every Monday. Sent via Telegram with formatted report. Integrated into orchestrator (runs on Monday). |
 
 ---
 
@@ -346,6 +346,6 @@ Auto-refresh setiap 60 detik. Manual refresh button tersedia.
 ---
 
 *Document created: 2026-06-18 by OWL/HemuHemu*
-*Last updated: 2026-06-25 by OWL/HemuHemu — Phase 5.3 ✅ DONE: Approval SLA Monitor — new /api/agent/approval-sla route, reads Agent_Approvals sheet, escalates via Telegram at >2h (warning) and >4h (critical), integrated into orchestrator daily run and dashboard summary.*
+*Last updated: 2026-06-25 by OWL/HemuHemu — Phase 5.4 ✅ DONE: Weekly Agent Report — new /api/agent/weekly-report route, reads audit log for weekly summary, auto-generates on Monday, sent via Telegram with success rate, daily activity, health check summary, compliance notes.*
 *Review cycle: Quarterly ( setiap 3 bulan)*
 *Next review: September 2026*
