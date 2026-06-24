@@ -14,73 +14,64 @@ export async function GET(request: NextRequest) {
     const year = searchParams.get("year") || ""; // YYYY
 
     const raw = await readSheet(SHEET_NAME);
-    const dataRows = raw.slice(1).filter((row) => row && row[0]);
+    const hasHeader = raw.length > 0 && raw[0][0] === "EntryId";
+    const dataRows = hasHeader ? raw.slice(1) : raw;
 
-    // Filter by month/year
-    let filtered = dataRows;
+    const entries = dataRows
+      .filter((row) => row && row[0])
+      .map((row) => ({
+        entryId: row[0] || "",
+        date: row[1] || "",
+        type: row[2] || "",
+        category: row[3] || "Lain-lain",
+        description: row[4] || "",
+        debit: Number(row[5]) || 0,
+        credit: Number(row[6]) || 0,
+        saldo: Number(row[7]) || 0,
+      }));
+
+    // Filter by month if specified
+    let filtered = entries;
     if (month) {
-      filtered = filtered.filter((row) => row[1]?.startsWith(month));
+      filtered = entries.filter((e) => e.date.startsWith(month));
     } else if (year) {
-      filtered = filtered.filter((row) => row[1]?.startsWith(year));
+      filtered = entries.filter((e) => e.date.startsWith(year));
     }
 
-    // Summary by category
-    const byCategory: Record<string, { debit: number; credit: number; count: number }> = {};
-    for (const row of filtered) {
-      const cat = row[3] || "Lain-lain";
-      if (!byCategory[cat]) byCategory[cat] = { debit: 0, credit: 0, count: 0 };
-      byCategory[cat].debit += Number(row[5]) || 0;
-      byCategory[cat].credit += Number(row[6]) || 0;
-      byCategory[cat].count += 1;
+    // By category
+    const byCategory: Record<string, { debit: number; credit: number; net: number; count: number }> = {};
+    for (const e of filtered) {
+      if (!byCategory[e.category]) {
+        byCategory[e.category] = { debit: 0, credit: 0, net: 0, count: 0 };
+      }
+      byCategory[e.category].debit += e.debit;
+      byCategory[e.category].credit += e.credit;
+      byCategory[e.category].net += e.debit - e.credit;
+      byCategory[e.category].count += 1;
     }
 
-    // Summary by date (for weekly/monthly grouping)
-    const byDate: Record<string, { debit: number; credit: number; count: number }> = {};
-    for (const row of filtered) {
-      const dateKey = row[1] || "";
-      if (!byDate[dateKey]) byDate[dateKey] = { debit: 0, credit: 0, count: 0 };
-      byDate[dateKey].debit += Number(row[5]) || 0;
-      byDate[dateKey].credit += Number(row[6]) || 0;
-      byDate[dateKey].count += 1;
+    // Period breakdown
+    const periodMap: Record<string, { debit: number; credit: number; net: number; count: number }> = {};
+    for (const e of filtered) {
+      let key: string;
+      if (period === "weekly") {
+        const d = new Date(e.date + "T00:00:00");
+        const week = getWeekNumber(d);
+        key = `${d.getFullYear()}-W${String(week).padStart(2, "0")}`;
+      } else {
+        key = e.date.slice(0, 7); // YYYY-MM
+      }
+      if (!periodMap[key]) {
+        periodMap[key] = { debit: 0, credit: 0, net: 0, count: 0 };
+      }
+      periodMap[key].debit += e.debit;
+      periodMap[key].credit += e.credit;
+      periodMap[key].net += e.debit - e.credit;
+      periodMap[key].count += 1;
     }
 
-    // Totals
-    const totalDebit = filtered.reduce((s, r) => s + (Number(r[5]) || 0), 0);
-    const totalKredit = filtered.reduce((s, r) => s + (Number(r[6]) || 0), 0);
-    const netChange = totalDebit - totalKredit;
-
-    // Monthly summary — aggregate by YYYY-MM
-    const byMonth: Record<string, { debit: number; kredit: number; net: number }> = {};
-    for (const row of filtered) {
-      const dateKey = row[1] || "";
-      const monthKey = dateKey.slice(0, 7); // YYYY-MM
-      if (!byMonth[monthKey]) byMonth[monthKey] = { debit: 0, kredit: 0, net: 0 };
-      byMonth[monthKey].debit += Number(row[5]) || 0;
-      byMonth[monthKey].kredit += Number(row[6]) || 0;
-      byMonth[monthKey].net = byMonth[monthKey].debit - byMonth[monthKey].kredit;
-    }
-    const monthlySummary: Array<{ period: string; debit: number; kredit: number; net: number }> = [];
-    const monthKeys = Object.keys(byMonth).sort();
-    for (const m of monthKeys) {
-      const d = byMonth[m];
-      monthlySummary.push({
-        period: m,
-        debit: d.debit,
-        kredit: d.kredit,
-        net: d.net,
-      });
-    }
-
-    // Build byCategory with net field for UI compatibility
-    const byCategoryWithNet: Record<string, { debit: number; kredit: number; net: number; count: number }> = {};
-    for (const [cat, data] of Object.entries(byCategory)) {
-      byCategoryWithNet[cat] = {
-        debit: data.debit,
-        kredit: data.credit,
-        net: data.debit - data.credit,
-        count: data.count,
-      };
-    }
+    const totalDebit = filtered.reduce((s, e) => s + e.debit, 0);
+    const totalCredit = filtered.reduce((s, e) => s + e.credit, 0);
 
     return NextResponse.json({
       source: `Google Sheets: ${SHEET_NAME}`,
@@ -90,16 +81,12 @@ export async function GET(request: NextRequest) {
       filter: { month, year },
       summary: {
         totalDebit,
-        totalKredit,
-        netChange,
+        totalCredit,
+        netCash: totalDebit - totalCredit,
         entryCount: filtered.length,
       },
-      totalDebit,
-      totalKredit,
-      netChange,
-      byCategory: byCategoryWithNet,
-      byDate,
-      monthlySummary,
+      byCategory,
+      byPeriod: periodMap,
     });
   } catch (error) {
     return NextResponse.json(
@@ -107,4 +94,9 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+function getWeekNumber(d: Date): number {
+  const onejan = new Date(d.getFullYear(), 0, 1);
+  return Math.ceil(((d.getTime() - onejan.getTime()) / 86400000 + onejan.getDay() + 1) / 7);
 }

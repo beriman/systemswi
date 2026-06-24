@@ -1,21 +1,26 @@
-// GET /api/buku-kas — List buku kas entries with filters
+// GET /api/buku-kas — List buku kas entries (filter: type, category, startDate, endDate)
 // POST /api/buku-kas — Create new entry
 import { NextRequest, NextResponse } from "next/server";
-import { readSheet, appendRows, SHEETS } from "@/lib/sheets/sheets-real";
+import { readSheet, appendRows } from "@/lib/sheets/sheets-real";
 import { googleWorkspaceWriteBlockedSource } from "@/lib/api/google-workspace-error";
 
 export const runtime = "nodejs";
 
 const SHEET_NAME = "BukuKas";
 
-// Columns: EntryId | Date | Type | Category | Description | Debit | Credit | Saldo
+// Column order:
+// A: EntryId, B: Date, C: Type (Debit/Kredit), D: Category, E: Description,
+// F: Debit, G: Credit, H: Saldo
+const HEADERS = [
+  "EntryId", "Date", "Type", "Category", "Description",
+  "Debit", "Credit", "Saldo",
+];
+
 function rowToEntry(row: string[], rowNumber: number) {
-  const rawType = row[2] || "D";
-  const type = rawType === "K" || rawType === "Kredit" || rawType === "k" ? "K" : "D";
   return {
     entryId: row[0] || "",
     date: row[1] || "",
-    type: type as "D" | "K",
+    type: row[2] || "",
     category: row[3] || "",
     description: row[4] || "",
     debit: Number(row[5]) || 0,
@@ -25,55 +30,72 @@ function rowToEntry(row: string[], rowNumber: number) {
   };
 }
 
-function parseAmount(value: unknown): number {
-  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
-  if (typeof value !== "string") return 0;
-  const normalized = value.replace(/[^\d.-]/g, "");
-  const parsed = Number(normalized);
-  return Number.isFinite(parsed) ? parsed : 0;
+async function ensureHeader() {
+  const raw = await readSheet(SHEET_NAME);
+  if (raw.length === 0 || raw[0][0] !== "EntryId") {
+    await appendRows(SHEET_NAME, [HEADERS]);
+  }
 }
 
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
+    const type = searchParams.get("type") || "";
+    const category = searchParams.get("category") || "";
     const startDate = searchParams.get("startDate") || "";
     const endDate = searchParams.get("endDate") || "";
-    const category = searchParams.get("category") || "";
-    const type = searchParams.get("type") || "";
+    const limit = searchParams.get("limit") || "";
 
     const raw = await readSheet(SHEET_NAME);
-    // Data starts at row 6 (header at row 5 per range A5:H100)
-    const dataRows = raw.slice(1); // skip header row
+    const hasHeader = raw.length > 0 && raw[0][0] === "EntryId";
+    const dataRows = hasHeader ? raw.slice(1) : raw;
 
-    let entries = dataRows
+    let results = dataRows
       .filter((row) => row && row[0])
-      .map((row, i) => rowToEntry(row, i + 6));
+      .map((row, i) => rowToEntry(row, i + (hasHeader ? 2 : 1)));
 
-    // Filters
-    if (startDate) entries = entries.filter((e) => e.date >= startDate);
-    if (endDate) entries = entries.filter((e) => e.date <= endDate);
-    if (category) entries = entries.filter((e) => e.category === category);
     if (type) {
-      const normalizedType = type === "Kredit" || type === "K" ? "K" : "D";
-      entries = entries.filter((e) => e.type === normalizedType);
+      results = results.filter((r) => r.type.toLowerCase() === type.toLowerCase());
+    }
+    if (category) {
+      results = results.filter((r) =>
+        r.category.toLowerCase().includes(category.toLowerCase())
+      );
+    }
+    if (startDate) {
+      results = results.filter((r) => r.date >= startDate);
+    }
+    if (endDate) {
+      results = results.filter((r) => r.date <= endDate);
     }
 
-    // Sort by date ascending, then by entryId
-    entries.sort((a, b) => {
+    // Sort by date ascending, then by entryId ascending
+    results.sort((a, b) => {
       const dateCmp = a.date.localeCompare(b.date);
-      return dateCmp !== 0 ? dateCmp : a.entryId.localeCompare(b.entryId);
+      if (dateCmp !== 0) return dateCmp;
+      return a.entryId.localeCompare(b.entryId);
     });
+
+    if (limit) {
+      const n = parseInt(limit, 10);
+      if (n > 0) results = results.slice(-n);
+    }
+
+    const totalDebit = results.reduce((s, r) => s + r.debit, 0);
+    const totalCredit = results.reduce((s, r) => s + r.credit, 0);
+    const saldoAkhir = results.length > 0 ? results[results.length - 1].saldo : 0;
 
     return NextResponse.json({
       source: `Google Sheets: ${SHEET_NAME}`,
       sourceStatus: "live",
       generatedAt: new Date().toISOString(),
-      count: entries.length,
-      entries,
+      summary: { totalDebit, totalCredit, saldoAkhir, count: results.length },
+      count: results.length,
+      data: results,
     });
   } catch (error) {
     return NextResponse.json(
-      { error: "Failed to fetch buku kas entries", details: String(error) },
+      { error: "Failed to fetch buku kas", details: String(error) },
       { status: 500 }
     );
   }
@@ -84,62 +106,58 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { date, type, category, description, amount, reference } = body;
 
-    if (!date || !type || !category || !amount) {
+    if (!date || !type || amount === undefined) {
       return NextResponse.json(
-        { error: "Missing required fields: date, type, category, amount" },
+        { error: "Missing required fields: date, type, amount are required" },
         { status: 400 }
       );
     }
 
-    const parsedAmount = parseAmount(amount);
-    if (parsedAmount <= 0) {
+    if (!["Debit", "Kredit"].includes(type)) {
       return NextResponse.json(
-        { error: "Amount must be greater than 0" },
+        { error: "Type must be 'Debit' or 'Kredit'" },
         { status: 400 }
       );
     }
 
-    // Normalize type: accept "D"/"Debit" and "K"/"Kredit"
-    const normalizedType = (type === "K" || type === "Kredit" || type === "k") ? "K" : "D";
+    const amt = Number(amount);
+    if (amt < 0) {
+      return NextResponse.json(
+        { error: "Amount must be non-negative" },
+        { status: 400 }
+      );
+    }
 
-    // Generate entry ID
-    const entryId = `BK-${Date.now()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+    await ensureHeader();
 
-    // Calculate saldo: read last entry's saldo
+    // Read existing to compute running saldo
     const raw = await readSheet(SHEET_NAME);
-    const dataRows = raw.slice(1).filter((row) => row && row[0]);
-    let lastSaldo = 0;
-    if (dataRows.length > 0) {
-      const lastRow = dataRows[dataRows.length - 1];
-      lastSaldo = Number(lastRow[7]) || 0;
-    }
+    const hasHeader = raw.length > 0 && raw[0][0] === "EntryId";
+    const dataRows = hasHeader ? raw.slice(1) : raw;
+    const existing = dataRows.filter((row) => row && row[0]).map(rowToEntry);
+    const lastSaldo = existing.length > 0 ? existing[existing.length - 1].saldo : 0;
 
-    const debit = normalizedType === "D" ? parsedAmount : 0;
-    const credit = normalizedType === "K" ? parsedAmount : 0;
+    const debit = type === "Debit" ? amt : 0;
+    const credit = type === "Kredit" ? amt : 0;
     const newSaldo = lastSaldo + debit - credit;
 
-    // Column order: EntryId | Date | Type | Category | Description | Debit | Credit | Saldo
-    const newRow = [
-      entryId,
-      date,
-      normalizedType,
-      category,
-      description || reference || "",
-      debit,
-      credit,
-      newSaldo,
+    const entryId = `BK-${Date.now()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+    const row: string[] = [
+      entryId, date, type, category || "Lain-lain",
+      description || reference || "", String(debit), String(credit), String(newSaldo),
     ];
 
-    await appendRows(SHEET_NAME, [newRow]);
+    await appendRows(SHEET_NAME, [row]);
 
-    const createdEntry = rowToEntry(newRow, 0);
-    return NextResponse.json({
-      source: `Google Sheets: ${SHEET_NAME}`,
-      sourceStatus: "live",
-      message: "Entry created successfully",
-      data: createdEntry,
-      entry: createdEntry,
-    }, { status: 201 });
+    return NextResponse.json(
+      {
+        source: `Google Sheets: ${SHEET_NAME}`,
+        sourceStatus: "live",
+        message: "Buku kas entry created successfully",
+        data: rowToEntry(row, 0),
+      },
+      { status: 201 }
+    );
   } catch (error) {
     return NextResponse.json(
       googleWorkspaceWriteBlockedSource(SHEET_NAME, error),

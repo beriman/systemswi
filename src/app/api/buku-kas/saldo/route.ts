@@ -1,4 +1,4 @@
-// GET /api/buku-kas/saldo — Get current saldo (latest balance)
+// GET /api/buku-kas/saldo — Get current saldo
 import { NextRequest, NextResponse } from "next/server";
 import { readSheet } from "@/lib/sheets/sheets-real";
 
@@ -9,56 +9,36 @@ const SHEET_NAME = "BukuKas";
 export async function GET(request: NextRequest) {
   try {
     const raw = await readSheet(SHEET_NAME);
-    const dataRows = raw.slice(1).filter((row) => row && row[0]);
+    const hasHeader = raw.length > 0 && raw[0][0] === "EntryId";
+    const dataRows = hasHeader ? raw.slice(1) : raw;
 
-    if (dataRows.length === 0) {
-      return NextResponse.json({
-        source: `Google Sheets: ${SHEET_NAME}`,
-        sourceStatus: "live",
-        generatedAt: new Date().toISOString(),
-        saldo: 0,
-        totalDebit: 0,
-        totalCredit: 0,
-        entryCount: 0,
-        lastEntry: null,
-      });
-    }
+    const entries = dataRows
+      .filter((row) => row && row[0])
+      .map((row) => ({
+        entryId: row[0] || "",
+        date: row[1] || "",
+        type: row[2] || "",
+        debit: Number(row[5]) || 0,
+        credit: Number(row[6]) || 0,
+        saldo: Number(row[7]) || 0,
+      }));
 
-    const lastRow = dataRows[dataRows.length - 1];
-    const lastSaldo = Number(lastRow[7]) || 0;
-
-    // Calculate totals
-    let totalDebit = 0;
-    let totalCredit = 0;
-    for (const row of dataRows) {
-      totalDebit += Number(row[5]) || 0;
-      totalCredit += Number(row[6]) || 0;
-    }
-
-    // Calculate current month totals
-    const currentMonth = new Date().toISOString().slice(0, 7);
-    const currentMonthRows = dataRows.filter((r) => r[1]?.startsWith(currentMonth));
-    const monthDebit = currentMonthRows.reduce((s, r) => s + (Number(r[5]) || 0), 0);
-    const monthKredit = currentMonthRows.reduce((s, r) => s + (Number(r[6]) || 0), 0);
+    const currentSaldo = entries.length > 0 ? entries[entries.length - 1].saldo : 0;
+    const totalDebit = entries.reduce((s, e) => s + e.debit, 0);
+    const totalCredit = entries.reduce((s, e) => s + e.credit, 0);
+    const lastEntry = entries.length > 0 ? entries[entries.length - 1] : null;
 
     return NextResponse.json({
       source: `Google Sheets: ${SHEET_NAME}`,
       sourceStatus: "live",
       generatedAt: new Date().toISOString(),
-      saldo: lastSaldo,
-      totalDebit,
-      totalKredit: totalCredit,
-      entryCount: dataRows.length,
-      currentMonth,
-      monthDebit,
-      monthKredit,
-      lastEntry: {
-        entryId: lastRow[0],
-        date: lastRow[1],
-        description: lastRow[4],
-        debit: Number(lastRow[5]) || 0,
-        credit: Number(lastRow[6]) || 0,
-        saldo: lastSaldo,
+      saldo: {
+        current: currentSaldo,
+        totalDebit,
+        totalCredit,
+        entryCount: entries.length,
+        lastEntryDate: lastEntry?.date || null,
+        lastEntryId: lastEntry?.entryId || null,
       },
     });
   } catch (error) {

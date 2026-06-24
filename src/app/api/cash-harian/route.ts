@@ -151,7 +151,7 @@ export async function POST(request: NextRequest) {
         source: `Google Sheets: ${SHEET_NAME}`,
         sourceStatus: "live",
         message: "Cash entry created successfully",
-        data: rowToEntry(row, 0),
+        data: rowToEntry(row as string[], 0),
       },
       { status: 201 }
     );
