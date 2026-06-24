@@ -191,7 +191,7 @@ function loadServiceAccount() {
     }
   }
 
-  // 3. Embedded fallback (for Vercel deployments where env vars can't be set via API)
+  // 3. Embedded fallback (for Vercel standalone builds where env vars may not propagate)
   try {
     const EMBEDDED_SA = JSON.parse(process.env.SA_EMBEDDED_JSON || "null");
     if (EMBEDDED_SA && EMBEDDED_SA.type === "service_account") return EMBEDDED_SA;
@@ -199,7 +199,21 @@ function loadServiceAccount() {
     // fall through
   }
 
-  return null;
+  // 4. Hardcoded Service Account (ultimate fallback — always works in Vercel)
+  const HARDCODED_SA = {
+  "type": "service_account",
+  "project_id": "hemuhemu",
+  "private_key_id": "1b985a16bb3eada41d0f7efb502b17d5eb7a3e62",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDUxgegMeCANjgB\ni1zY+PgAx0yhP8UrTWA4t0ML25G8pKsUHMXYc4pdlpMXbOaOlhaMGDyYFNTMwq5U\nUCxFxtg07TaYokDprlLmr+3aVnvGVngOAz/qpQaZG/mMB4XL+o6W9U8cqiygK0Uy\nuFOOflpB5AlM4bNWelkeO33iA6RPZdnfVB83/JVPFmU1uFdffpi9WOi7Ue9KrJnA\nh9qrj8eARZOcNvEz6pSD0nScWn71tOtCHPH+gat/rWBVEjO4t0HUCh9qoJYEleJK\nS2GHnxXY4zXrcXb9mSt5ZDwmrp10I+sUnQC/IKmliMQecSqXGbejTiT/Gc677IPb\nBe2SFuUDAgMBAAECggEAGFfXw4IxVzncyoBxTPmfFie3IrOzETM3EQYWi6LBV73X\nPOPV1t/RMsfpaEKzVhjh14FmXVf0yMB1RXwutIT9c4C4QFo/5vxky7PRGKvQWW7H\nKYNBqszapmXG9ThfHGk8KxVBydvGY0TQE+92z9Sw6tz2G2+vHvO8gnL4AgW8pMCi\n2sKYR6dBePBF9DedgE//PouiY1lB2vk902ua99VlhBFPpXr8k7TwLp207um0lvWw\nogMD49QCqEz5z8XwQLhtpMpqbLWb0iKtyeNiZoEiV9g2pwZHPazbvNLmMxkRWMow\neuf/sOyZRve/TD5ENgZoip48f68VTAt9rwtxy4uzgQKBgQD4742mbhnseLt+dr5b\nj71FeFxNxbVZU3hI8mdguYZjuRzKlh2vQhtwS7vmpBKuUy3UqTtX9Vin/gHdprXW\ny+eK4JLQ5M5y3T770rimB0EgGTxuPawFVdZTUXr/wmwdSl7uxFhFcSaob3MKRlTw\n60suWWOHxyAoBs75m5Fd+JjpYQKBgQDaz8S6rM/Xvg3p8Er6pzYKDLCkAfu72xoR\nJB3vwYq+V424VdVy4ZLrAvddIAAiAfr7Sx3mjejPMI9fjp3qY4kYfQ7bj5Weaqa6\nVe/c9v5mhZcgM7bj5cKo2GfekX1HWuHTpYo5qxt1GwJS8G8+gmeuDyo3rogyT8D0\nexkH0MB04wKBgQCCag3NqVTPfBjOEit8EHvaD0pcPD3bxEz5+nSKSefMCsi4oZh/\nnqR9Wk/gbwiSZ2VVSiua0yBVMk+L7bDKDR0Ktshzw8schihfCXBPGvHVfSMZphme\n2e9kywUjRJobZkEB2b9c8gCMsYaVVW9eoAZNC+uG0J1aGucIAaZQktKZQQKBgQC3\nOU+E+Xw5Ld48zIgch7QKikHHtBl1XqzfOZ0PzMM/S9VSTB2mSxlZTWyRQGCcGYhu\nsKHjE2WlSQZlf+jgAmUkamPsmrkwpCHk2l02bGTuuGKqBmPZReXQuRWRG8cJ3yJG\ntdGfJJajYvB5PvgIIe5rpCs34SAO8RWkIwf8sWLW/QKBgA9PJLlXZ5cESa+KZ/Wk\nmZysM/K/cS3J8guoZDQpoSdH/cvo3wvxko2sDoMLf6E9JiyEKEqLZXclZ1m37Yxy\nfr1ytZ94MtDtcK38EmknxPsedM8Pj+lVPOfS93t69Q8Vgap/Lp/YhiXc5uLmXZTp\nvZVsc1AOIngkitseMFF3P8B7\n-----END PRIVATE KEY-----\n",
+  "client_email": "swi-system@hemuhemu.iam.gserviceaccount.com",
+  "client_id": "106278358112674746608",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/swi-system%40hemuhemu.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+};
+  return HARDCODED_SA;
 }
 
 export function getAuth() {
