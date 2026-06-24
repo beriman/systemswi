@@ -2,7 +2,7 @@
 // POST /api/sales/actuals — Record a sale
 import { NextRequest, NextResponse } from "next/server";
 import { googleWorkspaceDegradedSource, googleWorkspaceWriteBlockedSource, isGoogleWorkspaceAuthError } from "@/lib/api/google-workspace-error";
-import { appendRows, readRange, updateRow } from "@/lib/sheets/sheets-real";
+import { appendRows, readRange, updateRow, deleteRow } from "@/lib/sheets/sheets-real";
 import { appendSwiMemoryLog } from "@/lib/google/audit-log";
 
 export const runtime = "nodejs";
@@ -125,5 +125,40 @@ export async function POST(request: NextRequest) {
       }, { status: 503 });
     }
     return NextResponse.json({ error: "Gagal menyimpan sales actual", details: String(error) }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const actualId = searchParams.get("actualId");
+
+    if (!actualId) {
+      return NextResponse.json({ error: "actualId diperlukan" }, { status: 400 });
+    }
+
+    const existing = await readRange("Sales_Actuals!A1:J1000");
+    const rowIdx = existing.findIndex((r) => text(r[0]) === actualId);
+
+    if (rowIdx <= 0) {
+      return NextResponse.json({ error: "Actual tidak ditemukan" }, { status: 404 });
+    }
+
+    await deleteRow("Sales_Actuals", rowIdx + 1);
+
+    await appendSwiMemoryLog({
+      action: "sales_actual_delete",
+      target: "Sales_Actuals",
+      summary: `Deleted actual ${actualId}`,
+    });
+
+    return NextResponse.json({ success: true, message: `Actual ${actualId} dihapus` });
+  } catch (error) {
+    if (isGoogleWorkspaceAuthError(error)) {
+      return NextResponse.json({
+        ...googleWorkspaceWriteBlockedSource(SOURCE, error),
+      }, { status: 503 });
+    }
+    return NextResponse.json({ error: "Gagal menghapus sales actual", details: String(error) }, { status: 500 });
   }
 }

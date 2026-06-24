@@ -2,7 +2,7 @@
 // POST /api/sales/targets — Create/update sales target
 import { NextRequest, NextResponse } from "next/server";
 import { googleWorkspaceDegradedSource, googleWorkspaceWriteBlockedSource, isGoogleWorkspaceAuthError } from "@/lib/api/google-workspace-error";
-import { appendRows, readRange, updateRow } from "@/lib/sheets/sheets-real";
+import { appendRows, readRange, updateRow, deleteRow } from "@/lib/sheets/sheets-real";
 import { appendSwiMemoryLog } from "@/lib/google/audit-log";
 
 export const runtime = "nodejs";
@@ -120,5 +120,40 @@ export async function POST(request: NextRequest) {
       }, { status: 503 });
     }
     return NextResponse.json({ error: "Gagal menyimpan sales target", details: String(error) }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const targetId = searchParams.get("targetId");
+
+    if (!targetId) {
+      return NextResponse.json({ error: "targetId diperlukan" }, { status: 400 });
+    }
+
+    const existing = await readRange("Sales_Targets!A1:K1000");
+    const rowIdx = existing.findIndex((r) => text(r[0]) === targetId);
+
+    if (rowIdx <= 0) {
+      return NextResponse.json({ error: "Target tidak ditemukan" }, { status: 404 });
+    }
+
+    await deleteRow("Sales_Targets", rowIdx + 1);
+
+    await appendSwiMemoryLog({
+      action: "sales_target_delete",
+      target: "Sales_Targets",
+      summary: `Deleted target ${targetId}`,
+    });
+
+    return NextResponse.json({ success: true, message: `Target ${targetId} dihapus` });
+  } catch (error) {
+    if (isGoogleWorkspaceAuthError(error)) {
+      return NextResponse.json({
+        ...googleWorkspaceWriteBlockedSource(SOURCE, error),
+      }, { status: 503 });
+    }
+    return NextResponse.json({ error: "Gagal menghapus sales target", details: String(error) }, { status: 500 });
   }
 }
