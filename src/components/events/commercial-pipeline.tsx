@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { BoothMap } from "./booth-map";
 
 interface EventOption {
   id: string;
@@ -248,6 +249,19 @@ export function CommercialPipeline({ events }: { events: EventOption[] }) {
           </form>
         </CardContent>
       </Card>
+
+      {/* Booth Map */}
+      {data.tenants.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>🗺️ Booth Map</CardTitle>
+            <CardDescription>Visual layout booth — status payment indicator per tenant.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <BoothMap tenants={data.tenants} />
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
