@@ -1,39 +1,65 @@
 // POST /api/bep/what-if — What-if scenario analysis
 import { NextRequest, NextResponse } from "next/server";
-import { createWhatIfScenario } from "@/lib/sheets/bep-sheets";
+import { calculateWhatIf, type WhatIfScenario } from "@/lib/bep/bep-calculations";
 
 export const runtime = "nodejs";
 
-export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json();
-    const { brand, product, fixedCost, variableCostPerUnit, sellingPricePerUnit, currentSales, priceChange, volumeChange, costChange } = body;
+function n(value: unknown): number {
+  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+  if (typeof value !== "string") return 0;
+  const parsed = Number(value.replace(/[^\d.-]/g, ""));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
 
-    if (!brand || fixedCost === undefined || variableCostPerUnit === undefined || sellingPricePerUnit === undefined) {
+function s(value: unknown): string {
+  return String(value ?? "").trim();
+}
+
+export async function POST(req: NextRequest) {
+  try {
+    const body = await req.json();
+
+    const fixedCost = n(body.fixedCost);
+    const variableCost = n(body.variableCostPerUnit);
+    const sellingPrice = n(body.sellingPricePerUnit);
+    const projectedSales = n(body.projectedSales);
+
+    if (sellingPrice <= 0) {
       return NextResponse.json(
-        { error: "Missing required fields: brand, fixedCost, variableCostPerUnit, sellingPricePerUnit" },
+        { error: "Selling price must be greater than 0" },
         { status: 400 }
       );
     }
 
-    const scenario = await createWhatIfScenario({
-      brand,
-      product: product || "Scenario",
-      fixedCost: Number(fixedCost),
-      variableCostPerUnit: Number(variableCostPerUnit),
-      sellingPricePerUnit: Number(sellingPricePerUnit),
-      currentSales: Number(currentSales) || 0,
-      priceChange: Number(priceChange) || 0,
-      volumeChange: Number(volumeChange) || 0,
-      costChange: Number(costChange) || 0,
+    if (variableCost < 0) {
+      return NextResponse.json(
+        { error: "Variable cost cannot be negative" },
+        { status: 400 }
+      );
+    }
+
+    const scenario = calculateWhatIf({
+      name: s(body.name) || "What-If Scenario",
+      fixedCost,
+      variableCostPerUnit: variableCost,
+      sellingPricePerUnit: sellingPrice,
+      projectedSales,
     });
 
+    // If baseCalculationId provided, include comparison
+    let comparison = null;
+    if (body.baseCalculationId) {
+      comparison = {
+        baseCalculationId: body.baseCalculationId,
+        message: "Compare scenario against base calculation",
+      };
+    }
+
     return NextResponse.json({
-      source: "Google Sheets: BEP_Calculations",
-      sourceStatus: "live",
-      message: "What-if scenario calculated",
+      success: true,
       scenario,
-    });
+      comparison,
+    }, { status: 201 });
   } catch (error) {
     return NextResponse.json(
       { error: "Failed to calculate what-if scenario", details: String(error) },
