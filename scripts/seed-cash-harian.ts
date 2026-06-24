@@ -1,4 +1,4 @@
-import { writeRange, readRange } from "./src/lib/sheets/sheets-real";
+import { writeRange, readRange } from "../src/lib/sheets/sheets-real";
 
 const HEADERS = [
   "Entry ID", "Date", "Type", "Category", "Description",

@@ -1,8 +1,9 @@
-// POST /api/customers/seed — seed sample customer data
+// POST /api/customers/seed — seed sample customer data into SQLite + Google Sheets
 // Body: { force?: boolean }
 import { NextRequest, NextResponse } from "next/server";
 import { googleWorkspaceWriteBlockedSource, isGoogleWorkspaceAuthError } from "@/lib/api/google-workspace-error";
 import { readRange, appendRows, writeRange } from "@/lib/sheets/sheets-real";
+import { ensureCustomerTables } from "@/lib/customer/init-db";
 
 export const runtime = "nodejs";
 
@@ -50,52 +51,134 @@ const SAMPLE_INTERACTIONS = [
   ["2026-06-19T12:00:00.000Z", "CI-20260619-001", "CUST-ANISA-010", "Anisa Rahma", "meeting", "Event", "Visit booth Fragrantions, minta info produk", "0", "2026-06-26", "HemuHemu/OWL"],
 ];
 
+// ── SQLite helpers ──
+function getDbSafe(): any {
+  try {
+    const Database = require("better-sqlite3");
+    const path = require("path");
+    const fs = require("fs");
+    const dbDir = path.join(process.cwd(), ".data");
+    const dbPath = path.join(dbDir, "systemswi.db");
+    if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir, { recursive: true });
+    const db = new Database(dbPath);
+    db.pragma("journal_mode = WAL");
+    ensureCustomerTables(db);
+    return db;
+  } catch {
+    return null;
+  }
+}
+
+function seedSqlite(): { customers: number; interactions: number } {
+  const db = getDbSafe();
+  if (!db) return { customers: 0, interactions: 0 };
+  try {
+    // Check existing
+    const existing = db.prepare("SELECT COUNT(*) as c FROM customers").get();
+    if (existing && existing.c > 0) {
+      // Already has data — skip SQLite seed (don't overwrite user data)
+      return { customers: 0, interactions: 0 };
+    }
+
+    const insertCustomer = db.prepare(
+      `INSERT OR IGNORE INTO customers (id, name, whatsapp, segment, interest, source, consent, last_contact, total_purchases, clv, recommended_formula, notes, updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`
+    );
+    const insertInteraction = db.prepare(
+      `INSERT OR IGNORE INTO customer_interactions (interaction_id, customer_id, name, type, channel, summary, value, follow_up_date, pic, created_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?)`
+    );
+
+    const tx = db.transaction(() => {
+      for (const c of SAMPLE_CUSTOMERS) {
+        insertCustomer.run(c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7], Number(c[8]), Number(c[9]), c[10], c[11], c[12]);
+      }
+      for (const ix of SAMPLE_INTERACTIONS) {
+        insertInteraction.run(ix[1], ix[2], ix[3], ix[4], ix[5], ix[6], Number(ix[7]), ix[8], ix[9], ix[0]);
+      }
+    });
+    tx();
+    return { customers: SAMPLE_CUSTOMERS.length, interactions: SAMPLE_INTERACTIONS.length };
+  } catch (err) {
+    console.error("[Seed] SQLite error:", err);
+    return { customers: 0, interactions: 0 };
+  } finally {
+    try { db.close(); } catch { /* ignore */ }
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json().catch(() => ({}));
     const force = body.force === true;
 
-    // Check existing data
-    const [existingCustomers, existingInteractions] = await Promise.all([
-      readRange("Customer_Master!A2:M1000"),
-      readRange("Customer_Interactions!A2:J1000"),
-    ]);
+    // ── Always seed SQLite first (idempotent — skips if data exists) ──
+    const sqliteResult = seedSqlite();
 
-    const hasCustomers = existingCustomers.some((row) => row.some(Boolean));
-    const hasInteractions = existingInteractions.some((row) => row.some(Boolean));
+    // ── Google Sheets (non-blocking) ──
+    let hasCustomers = false;
+    let hasInteractions = false;
+    let existingCount = { customers: 0, interactions: 0 };
+    let sheetsWriteStatus = "unavailable";
 
-    if (!force && hasCustomers && hasInteractions) {
+    try {
+      const [existingSheetsCustomers, existingSheetsInteractions] = await Promise.all([
+        readRange("Customer_Master!A2:M1000"),
+        readRange("Customer_Interactions!A2:J1000"),
+      ]);
+      hasCustomers = existingSheetsCustomers.some((row) => row.some(Boolean));
+      hasInteractions = existingSheetsInteractions.some((row) => row.some(Boolean));
+      existingCount = {
+        customers: existingSheetsCustomers.filter((r) => r.some(Boolean)).length,
+        interactions: existingSheetsInteractions.filter((r) => r.some(Boolean)).length,
+      };
+      sheetsWriteStatus = "available";
+    } catch {
+      // Google Sheets auth may be expired — continue with SQLite only
+      sheetsWriteStatus = "degraded";
+    }
+
+    if (sheetsWriteStatus === "available" && !force && hasCustomers && hasInteractions) {
       return NextResponse.json({
-        message: "Data sudah ada. Gunakan { force: true } untuk overwrite.",
-        customers: existingCustomers.filter((r) => r.some(Boolean)).length,
-        interactions: existingInteractions.filter((r) => r.some(Boolean)).length,
+        message: "Data sudah ada di Google Sheets. Gunakan { force: true } untuk overwrite.",
+        sqlite: sqliteResult,
+        sheets: existingCount,
       });
     }
 
-    if (force) {
-      // Clear existing data rows (keep headers)
-      if (hasCustomers) {
-        await writeRange(
-          `Customer_Master!A2:M${existingCustomers.length + 1}`,
-          Array(existingCustomers.length).fill(Array(13).fill(""))
-        );
-      }
-      if (hasInteractions) {
-        await writeRange(
-          `Customer_Interactions!A2:J${existingInteractions.length + 1}`,
-          Array(existingInteractions.length).fill(Array(10).fill(""))
-        );
+    // Write sample data to Google Sheets (only if auth works)
+    if (sheetsWriteStatus === "available") {
+      try {
+        if (force) {
+          // Clear existing data rows (keep headers)
+          if (hasCustomers) {
+            await writeRange(
+              `Customer_Master!A2:M${existingCount.customers + 1}`,
+              Array(existingCount.customers).fill(Array(13).fill(""))
+            );
+          }
+          if (hasInteractions) {
+            await writeRange(
+              `Customer_Interactions!A2:J${existingCount.interactions + 1}`,
+              Array(existingCount.interactions).fill(Array(10).fill(""))
+            );
+          }
+        }
+
+        await Promise.all([
+          appendRows("CustomerMaster", SAMPLE_CUSTOMERS),
+          appendRows("CustomerInteractions", SAMPLE_INTERACTIONS),
+        ]);
+      } catch {
+        // Sheets write failed — SQLite is already seeded, so non-fatal
+        sheetsWriteStatus = "write_failed";
       }
     }
 
-    // Write sample data
-    await Promise.all([
-      appendRows("CustomerMaster", SAMPLE_CUSTOMERS),
-      appendRows("CustomerInteractions", SAMPLE_INTERACTIONS),
-    ]);
-
     return NextResponse.json({
       message: `Seed selesai: ${SAMPLE_CUSTOMERS.length} customers, ${SAMPLE_INTERACTIONS.length} interactions.`,
+      sqlite: sqliteResult,
+      sheets: sheetsWriteStatus,
       customersSeeded: SAMPLE_CUSTOMERS.length,
       interactionsSeeded: SAMPLE_INTERACTIONS.length,
       force,
@@ -107,10 +190,13 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     if (isGoogleWorkspaceAuthError(error)) {
-      return NextResponse.json({
-        ...googleWorkspaceWriteBlockedSource("Google Sheets: Customer_Master + Customer_Interactions", error),
-        error: "Google OAuth perlu re-auth",
-      }, { status: 503 });
+      return NextResponse.json(
+        {
+          ...googleWorkspaceWriteBlockedSource("Google Sheets: Customer_Master + Customer_Interactions", error),
+          error: "Google OAuth perlu re-auth",
+        },
+        { status: 503 }
+      );
     }
     return NextResponse.json(
       { error: "Gagal seed data", details: String(error) },

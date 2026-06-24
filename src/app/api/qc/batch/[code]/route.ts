@@ -1,75 +1,74 @@
-import { NextResponse } from "next/server";
+// GET /api/qc/batch/[code] — Get QC history per batch
+import { NextRequest, NextResponse } from "next/server";
 import { readSheet } from "@/lib/sheets/sheets-real";
-import { isGoogleWorkspaceAuthError, googleWorkspaceDegradedSource } from "@/lib/api/google-workspace-error";
 
 export const runtime = "nodejs";
 
-const text = (value: unknown) => String(value ?? "").trim();
-const numberValue = (value: unknown) => {
-  if (typeof value === "number") return value;
-  if (typeof value === "string") return Number(value.replace(/[^\d.-]/g, "")) || 0;
-  return 0;
-};
+const SHEET_NAME = "QC_Results";
 
-function parseQcRows(rows: string[][]) {
-  if (!rows || rows.length <= 1) return [];
-  return rows.slice(1).filter((row) => row.some(Boolean)).map((row, index) => ({
-    id: text(row[0]),
-    batchCode: text(row[1]),
-    productionId: text(row[2]),
-    date: text(row[3]),
-    inspector: text(row[4]),
-    aromaScore: numberValue(row[5]),
-    warnaScore: numberValue(row[6]),
-    kejernihanScore: numberValue(row[7]),
-    packagingScore: numberValue(row[8]),
-    sealIntegrityScore: numberValue(row[9]),
-    overallScore: numberValue(row[10]),
-    status: text(row[11]),
-    notes: text(row[12]),
-    followUpRequired: text(row[13]),
-    rowNumber: index + 2,
-  }));
+function rowToQC(row: string[], rowNumber: number) {
+  const aroma = Number(row[5]) || 0;
+  const warna = Number(row[6]) || 0;
+  const kejernihan = Number(row[7]) || 0;
+  const packaging = Number(row[8]) || 0;
+  const seal = Number(row[9]) || 0;
+  const overall = Number(row[10]) || Math.round(((aroma + warna + kejernihan + packaging + seal) / 5) * 100) / 100;
+  return {
+    resultId: row[0] || "",
+    batchCode: row[1] || "",
+    productionId: row[2] || "",
+    date: row[3] || "",
+    inspector: row[4] || "",
+    aromaScore: aroma,
+    warnaScore: warna,
+    kejernihanScore: kejernihan,
+    packagingScore: packaging,
+    sealIntegrityScore: seal,
+    overallScore: overall,
+    status: row[11] || (overall >= 7 ? "Pass" : overall >= 5 ? "Conditional" : "Fail"),
+    notes: row[12] || "",
+    followUpRequired: row[13] || "No",
+    rowNumber,
+  };
 }
 
-export async function GET(_request: Request, { params }: { params: Promise<{ code: string }> }) {
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ code: string }> }
+) {
   try {
     const { code } = await params;
-    const rows = await readSheet("QC_Results");
-    const results = parseQcRows(rows);
-    const batchResults = results.filter(
-      (r) => r.batchCode.toLowerCase() === code.toLowerCase()
-    );
+    const raw = await readSheet(SHEET_NAME);
+    const hasHeader = raw.length > 0 && raw[0][0] === "Result ID";
+    const dataRows = hasHeader ? raw.slice(1) : raw;
 
-    if (batchResults.length === 0) {
-      return NextResponse.json({
-        source: "Google Sheets: QC_Results",
-        batchCode: code,
-        results: [],
-        message: `Tidak ada QC history untuk batch ${code}`,
-      });
-    }
+    const results = dataRows
+      .filter((row) => row && row[0] && row[1] === code)
+      .map((row, i) => rowToQC(row, i + (hasHeader ? 2 : 1)));
 
-    const latest = batchResults[batchResults.length - 1];
-    const avgOverall = Math.round(
-      (batchResults.reduce((s, r) => s + r.overallScore, 0) / batchResults.length) * 100
-    ) / 100;
+    // Sort by date descending
+    results.sort((a, b) => b.date.localeCompare(a.date));
+
+    const total = results.length;
+    const passed = results.filter((r) => r.status === "Pass").length;
+    const failed = results.filter((r) => r.status === "Fail").length;
+    const conditional = results.filter((r) => r.status === "Conditional").length;
+    const avgOverall = total > 0 ? Math.round((results.reduce((s, r) => s + r.overallScore, 0) / total) * 100) / 100 : 0;
+    const latestStatus = results.length > 0 ? results[0].status : "N/A";
 
     return NextResponse.json({
-      source: "Google Sheets: QC_Results",
+      source: `Google Sheets: ${SHEET_NAME}`,
+      sourceStatus: "live",
+      generatedAt: new Date().toISOString(),
       batchCode: code,
-      results: batchResults,
-      latest,
-      avgOverall,
-      totalInspections: batchResults.length,
+      summary: { total, passed, failed, conditional, avgOverall, latestStatus },
+      count: results.length,
+      data: results,
     });
   } catch (error) {
-    if (isGoogleWorkspaceAuthError(error)) {
-      return NextResponse.json({
-        ...googleWorkspaceDegradedSource("Google Sheets: QC_Results", error),
-        results: [],
-      });
-    }
-    return NextResponse.json({ error: "Gagal membaca QC batch history", details: String(error) }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to fetch batch QC history", details: String(error) },
+      { status: 500 }
+    );
   }
 }

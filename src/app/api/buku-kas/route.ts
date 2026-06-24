@@ -1,121 +1,179 @@
-// GET /api/buku-kas — List entries (filter: dateFrom, dateTo, category)
-// POST /api/buku-kas — Create entry
+// GET /api/buku-kas — List buku kas entries (filter: type, category, startDate, endDate)
+// POST /api/buku-kas — Create new entry
 import { NextRequest, NextResponse } from "next/server";
-import {
-  readBukuKasSheet,
-  parseBukuKasRows,
-  calculateRunningBalance,
-  appendBukuKasRow,
-  recalculateAndWriteSaldo,
-  generateId,
-  CATEGORIES,
-  type BukuKasEntry,
-} from "@/lib/buku-kas/sheets";
-import { googleWorkspaceDegradedSource, isGoogleWorkspaceAuthError } from "@/lib/api/google-workspace-error";
+import { readSheet, appendRows } from "@/lib/sheets/sheets-real";
+import { googleWorkspaceWriteBlockedSource } from "@/lib/api/google-workspace-error";
 
-const SOURCE = "Google Sheets: Buku_Kas";
+export const runtime = "nodejs";
 
-function today(): string {
-  return new Date().toISOString().slice(0, 10);
+const SHEET_NAME = "BukuKas";
+
+// Column order:
+// A: EntryId, B: Date, C: Type (Debit/Kredit), D: Category, E: Description,
+// F: Debit, G: Credit, H: Saldo, I: Reference, J: InputBy, K: InputDate
+const HEADERS = [
+  "EntryId", "Date", "Type", "Category", "Description",
+  "Debit", "Credit", "Saldo", "Reference", "InputBy", "InputDate",
+];
+
+function rowToEntry(row: string[], rowNumber: number) {
+  return {
+    entryId: row[0] || "",
+    date: row[1] || "",
+    type: row[2] || "",
+    category: row[3] || "",
+    description: row[4] || "",
+    debit: Number(row[5]) || 0,
+    credit: Number(row[6]) || 0,
+    saldo: Number(row[7]) || 0,
+    reference: row[8] || "",
+    inputBy: row[9] || "",
+    inputDate: row[10] || "",
+    rowNumber,
+  };
 }
 
-export async function GET(req: NextRequest) {
-  try {
-    const url = new URL(req.url);
-    const dateFrom = url.searchParams.get("dateFrom") || "";
-    const dateTo = url.searchParams.get("dateTo") || "";
-    const category = url.searchParams.get("category") || "";
-
-    const rows = await readBukuKasSheet();
-    let entries = parseBukuKasRows(rows);
-    entries = calculateRunningBalance(entries);
-
-    // Apply filters
-    if (dateFrom) {
-      entries = entries.filter((e) => e.date >= dateFrom);
-    }
-    if (dateTo) {
-      entries = entries.filter((e) => e.date <= dateTo);
-    }
-    if (category) {
-      entries = entries.filter((e) => e.category.toLowerCase() === category.toLowerCase());
-    }
-
-    // Compute saldo
-    const saldo = entries.length > 0 ? entries[entries.length - 1].saldo : 0;
-
-    return NextResponse.json({
-      source: SOURCE,
-      sourceStatus: "live",
-      entries,
-      saldo,
-      total: entries.length,
-    });
-  } catch (error) {
-    if (isGoogleWorkspaceAuthError(error)) {
-      return NextResponse.json({
-        ...googleWorkspaceDegradedSource(SOURCE, error),
-        entries: [],
-        saldo: 0,
-        total: 0,
-      });
-    }
-    return NextResponse.json({ error: "Failed to fetch buku kas", details: String(error) }, { status: 500 });
+async function ensureHeader() {
+  const raw = await readSheet(SHEET_NAME);
+  if (raw.length === 0 || raw[0][0] !== "EntryId") {
+    await appendRows(SHEET_NAME, [HEADERS]);
   }
 }
 
-export async function POST(req: NextRequest) {
+export async function GET(request: NextRequest) {
   try {
-    const body = await req.json();
-    const id = generateId();
-    const date = body.date || today();
-    const type: "D" | "K" = body.type === "K" ? "K" : "D";
-    const category = body.category || "Operating";
-    const validCategory = CATEGORIES.includes(category as typeof CATEGORIES[number]) ? category : "Operating";
-    const amount = Number(body.amount) || 0;
-    const description = body.description || "";
-    const reference = body.reference || "";
+    const { searchParams } = new URL(request.url);
+    const type = searchParams.get("type") || "";
+    const category = searchParams.get("category") || "";
+    const startDate = searchParams.get("startDate") || "";
+    const endDate = searchParams.get("endDate") || "";
+    const limit = searchParams.get("limit") || "";
 
-    // Read existing to calculate saldo
-    const rows = await readBukuKasSheet();
-    const existing = parseBukuKasRows(rows);
-    const balanced = calculateRunningBalance(existing);
+    const raw = await readSheet(SHEET_NAME);
+    const hasHeader = raw.length > 0 && raw[0][0] === "EntryId";
+    const dataRows = hasHeader ? raw.slice(1) : raw;
 
-    let saldo = balanced.length > 0 ? balanced[balanced.length - 1].saldo : 0;
-    saldo += type === "D" ? amount : -amount;
+    let results = dataRows
+      .filter((row) => row && row[0])
+      .map((row, i) => rowToEntry(row, i + (hasHeader ? 2 : 1)));
 
-    const entry: Omit<BukuKasEntry, "row"> = {
-      id,
-      date,
-      type,
-      category: validCategory,
-      amount,
-      description,
-      reference,
-      saldo,
-    };
+    if (type) {
+      results = results.filter((r) =>
+        r.type.toLowerCase() === type.toLowerCase()
+      );
+    }
+    if (category) {
+      results = results.filter((r) =>
+        r.category.toLowerCase().includes(category.toLowerCase())
+      );
+    }
+    if (startDate) {
+      results = results.filter((r) => r.date >= startDate);
+    }
+    if (endDate) {
+      results = results.filter((r) => r.date <= endDate);
+    }
 
-    const rowNum = await appendBukuKasRow(entry);
+    // Sort by date ascending, then by entryId ascending
+    results.sort((a, b) => {
+      const dateCmp = a.date.localeCompare(b.date);
+      if (dateCmp !== 0) return dateCmp;
+      return a.entryId.localeCompare(b.entryId);
+    });
 
-    // Recalculate all saldo after insert
-    const updatedRows = await readBukuKasSheet();
-    const updatedEntries = parseBukuKasRows(updatedRows);
-    await recalculateAndWriteSaldo(updatedEntries);
+    const totalDebit = results.reduce((s, r) => s + r.debit, 0);
+    const totalCredit = results.reduce((s, r) => s + r.credit, 0);
+    const saldoAkhir = results.length > 0 ? results[results.length - 1].saldo : 0;
+
+    if (limit) {
+      const lim = parseInt(limit, 10);
+      if (!isNaN(lim) && lim > 0) {
+        results = results.slice(-lim);
+      }
+    }
 
     return NextResponse.json({
-      success: true,
-      entry: { ...entry, row: rowNum },
-      message: "Entry created successfully.",
-    }, { status: 201 });
+      source: `Google Sheets: ${SHEET_NAME}`,
+      sourceStatus: "live",
+      generatedAt: new Date().toISOString(),
+      summary: { totalDebit, totalCredit, saldoAkhir, count: results.length },
+      count: results.length,
+      data: results,
+    });
   } catch (error) {
-    if (isGoogleWorkspaceAuthError(error)) {
-      return NextResponse.json({
-        sourceStatus: "blocked",
-        source: SOURCE,
-        error: "Google Workspace OAuth perlu re-auth sebelum bisa membuat entry buku kas",
-        details: String(error),
-      }, { status: 503 });
+    return NextResponse.json(
+      { error: "Failed to fetch buku kas", details: String(error) },
+      { status: 500 }
+    );
+  }
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { date, type, category, description, debit, credit, reference, inputBy } = body;
+
+    if (!date || !type || (debit === undefined && credit === undefined)) {
+      return NextResponse.json(
+        { error: "Missing required fields: date, type, and (debit or credit) are required" },
+        { status: 400 }
+      );
     }
-    return NextResponse.json({ error: "Failed to create entry", details: String(error) }, { status: 500 });
+
+    if (!["Debit", "Kredit"].includes(type)) {
+      return NextResponse.json(
+        { error: "Type must be 'Debit' or 'Kredit'" },
+        { status: 400 }
+      );
+    }
+
+    const debitAmt = Number(debit) || 0;
+    const creditAmt = Number(credit) || 0;
+    if (debitAmt < 0 || creditAmt < 0) {
+      return NextResponse.json(
+        { error: "Debit and Credit must be non-negative" },
+        { status: 400 }
+      );
+    }
+    if (debitAmt === 0 && creditAmt === 0) {
+      return NextResponse.json(
+        { error: "Either debit or credit must be greater than 0" },
+        { status: 400 }
+      );
+    }
+
+    await ensureHeader();
+
+    // Read existing to compute running saldo
+    const raw = await readSheet(SHEET_NAME);
+    const hasHeader = raw.length > 0 && raw[0][0] === "EntryId";
+    const dataRows = hasHeader ? raw.slice(1) : raw;
+    const existing = dataRows.filter((row) => row && row[0]).map(rowToEntry);
+    const lastSaldo = existing.length > 0 ? existing[existing.length - 1].saldo : 0;
+    const newSaldo = lastSaldo + debitAmt - creditAmt;
+
+    const entryId = `BK-${Date.now()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+    const now = new Date().toISOString().slice(0, 19).replace("T", " ");
+    const row: (string | number)[] = [
+      entryId, date, type, category || "Lain-lain", description || "",
+      debitAmt, creditAmt, newSaldo, reference || "", inputBy || "system", now,
+    ];
+
+    await appendRows(SHEET_NAME, [row]);
+
+    return NextResponse.json(
+      {
+        source: `Google Sheets: ${SHEET_NAME}`,
+        sourceStatus: "live",
+        message: "Buku kas entry created successfully",
+        data: rowToEntry(row as string[], 0),
+      },
+      { status: 201 }
+    );
+  } catch (error) {
+    return NextResponse.json(
+      googleWorkspaceWriteBlockedSource(SHEET_NAME, error),
+      { status: 500 }
+    );
   }
 }

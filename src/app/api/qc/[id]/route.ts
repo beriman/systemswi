@@ -1,125 +1,136 @@
+// GET /api/qc/[id] — Get QC result detail
+// PUT /api/qc/[id] — Update QC result
 import { NextRequest, NextResponse } from "next/server";
-import { readSheet, writeRange } from "@/lib/sheets/sheets-real";
-import { isGoogleWorkspaceAuthError, googleWorkspaceDegradedSource, googleWorkspaceWriteBlockedSource } from "@/lib/api/google-workspace-error";
+import { readSheet, updateRow } from "@/lib/sheets/sheets-real";
+import { googleWorkspaceWriteBlockedSource } from "@/lib/api/google-workspace-error";
 
 export const runtime = "nodejs";
 
-const text = (value: unknown) => String(value ?? "").trim();
-const numberValue = (value: unknown) => {
-  if (typeof value === "number") return value;
-  if (typeof value === "string") return Number(value.replace(/[^\d.-]/g, "")) || 0;
-  return 0;
-};
+const SHEET_NAME = "QC_Results";
 
-function calcOverall(scores: number[]) {
-  if (scores.length === 0) return 0;
-  return Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 100) / 100;
-}
-
-function calcStatus(overall: number) {
+function computeStatus(overall: number): string {
   if (overall >= 7) return "Pass";
   if (overall >= 5) return "Conditional";
   return "Fail";
 }
 
-function parseQcRows(rows: string[][]) {
-  if (!rows || rows.length <= 1) return [];
-  return rows.slice(1).filter((row) => row.some(Boolean)).map((row, index) => ({
-    id: text(row[0]),
-    batchCode: text(row[1]),
-    productionId: text(row[2]),
-    date: text(row[3]),
-    inspector: text(row[4]),
-    aromaScore: numberValue(row[5]),
-    warnaScore: numberValue(row[6]),
-    kejernihanScore: numberValue(row[7]),
-    packagingScore: numberValue(row[8]),
-    sealIntegrityScore: numberValue(row[9]),
-    overallScore: numberValue(row[10]),
-    status: text(row[11]),
-    notes: text(row[12]),
-    followUpRequired: text(row[13]),
-    rowNumber: index + 2,
-  }));
+function rowToQC(row: string[], rowNumber: number) {
+  const aroma = Number(row[5]) || 0;
+  const warna = Number(row[6]) || 0;
+  const kejernihan = Number(row[7]) || 0;
+  const packaging = Number(row[8]) || 0;
+  const seal = Number(row[9]) || 0;
+  const overall = Number(row[10]) || Math.round(((aroma + warna + kejernihan + packaging + seal) / 5) * 100) / 100;
+  return {
+    resultId: row[0] || "",
+    batchCode: row[1] || "",
+    productionId: row[2] || "",
+    date: row[3] || "",
+    inspector: row[4] || "",
+    aromaScore: aroma,
+    warnaScore: warna,
+    kejernihanScore: kejernihan,
+    packagingScore: packaging,
+    sealIntegrityScore: seal,
+    overallScore: overall,
+    status: row[11] || computeStatus(overall),
+    notes: row[12] || "",
+    followUpRequired: row[13] || "No",
+    rowNumber,
+  };
 }
 
-export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
   try {
     const { id } = await params;
-    const rows = await readSheet("QC_Results");
-    const results = parseQcRows(rows);
-    const found = results.find((r) => r.id.toLowerCase() === id.toLowerCase());
+    const raw = await readSheet(SHEET_NAME);
+    const hasHeader = raw.length > 0 && raw[0][0] === "Result ID";
+    const dataRows = hasHeader ? raw.slice(1) : raw;
 
-    if (!found) {
-      return NextResponse.json({ error: `QC result dengan ID ${id} tidak ditemukan` }, { status: 404 });
+    const idx = dataRows.findIndex((row) => row && row[0] === id);
+    if (idx === -1) {
+      return NextResponse.json(
+        { error: `QC result not found: ${id}` },
+        { status: 404 }
+      );
     }
 
+    const data = rowToQC(dataRows[idx], idx + (hasHeader ? 2 : 1));
     return NextResponse.json({
-      source: "Google Sheets: QC_Results",
-      result: found,
+      source: `Google Sheets: ${SHEET_NAME}`,
+      sourceStatus: "live",
+      data,
     });
   } catch (error) {
-    if (isGoogleWorkspaceAuthError(error)) {
-      return NextResponse.json({
-        ...googleWorkspaceDegradedSource("Google Sheets: QC_Results", error),
-      });
-    }
-    return NextResponse.json({ error: "Gagal membaca QC detail", details: String(error) }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to fetch QC result", details: String(error) },
+      { status: 500 }
+    );
   }
 }
 
-export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
   try {
     const { id } = await params;
     const body = await request.json();
+    const raw = await readSheet(SHEET_NAME);
+    const hasHeader = raw.length > 0 && raw[0][0] === "Result ID";
+    const dataRows = hasHeader ? raw.slice(1) : raw;
 
-    const rows = await readSheet("QC_Results");
-    const results = parseQcRows(rows);
-    const found = results.find((r) => r.id.toLowerCase() === id.toLowerCase());
-
-    if (!found) {
-      return NextResponse.json({ error: `QC result dengan ID ${id} tidak ditemukan` }, { status: 404 });
+    const idx = dataRows.findIndex((row) => row && row[0] === id);
+    if (idx === -1) {
+      return NextResponse.json(
+        { error: `QC result not found: ${id}` },
+        { status: 404 }
+      );
     }
 
-    const aromaScore = body.aromaScore !== undefined ? numberValue(body.aromaScore) : found.aromaScore;
-    const warnaScore = body.warnaScore !== undefined ? numberValue(body.warnaScore) : found.warnaScore;
-    const kejernihanScore = body.kejernihanScore !== undefined ? numberValue(body.kejernihanScore) : found.kejernihanScore;
-    const packagingScore = body.packagingScore !== undefined ? numberValue(body.packagingScore) : found.packagingScore;
-    const sealIntegrityScore = body.sealIntegrityScore !== undefined ? numberValue(body.sealIntegrityScore) : found.sealIntegrityScore;
-    const overallScore = calcOverall([aromaScore, warnaScore, kejernihanScore, packagingScore, sealIntegrityScore]);
-    const status = calcStatus(overallScore);
+    const rowNum = idx + (hasHeader ? 2 : 1);
+    const existing = dataRows[idx];
 
-    const row = [
-      found.id,
-      text(body.batchCode) || found.batchCode,
-      text(body.productionId) || found.productionId,
-      text(body.date) || found.date,
-      text(body.inspector) || found.inspector,
-      aromaScore,
-      warnaScore,
-      kejernihanScore,
-      packagingScore,
-      sealIntegrityScore,
-      overallScore,
+    const aroma = body.aromaScore !== undefined ? Number(body.aromaScore) : Number(existing[5]) || 0;
+    const warna = body.warnaScore !== undefined ? Number(body.warnaScore) : Number(existing[6]) || 0;
+    const kejernihan = body.kejernihanScore !== undefined ? Number(body.kejernihanScore) : Number(existing[7]) || 0;
+    const packaging = body.packagingScore !== undefined ? Number(body.packagingScore) : Number(existing[8]) || 0;
+    const seal = body.sealIntegrityScore !== undefined ? Number(body.sealIntegrityScore) : Number(existing[9]) || 0;
+    const overall = Math.round(((aroma + warna + kejernihan + packaging + seal) / 5) * 100) / 100;
+    const status = computeStatus(overall);
+
+    const updatedRow = [
+      id,
+      body.batchCode ?? existing[1] ?? "",
+      body.productionId ?? existing[2] ?? "",
+      body.date ?? existing[3] ?? "",
+      body.inspector ?? existing[4] ?? "",
+      aroma,
+      warna,
+      kejernihan,
+      packaging,
+      seal,
+      overall,
       status,
-      text(body.notes) || found.notes,
-      status !== "Pass" ? "Yes" : "No",
+      body.notes ?? existing[12] ?? "",
+      body.followUpRequired === true || body.followUpRequired === "Yes" ? "Yes" : (existing[13] || "No"),
     ];
 
-    await writeRange(`QC_Results!A${found.rowNumber}:N${found.rowNumber}`, [row]);
+    await updateRow(SHEET_NAME, rowNum, updatedRow);
 
     return NextResponse.json({
-      success: true,
-      result: { id: found.id, overallScore, status },
-      syncedSheets: ["QC_Results"],
+      source: `Google Sheets: ${SHEET_NAME}`,
+      sourceStatus: "live",
+      message: "QC result updated successfully",
+      data: rowToQC(updatedRow, rowNum),
     });
   } catch (error) {
-    if (isGoogleWorkspaceAuthError(error)) {
-      return NextResponse.json({
-        ...googleWorkspaceWriteBlockedSource("Google Sheets: QC_Results", error),
-        error: "Google Workspace OAuth perlu re-auth sebelum bisa update QC result.",
-      }, { status: 503 });
-    }
-    return NextResponse.json({ error: "Gagal update QC result", details: String(error) }, { status: 500 });
+    return NextResponse.json(
+      googleWorkspaceWriteBlockedSource(SHEET_NAME, error),
+      { status: 500 }
+    );
   }
 }

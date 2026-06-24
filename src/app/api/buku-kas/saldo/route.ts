@@ -1,49 +1,38 @@
-// GET /api/buku-kas/saldo — Current saldo
+// GET /api/buku-kas/saldo — Get current saldo
 import { NextRequest, NextResponse } from "next/server";
-import {
-  readBukuKasSheet,
-  parseBukuKasRows,
-  calculateRunningBalance,
-} from "@/lib/buku-kas/sheets";
-import { googleWorkspaceDegradedSource, isGoogleWorkspaceAuthError } from "@/lib/api/google-workspace-error";
+import { readSheet } from "@/lib/sheets/sheets-real";
 
-const SOURCE = "Google Sheets: Buku_Kas";
+export const runtime = "nodejs";
 
-export async function GET(req: NextRequest) {
+const SHEET_NAME = "BukuKas";
+
+export async function GET(request: NextRequest) {
   try {
-    const rows = await readBukuKasSheet();
-    const entries = parseBukuKasRows(rows);
-    const balanced = calculateRunningBalance(entries);
+    const raw = await readSheet(SHEET_NAME);
+    const hasHeader = raw.length > 0 && raw[0][0] === "EntryId";
+    const dataRows = hasHeader ? raw.slice(1) : raw;
 
-    const saldo = balanced.length > 0 ? balanced[balanced.length - 1].saldo : 0;
+    const entries = dataRows.filter((row) => row && row[0]);
+    const lastSaldo = entries.length > 0 ? (Number(entries[entries.length - 1][7]) || 0) : 0;
+    const lastEntryDate = entries.length > 0 ? entries[entries.length - 1][1] : null;
 
-    // Current month totals
-    const now = new Date();
-    const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-    const monthEntries = balanced.filter((e) => e.date.startsWith(currentMonth));
-    const totalDebit = monthEntries.filter((e) => e.type === "D").reduce((s, e) => s + e.amount, 0);
-    const totalKredit = monthEntries.filter((e) => e.type === "K").reduce((s, e) => s + e.amount, 0);
+    const totalDebit = entries.reduce((s, r) => s + (Number(r[5]) || 0), 0);
+    const totalCredit = entries.reduce((s, r) => s + (Number(r[6]) || 0), 0);
 
     return NextResponse.json({
-      source: SOURCE,
+      source: `Google Sheets: ${SHEET_NAME}`,
       sourceStatus: "live",
-      saldo,
-      currentMonth,
+      generatedAt: new Date().toISOString(),
+      saldo: lastSaldo,
       totalDebit,
-      totalKredit,
-      entryCount: balanced.length,
+      totalCredit,
+      entryCount: entries.length,
+      lastEntryDate,
     });
   } catch (error) {
-    if (isGoogleWorkspaceAuthError(error)) {
-      return NextResponse.json({
-        ...googleWorkspaceDegradedSource(SOURCE, error),
-        saldo: 0,
-        currentMonth: "",
-        totalDebit: 0,
-        totalKredit: 0,
-        entryCount: 0,
-      });
-    }
-    return NextResponse.json({ error: "Failed to fetch saldo", details: String(error) }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to fetch saldo", details: String(error) },
+      { status: 500 }
+    );
   }
 }

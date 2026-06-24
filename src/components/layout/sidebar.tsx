@@ -43,7 +43,6 @@ const NAV_ITEMS: NavItem[] = [
     // { label: "BEP", href: "/bep", icon: "📐", feature: "dashboard:overview" },
     { label: "Cash Harian", href: "/cash-harian", icon: "💵", feature: "dashboard:overview" },
     { label: "Expenses", href: "/expenses", icon: "💰", feature: "dashboard:overview" },
-    { label: "Buku Kas", href: "/buku-kas", icon: "📒", feature: "dashboard:overview" },
     { label: "Email", href: "/email", icon: "📧", feature: "dashboard:overview" },
     { label: "BPJS Tracker", href: "/bpjs", icon: "🛡️", feature: "dashboard:overview" },
     { label: "Tax & Compliance", href: "/tax-compliance", icon: "🏛️", feature: "dashboard:overview" },
@@ -58,6 +57,8 @@ const NAV_ITEMS: NavItem[] = [
     { label: "Agent Dashboard", href: "/agent-dashboard", icon: "🦉", feature: "ai-features" },
     { label: "Users", href: "/users", icon: "👥", feature: "user-management" },
     { label: "Tasks", href: "/tasks", icon: "✅", feature: "dashboard:overview" },
+    { label: "Buku Kas", href: "/buku-kas", icon: "📒", feature: "dashboard:overview" },
+    { label: "BEP Analysis", href: "/bep", icon: "📐", feature: "dashboard:overview" },
     { label: "Settings", href: "/settings", icon: "⚙️", feature: "settings" },
 ];
 

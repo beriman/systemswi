@@ -1,161 +1,194 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, type FormEvent } from "react";
 import {
-  ArrowUpCircle, ArrowDownCircle, Wallet, TrendingUp,
-  Plus, RefreshCw, Calendar, Download, Edit3, Save, X
-} from "lucide-react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+  Card, CardContent, CardDescription, CardHeader, CardTitle,
+} from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue
-} from "@/components/ui/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
 
-// ── Types ──────────────────────────────────────────────────────────
+/* ── Types ── */
 
-interface CashHarianEntry {
+type CashEntry = {
   entryId: string;
   date: string;
-  type: "Masuk" | "Keluar";
+  type: string;
   category: string;
   description: string;
   amount: number;
   saldo: number;
   inputBy: string;
   inputDate: string;
-  rowNumber?: number;
-}
-
-interface TodayPosition {
-  date: string;
-  saldoAwal: number;
-  totalMasuk: number;
-  totalKeluar: number;
-  saldoAkhir: number;
-  entries: CashHarianEntry[];
-  vsForecast: number | null;
-}
-
-interface ApiResponse<T> {
-  source: string;
-  sourceStatus: string;
-  generatedAt: string;
-  count?: number;
-  data: T;
-}
-
-// ── Helpers ─────────────────────────────────────────────────────────
-
-const fmt = (v: number) =>
-  new Intl.NumberFormat("id-ID", {
-    style: "currency", currency: "IDR", maximumFractionDigits: 0,
-  }).format(v || 0);
-
-const fmtDate = (d: string) => {
-  if (!d) return "-";
-  const p = new Date(d);
-  if (Number.isNaN(p.getTime())) return d;
-  return p.toLocaleDateString("id-ID", {
-    weekday: "short", day: "numeric", month: "short", year: "numeric",
-  });
 };
 
-const today = () => new Date().toISOString().slice(0, 10);
+type TodaySummary = {
+  saldoAwal: number;
+  todayMasuk: number;
+  todayKeluar: number;
+  saldoAkhir: number;
+  netChange: number;
+  entryCount: number;
+};
 
-const CATEGORIES_MASUK = ["Penjualan", "Investasi", "Pinjaman", "Lain-lain"];
-const CATEGORIES_KELUAR = ["Bahan Baku", "Transport", "Operasional", "Gaji", "Utilitas", "Lain-lain"];
+type PeriodSummary = {
+  totalMasuk: number;
+  totalKeluar: number;
+  netCash: number;
+  dayCount: number;
+};
+
+type DailyBreakdown = {
+  date: string;
+  masuk: number;
+  keluar: number;
+  net: number;
+  categories: Record<string, number>;
+};
+
+/* ── Helpers ── */
+
+function formatRp(n: number): string {
+  if (n === 0) return "Rp 0";
+  const abs = Math.abs(n);
+  const formatted = abs.toLocaleString("id-ID");
+  return n < 0 ? `-Rp ${formatted}` : `Rp ${formatted}`;
+}
+
+function formatDate(id: string): string {
+  if (!id) return "-";
+  try {
+    return new Date(id + "T00:00:00").toLocaleDateString("id-ID", {
+      weekday: "long", day: "numeric", month: "long", year: "numeric",
+    });
+  } catch {
+    return id;
+  }
+}
+
+function todayStr(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function typeVariant(type: string): "default" | "destructive" | "outline" {
+  return type === "Masuk" ? "default" : type === "Keluar" ? "destructive" : "outline";
+}
+
+/* ── KPI Card ── */
+
+function KpiCard({
+  title, value, note, accent,
+}: {
+  title: string; value: string; note?: string; accent?: string;
+}) {
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm text-muted-foreground">{title}</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className={`text-2xl font-bold ${accent || ""}`}>{value}</div>
+        {note && <p className="text-xs text-muted-foreground mt-1">{note}</p>}
+      </CardContent>
+    </Card>
+  );
+}
+
+/* ── Main Component ── */
 
 export default function CashHarianPage() {
-  const [entries, setEntries] = useState<CashHarianEntry[]>([]);
-  const [todayPos, setTodayPos] = useState<TodayPosition | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("dashboard");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // Filters
-  const [filterStart, setFilterStart] = useState(() => {
-    const d = new Date();
-    d.setDate(d.getDate() - 14);
-    return d.toISOString().slice(0, 10);
-  });
-  const [filterEnd, setFilterEnd] = useState(today());
-  const [filterCategory, setFilterCategory] = useState("");
+  // Data states
+  const [allEntries, setAllEntries] = useState<CashEntry[]>([]);
+  const [todaySummary, setTodaySummary] = useState<TodaySummary | null>(null);
+  const [periodSummary, setPeriodSummary] = useState<PeriodSummary | null>(null);
+  const [dailyBreakdown, setDailyBreakdown] = useState<DailyBreakdown[]>([]);
+  const [categoryBreakdown, setCategoryBreakdown] = useState<Record<string, { masuk: number; keluar: number; total: number }>>({});
 
   // Form state
-  const [formDate, setFormDate] = useState(today());
-  const [formType, setFormType] = useState<"Masuk" | "Keluar">("Masuk");
-  const [formCategory, setFormCategory] = useState("");
+  const [formDate, setFormDate] = useState(todayStr());
+  const [formType, setFormType] = useState("Masuk");
+  const [formCategory, setFormCategory] = useState("Penjualan");
   const [formAmount, setFormAmount] = useState("");
   const [formDescription, setFormDescription] = useState("");
-  const [formSaving, setFormSaving] = useState(false);
-  const [formMsg, setFormMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitSuccess, setSubmitSuccess] = useState<string | null>(null);
 
-  // Edit state
-  const [editId, setEditId] = useState<string | null>(null);
-  const [editAmount, setEditAmount] = useState("");
-  const [editCategory, setEditCategory] = useState("");
-  const [editDescription, setEditDescription] = useState("");
+  // History filter
+  const [filterStartDate, setFilterStartDate] = useState("");
+  const [filterEndDate, setFilterEndDate] = useState("");
+  const [filterType, setFilterType] = useState("");
 
-  // ── Data fetching ─────────────────────────────────────────────────
+  // Forecast comparison
+  const [forecastMonth, setForecastMonth] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  });
 
-  const fetchAll = useCallback(async () => {
-    setRefreshing(true);
+  const loadAll = useCallback(async () => {
+    setLoading(true);
     setError(null);
     try {
-      const [entriesRes, todayRes] = await Promise.all([
-        fetch(`/api/cash-harian?startDate=${filterStart}&endDate=${filterEnd}`, { cache: "no-store" }),
+      const [listRes, todayRes, summaryRes] = await Promise.all([
+        fetch("/api/cash-harian", { cache: "no-store" }),
         fetch("/api/cash-harian/today", { cache: "no-store" }),
+        fetch(`/api/cash-harian/summary?startDate=${forecastMonth}-01&endDate=${forecastMonth}-31`, { cache: "no-store" }),
       ]);
-      const entriesJson: ApiResponse<CashHarianEntry[]> = await entriesRes.json();
-      const todayJson: ApiResponse<TodayPosition> = await todayRes.json();
 
-      if (entriesRes.ok) setEntries(entriesJson.data || []);
-      if (todayRes.ok) setTodayPos(todayJson.data);
-    } catch (e) {
-      setError(String(e));
+      if (listRes.ok) {
+        const j = await listRes.json();
+        setAllEntries(j.data || []);
+      }
+      if (todayRes.ok) {
+        const j = await todayRes.json();
+        setTodaySummary(j.summary || null);
+      }
+      if (summaryRes.ok) {
+        const j = await summaryRes.json();
+        setPeriodSummary(j.summary || null);
+        setDailyBreakdown(j.dailyBreakdown || []);
+        setCategoryBreakdown(j.categories || {});
+      }
+    } catch (err) {
+      setError(String(err));
     } finally {
       setLoading(false);
-      setRefreshing(false);
     }
-  }, [filterStart, filterEnd]);
+  }, [forecastMonth]);
 
-  useEffect(() => { fetchAll(); }, [fetchAll]);
+  useEffect(() => {
+    loadAll();
+  }, [loadAll]);
 
-  // ── Computed ──────────────────────────────────────────────────────
-
-  const filteredEntries = useMemo(() => {
-    let result = entries;
-    if (filterCategory) {
-      result = result.filter((e) => e.category === filterCategory);
+  // Submit entry
+  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!formDate || !formType || !formAmount) {
+      setError("Date, Type, dan Amount wajib diisi");
+      return;
     }
-    return result;
-  }, [entries, filterCategory]);
-
-  const runningSaldo = useMemo(() => {
-    let saldo = todayPos?.saldoAwal || 0;
-    const byDate: Record<string, number> = {};
-    for (const e of filteredEntries) {
-      saldo += e.type === "Masuk" ? e.amount : -e.amount;
-      byDate[e.date] = saldo;
+    const amt = Number(formAmount);
+    if (amt <= 0) {
+      setError("Amount harus lebih dari 0");
+      return;
     }
-    return byDate;
-  }, [filteredEntries, todayPos]);
-
-  // ── Actions ───────────────────────────────────────────────────────
-
-  const handleSubmit = async () => {
-    setFormSaving(true);
-    setFormMsg(null);
+    setSubmitting(true);
+    setError(null);
+    setSubmitSuccess(null);
     try {
-      const amount = Number(formAmount.replace(/[^0-9]/g, ""));
       const res = await fetch("/api/cash-harian", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -163,570 +196,535 @@ export default function CashHarianPage() {
           date: formDate,
           type: formType,
           category: formCategory,
+          amount: amt,
           description: formDescription,
-          amount,
-          inputBy: "system",
         }),
       });
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Gagal simpan");
-
-      setFormMsg({ type: "success", text: "Entry berhasil disimpan!" });
+      if (!res.ok) throw new Error(json.error || "Gagal simpan entry");
+      setSubmitSuccess(`Entry ${json.data?.entryId || ""} berhasil disimpan`);
       setFormAmount("");
       setFormDescription("");
-      setFormCategory("");
-      fetchAll();
-    } catch (e) {
-      setFormMsg({ type: "error", text: String(e) });
+      await loadAll();
+    } catch (err) {
+      setError(String(err));
     } finally {
-      setFormSaving(false);
+      setSubmitting(false);
     }
-  };
+  }
 
-  const handleUpdate = async (entryId: string) => {
+  // Seed handler
+  async function handleSeed() {
+    setLoading(true);
+    setError(null);
     try {
-      const amount = Number(editAmount.replace(/[^0-9]/g, ""));
-      const res = await fetch(`/api/cash-harian/${entryId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ category: editCategory, description: editDescription, amount }),
-      });
-      if (!res.ok) throw new Error("Gagal update");
-      setEditId(null);
-      fetchAll();
-    } catch (e) {
-      alert(String(e));
+      const res = await fetch("/api/cash-harian/seed-data", { method: "POST" });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Gagal seed data");
+      setSubmitSuccess(`Seed: ${json.seeded || 0} entries ditambahkan (${json.skipped || 0} sudah ada)`);
+      await loadAll();
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setLoading(false);
     }
-  };
+  }
 
-  const exportCSV = () => {
-    const header = "Date,Type,Category,Description,Amount,Saldo\n";
-    const rows = filteredEntries
-      .map((e) => `${e.date},${e.type},${e.category},"${e.description}",${e.amount},${e.saldo}`)
-      .join("\n");
-    const blob = new Blob([header + rows], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `cash-harian-${filterStart}-to-${filterEnd}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
+  // Filtered history
+  const filteredHistory = allEntries.filter((e) => {
+    if (filterStartDate && e.date < filterStartDate) return false;
+    if (filterEndDate && e.date > filterEndDate) return false;
+    if (filterType && e.type !== filterType) return false;
+    return true;
+  });
 
-  const startEdit = (e: CashHarianEntry) => {
-    setEditId(e.entryId);
-    setEditAmount(String(e.amount));
-    setEditCategory(e.category);
-    setEditDescription(e.description);
+  // Monthly forecast data (sample budget targets)
+  const forecastTargets: Record<string, number> = {
+    "Penjualan": 80000000,
+    "Bahan Baku": 15000000,
+    "Operasional": 5000000,
+    "Transport": 3000000,
+    "Gaji": 10000000,
+    "Utilitas": 2000000,
+    "Investasi": 8000000,
+    "Lain-lain": 2000000,
   };
-
-  // ── Render ────────────────────────────────────────────────────────
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            💵 Cash Harian
-            <Badge variant="outline" className="text-xs">
-              {loading ? "Loading..." : `${filteredEntries.length} entries`}
-            </Badge>
-          </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Daily cash tracking — monitoring arus kas harian SWI
+          <h2 className="text-2xl font-bold">💵 Cash Harian</h2>
+          <p className="text-muted-foreground">
+            Pencatatan kas harian SWI: masuk, keluar, saldo, dan analisis.
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={fetchAll} disabled={refreshing}>
-          <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? "animate-spin" : ""}`} />
-          Refresh
-        </Button>
+        <div className="flex gap-2">
+          <Button onClick={handleSeed} variant="outline" disabled={loading}>
+            🌱 Seed Data
+          </Button>
+          <Button onClick={loadAll} disabled={loading} variant="outline">
+            {loading ? "Memuat..." : "↻ Refresh"}
+          </Button>
+        </div>
       </div>
 
       {error && (
-        <Card className="border-red-200 bg-red-50">
-          <CardContent className="pt-4">
-            <p className="text-red-700 text-sm">⚠️ {error}</p>
-          </CardContent>
+        <Card className="border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/30">
+          <CardContent className="py-4 text-red-700 dark:text-red-300 text-sm">{error}</CardContent>
         </Card>
       )}
 
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-        <TabsList className="grid w-full grid-cols-4">
-          <TabsTrigger value="dashboard">📊 Dashboard Hari Ini</TabsTrigger>
+      {submitSuccess && (
+        <Card className="border-green-200 bg-green-50 dark:border-green-900 dark:bg-green-950/30">
+          <CardContent className="py-4 text-green-700 dark:text-green-300 text-sm">{submitSuccess}</CardContent>
+        </Card>
+      )}
+
+      {/* Tabs */}
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList className="grid w-full grid-cols-4 lg:w-auto">
+          <TabsTrigger value="dashboard">📊 Hari Ini</TabsTrigger>
           <TabsTrigger value="input">➕ Input Entry</TabsTrigger>
           <TabsTrigger value="history">📋 History</TabsTrigger>
           <TabsTrigger value="forecast">📈 vs Forecast</TabsTrigger>
         </TabsList>
 
-        {/* ── TAB 1: Dashboard Hari Ini ─────────────────────────── */}
-        <TabsContent value="dashboard" className="space-y-4">
-          {loading ? (
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              {[1, 2, 3, 4].map((i) => (
-                <Skeleton key={i} className="h-28 rounded-lg" />
-              ))}
-            </div>
-          ) : (
-            <>
-              {/* Stats Cards */}
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardDescription>Saldo Awal</CardDescription>
-                    <CardTitle className="text-lg flex items-center gap-2">
-                      <Wallet className="h-4 w-4 text-blue-500" />
-                      {fmt(todayPos?.saldoAwal || 0)}
-                    </CardTitle>
-                  </CardHeader>
-                </Card>
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardDescription>Total Masuk</CardDescription>
-                    <CardTitle className="text-lg text-green-600 flex items-center gap-2">
-                      <ArrowUpCircle className="h-4 w-4" />
-                      {fmt(todayPos?.totalMasuk || 0)}
-                    </CardTitle>
-                  </CardHeader>
-                </Card>
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardDescription>Total Keluar</CardDescription>
-                    <CardTitle className="text-lg text-red-600 flex items-center gap-2">
-                      <ArrowDownCircle className="h-4 w-4" />
-                      {fmt(todayPos?.totalKeluar || 0)}
-                    </CardTitle>
-                  </CardHeader>
-                </Card>
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardDescription>Saldo Akhir</CardDescription>
-                    <CardTitle className={`text-lg flex items-center gap-2 ${
-                      (todayPos?.saldoAkhir || 0) >= 0 ? "text-green-700" : "text-red-700"
-                    }`}>
-                      <TrendingUp className="h-4 w-4" />
-                      {fmt(todayPos?.saldoAkhir || 0)}
-                    </CardTitle>
-                  </CardHeader>
-                </Card>
-              </div>
+        {/* ── Tab 1: Dashboard Hari Ini ── */}
+        <TabsContent value="dashboard" className="space-y-4 mt-4">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <KpiCard
+              title="Saldo Awal Hari Ini"
+              value={loading ? "..." : formatRp(todaySummary?.saldoAwal || 0)}
+              note="posisio pembukaan"
+              accent="text-blue-600"
+            />
+            <KpiCard
+              title="Total Masuk"
+              value={loading ? "..." : formatRp(todaySummary?.todayMasuk || 0)}
+              note={`${todaySummary?.entryCount || 0} entries`}
+              accent="text-green-600"
+            />
+            <KpiCard
+              title="Total Keluar"
+              value={loading ? "..." : formatRp(todaySummary?.todayKeluar || 0)}
+              note="pengeluaran hari ini"
+              accent="text-red-600"
+            />
+            <KpiCard
+              title="Saldo Akhir"
+              value={loading ? "..." : formatRp(todaySummary?.saldoAkhir || 0)}
+              note={`net: ${formatRp(todaySummary?.netChange || 0)}`}
+              accent="text-purple-600"
+            />
+          </div>
 
-              {/* Today's entries */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Entri Hari Ini — {fmtDate(todayPos?.date || today())}</CardTitle>
-                  <CardDescription>
-                    {todayPos?.entries?.length || 0} entries hari ini
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {todayPos?.entries?.length ? (
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Tipe</TableHead>
-                          <TableHead>Kategori</TableHead>
-                          <TableHead>Keterangan</TableHead>
-                          <TableHead className="text-right">Jumlah</TableHead>
-                          <TableHead className="text-right">Saldo</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {todayPos.entries.map((e) => (
-                          <TableRow key={e.entryId}>
-                            <TableCell>
-                              <Badge variant={e.type === "Masuk" ? "default" : "destructive"}>
-                                {e.type === "Masuk" ? "↑ Masuk" : "↓ Keluar"}
-                              </Badge>
-                            </TableCell>
-                            <TableCell>{e.category}</TableCell>
-                            <TableCell className="text-muted-foreground">{e.description || "-"}</TableCell>
-                            <TableCell className={`text-right font-medium ${
-                              e.type === "Masuk" ? "text-green-600" : "text-red-600"
-                            }`}>
-                              {e.type === "Masuk" ? "+" : "-"}{fmt(e.amount)}
-                            </TableCell>
-                            <TableCell className="text-right">{fmt(e.saldo)}</TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  ) : (
-                    <p className="text-muted-foreground text-sm py-8 text-center">
-                      Belum ada entri hari ini. Mulai input di tab "Input Entry".
-                    </p>
-                  )}
-                </CardContent>
-              </Card>
-            </>
-          )}
-        </TabsContent>
-
-        {/* ── TAB 2: Input Entry ────────────────────────────────── */}
-        <TabsContent value="input">
+          {/* Today's entries */}
           <Card>
             <CardHeader>
-              <CardTitle>Input Cash Entry</CardTitle>
-              <CardDescription>
-                Tambah pemasukan atau pengeluaran harian
-              </CardDescription>
+              <CardTitle>Entry Hari Ini</CardTitle>
+              <CardDescription>Daftar transaksi kas hari ini</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <CardContent>
+              {loading ? (
                 <div className="space-y-2">
-                  <Label>Tanggal</Label>
-                  <Input
-                    type="date"
-                    value={formDate}
-                    onChange={(e) => setFormDate(e.target.value)}
-                  />
+                  <Skeleton className="h-8 w-full" />
+                  <Skeleton className="h-8 w-full" />
+                  <Skeleton className="h-8 w-full" />
                 </div>
-                <div className="space-y-2">
-                  <Label>Tipe</Label>
-                  <Select value={formType} onValueChange={(v) => setFormType(v as "Masuk" | "Keluar")}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Masuk">↑ Masuk</SelectItem>
-                      <SelectItem value="Keluar">↓ Keluar</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Kategori</Label>
-                  <Select value={formCategory} onValueChange={setFormCategory}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Pilih kategori..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {(formType === "Masuk" ? CATEGORIES_MASUK : CATEGORIES_KELUAR).map((c) => (
-                        <SelectItem key={c} value={c}>{c}</SelectItem>
+              ) : allEntries.filter((e) => e.date === todayStr()).length === 0 ? (
+                <p className="text-sm text-muted-foreground">Belum ada entry untuk hari ini.</p>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Waktu</TableHead>
+                      <TableHead>Type</TableHead>
+                      <TableHead>Kategori</TableHead>
+                      <TableHead>Keterangan</TableHead>
+                      <TableHead className="text-right">Amount</TableHead>
+                      <TableHead className="text-right">Saldo</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {allEntries
+                      .filter((e) => e.date === todayStr())
+                      .map((e) => (
+                        <TableRow key={e.entryId}>
+                          <TableCell className="text-sm">{e.inputDate.slice(11, 19) || "-"}</TableCell>
+                          <TableCell>
+                            <Badge variant={typeVariant(e.type)}>{e.type}</Badge>
+                          </TableCell>
+                          <TableCell>{e.category}</TableCell>
+                          <TableCell className="text-sm text-muted-foreground max-w-[200px] truncate">
+                            {e.description}
+                          </TableCell>
+                          <TableCell className={`text-right font-medium ${e.type === "Masuk" ? "text-green-600" : "text-red-600"}`}>
+                            {e.type === "Masuk" ? "+" : "-"}{formatRp(e.amount)}
+                          </TableCell>
+                          <TableCell className="text-right">{formatRp(e.saldo)}</TableCell>
+                        </TableRow>
                       ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Jumlah (Rp)</Label>
-                  <Input
-                    type="text"
-                    placeholder="0"
-                    value={formAmount}
-                    onChange={(e) => setFormAmount(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2 md:col-span-2">
-                  <Label>Keterangan</Label>
-                  <Textarea
-                    placeholder="Deskripsi singkat (opsional)"
-                    value={formDescription}
-                    onChange={(e) => setFormDescription(e.target.value)}
-                    rows={2}
-                  />
-                </div>
-              </div>
-
-              {/* Quick buttons */}
-              <div>
-                <Label className="text-xs text-muted-foreground">Quick Input:</Label>
-                <div className="flex flex-wrap gap-2 mt-1">
-                  {formType === "Masuk" ? (
-                    <>
-                      <Button size="sm" variant="outline" onClick={() => { setFormCategory("Penjualan"); setFormAmount("500000"); setFormDescription("Penjualan harian"); }}>
-                        + Penjualan 500rb
-                      </Button>
-                      <Button size="sm" variant="outline" onClick={() => { setFormCategory("Penjualan"); setFormAmount("1000000"); setFormDescription("Penjualan besar"); }}>
-                        + Penjualan 1jt
-                      </Button>
-                    </>
-                  ) : (
-                    <>
-                      <Button size="sm" variant="outline" onClick={() => { setFormCategory("Bahan Baku"); setFormAmount("300000"); setFormDescription("Beli bahan baku"); }}>
-                        - Bahan Baku 300rb
-                      </Button>
-                      <Button size="sm" variant="outline" onClick={() => { setFormCategory("Transport"); setFormAmount("50000"); setFormDescription("Transportasi"); }}>
-                        - Transport 50rb
-                      </Button>
-                      <Button size="sm" variant="outline" onClick={() => { setFormCategory("Operasional"); setFormAmount("200000"); setFormDescription("Operasional harian"); }}>
-                        - Operasional 200rb
-                      </Button>
-                    </>
-                  )}
-                </div>
-              </div>
-
-              {formMsg && (
-                <div className={`p-3 rounded-md text-sm ${
-                  formMsg.type === "success"
-                    ? "bg-green-50 text-green-700 border border-green-200"
-                    : "bg-red-50 text-red-700 border border-red-200"
-                }`}>
-                  {formMsg.type === "success" ? "✅" : "❌"} {formMsg.text}
-                </div>
+                  </TableBody>
+                </Table>
               )}
-
-              <Button
-                onClick={handleSubmit}
-                disabled={formSaving || !formCategory || !formAmount || !formDate}
-                className="w-full"
-              >
-                <Plus className="h-4 w-4 mr-2" />
-                {formSaving ? "Menyimpan..." : "Simpan Entry"}
-              </Button>
             </CardContent>
           </Card>
         </TabsContent>
 
-        {/* ── TAB 3: History ────────────────────────────────────── */}
-        <TabsContent value="history" className="space-y-4">
-          {/* Filters */}
+        {/* ── Tab 2: Input Entry ── */}
+        <TabsContent value="input" className="space-y-4 mt-4">
           <Card>
-            <CardContent className="pt-4">
-              <div className="flex flex-wrap items-end gap-4">
+            <CardHeader>
+              <CardTitle>➕ Input Entry Baru</CardTitle>
+              <CardDescription>Catat transaksi kas masuk atau keluar</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={handleSubmit} className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="f-date">Tanggal</Label>
+                  <Input
+                    id="f-date"
+                    type="date"
+                    value={formDate}
+                    onChange={(e) => setFormDate(e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="f-type">Type</Label>
+                  <Select value={formType} onValueChange={setFormType}>
+                    <SelectTrigger id="f-type">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Masuk">Masuk</SelectItem>
+                      <SelectItem value="Keluar">Keluar</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="f-category">Kategori</Label>
+                  <Select value={formCategory} onValueChange={setFormCategory}>
+                    <SelectTrigger id="f-category">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Penjualan">Penjualan</SelectItem>
+                      <SelectItem value="Bahan Baku">Bahan Baku</SelectItem>
+                      <SelectItem value="Operasional">Operasional</SelectItem>
+                      <SelectItem value="Transport">Transport</SelectItem>
+                      <SelectItem value="Gaji">Gaji</SelectItem>
+                      <SelectItem value="Utilitas">Utilitas</SelectItem>
+                      <SelectItem value="Investasi">Investasi</SelectItem>
+                      <SelectItem value="Lain-lain">Lain-lain</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="f-amount">Amount (Rp)</Label>
+                  <Input
+                    id="f-amount"
+                    type="number"
+                    min="0"
+                    step="1000"
+                    placeholder="0"
+                    value={formAmount}
+                    onChange={(e) => setFormAmount(e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="space-y-2 sm:col-span-2">
+                  <Label htmlFor="f-desc">Keterangan</Label>
+                  <Textarea
+                    id="f-desc"
+                    placeholder="Deskripsi transaksi..."
+                    value={formDescription}
+                    onChange={(e) => setFormDescription(e.target.value)}
+                    rows={3}
+                  />
+                </div>
+                <div className="sm:col-span-2 flex justify-end gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setFormDate(todayStr());
+                      setFormAmount("");
+                      setFormDescription("");
+                    }}
+                  >
+                    Reset
+                  </Button>
+                  <Button type="submit" disabled={submitting}>
+                    {submitting ? "Menyimpan..." : "💾 Simpan Entry"}
+                  </Button>
+                </div>
+              </form>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* ── Tab 3: History ── */}
+        <TabsContent value="history" className="space-y-4 mt-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>📋 History Cash Harian</CardTitle>
+              <CardDescription>Semua transaksi kas — filter dan export</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {/* Filters */}
+              <div className="flex flex-wrap gap-3 mb-4">
                 <div className="space-y-1">
                   <Label className="text-xs">Dari</Label>
-                  <Input type="date" value={filterStart} onChange={(e) => setFilterStart(e.target.value)} className="w-40" />
+                  <Input
+                    type="date"
+                    value={filterStartDate}
+                    onChange={(e) => setFilterStartDate(e.target.value)}
+                    className="w-40"
+                  />
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs">Sampai</Label>
-                  <Input type="date" value={filterEnd} onChange={(e) => setFilterEnd(e.target.value)} className="w-40" />
+                  <Input
+                    type="date"
+                    value={filterEndDate}
+                    onChange={(e) => setFilterEndDate(e.target.value)}
+                    className="w-40"
+                  />
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-xs">Kategori</Label>
-                  <Select value={filterCategory} onValueChange={setFilterCategory}>
-                    <SelectTrigger className="w-40">
+                  <Label className="text-xs">Type</Label>
+                  <Select value={filterType} onValueChange={setFilterType}>
+                    <SelectTrigger className="w-32">
                       <SelectValue placeholder="Semua" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="">Semua</SelectItem>
-                      {[...CATEGORIES_MASUK, ...CATEGORIES_KELUAR].map((c) => (
-                        <SelectItem key={c} value={c}>{c}</SelectItem>
-                      ))}
+                      <SelectItem value="Masuk">Masuk</SelectItem>
+                      <SelectItem value="Keluar">Keluar</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
-                <Button variant="outline" size="sm" onClick={fetchAll}>
-                  <Calendar className="h-3 w-3 mr-1" /> Filter
-                </Button>
-                <Button variant="outline" size="sm" onClick={exportCSV}>
-                  <Download className="h-3 w-3 mr-1" /> Export CSV
-                </Button>
+                <div className="flex items-end gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setFilterStartDate("");
+                      setFilterEndDate("");
+                      setFilterType("");
+                    }}
+                  >
+                    Clear
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      const rows = filteredHistory.map((e) => ({
+                        Date: e.date,
+                        Type: e.type,
+                        Category: e.category,
+                        Description: e.description,
+                        Amount: e.amount,
+                        Saldo: e.saldo,
+                      }));
+                      const header = "Date,Type,Category,Description,Amount,Saldo";
+                      const csv = [
+                        header,
+                        ...rows.map((r) =>
+                          [r.Date, r.Type, r.Category, `"${r.Description}"`, r.Amount, r.Saldo].join(",")
+                        ),
+                      ].join("\n");
+                      const blob = new Blob([csv], { type: "text/csv" });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement("a");
+                      a.href = url;
+                      a.download = `cash-harian-${todayStr()}.csv`;
+                      a.click();
+                      URL.revokeObjectURL(url);
+                    }}
+                  >
+                    📥 Export CSV
+                  </Button>
+                </div>
               </div>
-            </CardContent>
-          </Card>
 
-          {/* History Table */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Riwayat Cash Harian</CardTitle>
-              <CardDescription>
-                {filteredEntries.length} entries · {fmtDate(filterStart)} — {fmtDate(filterEnd)}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Tanggal</TableHead>
-                      <TableHead>Tipe</TableHead>
-                      <TableHead>Kategori</TableHead>
-                      <TableHead>Keterangan</TableHead>
-                      <TableHead className="text-right">Masuk</TableHead>
-                      <TableHead className="text-right">Keluar</TableHead>
-                      <TableHead className="text-right">Saldo</TableHead>
-                      <TableHead className="w-20">Aksi</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredEntries.map((e) => (
-                      <TableRow key={e.entryId}>
-                        <TableCell>{fmtDate(e.date)}</TableCell>
-                        <TableCell>
-                          <Badge variant={e.type === "Masuk" ? "default" : "destructive"}>
-                            {e.type}
-                          </Badge>
-                        </TableCell>
-                        {editId === e.entryId ? (
-                          <>
-                            <TableCell>
-                              <Input value={editCategory} onChange={(e2) => setEditCategory(e2.target.value)} className="h-8" />
-                            </TableCell>
-                            <TableCell>
-                              <Input value={editDescription} onChange={(e2) => setEditDescription(e2.target.value)} className="h-8" />
-                            </TableCell>
-                            <TableCell colSpan={3}>
-                              <Input value={editAmount} onChange={(e2) => setEditAmount(e2.target.value)} className="h-8" />
-                            </TableCell>
-                            <TableCell>
-                              <div className="flex gap-1">
-                                <Button size="sm" variant="ghost" onClick={() => handleUpdate(e.entryId)}>
-                                  <Save className="h-3 w-3" />
-                                </Button>
-                                <Button size="sm" variant="ghost" onClick={() => setEditId(null)}>
-                                  <X className="h-3 w-3" />
-                                </Button>
-                              </div>
-                            </TableCell>
-                          </>
-                        ) : (
-                          <>
-                            <TableCell>{e.category}</TableCell>
-                            <TableCell className="text-muted-foreground">{e.description || "-"}</TableCell>
-                            <TableCell className="text-right text-green-600">
-                              {e.type === "Masuk" ? fmt(e.amount) : "-"}
-                            </TableCell>
-                            <TableCell className="text-right text-red-600">
-                              {e.type === "Keluar" ? fmt(e.amount) : "-"}
-                            </TableCell>
-                            <TableCell className="text-right font-medium">{fmt(e.saldo)}</TableCell>
-                            <TableCell>
-                              <Button size="sm" variant="ghost" onClick={() => startEdit(e)}>
-                                <Edit3 className="h-3 w-3" />
-                              </Button>
-                            </TableCell>
-                          </>
-                        )}
-                      </TableRow>
-                    ))}
-                    {filteredEntries.length === 0 && (
+              {/* Table */}
+              {loading ? (
+                <div className="space-y-2">
+                  <Skeleton className="h-8 w-full" />
+                  <Skeleton className="h-8 w-full" />
+                  <Skeleton className="h-8 w-full" />
+                </div>
+              ) : filteredHistory.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Tidak ada data sesuai filter.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
                       <TableRow>
-                        <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
-                          Tidak ada data untuk periode ini
-                        </TableCell>
+                        <TableHead>Tanggal</TableHead>
+                        <TableHead>Type</TableHead>
+                        <TableHead>Masuk</TableHead>
+                        <TableHead>Keluar</TableHead>
+                        <TableHead>Kategori</TableHead>
+                        <TableHead>Keterangan</TableHead>
+                        <TableHead className="text-right">Saldo</TableHead>
                       </TableRow>
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredHistory.map((e) => (
+                        <TableRow key={e.entryId}>
+                          <TableCell className="text-sm">{formatDate(e.date)}</TableCell>
+                          <TableCell>
+                            <Badge variant={typeVariant(e.type)}>{e.type}</Badge>
+                          </TableCell>
+                          <TableCell className="text-green-600 font-medium">
+                            {e.type === "Masuk" ? formatRp(e.amount) : "-"}
+                          </TableCell>
+                          <TableCell className="text-red-600 font-medium">
+                            {e.type === "Keluar" ? formatRp(e.amount) : "-"}
+                          </TableCell>
+                          <TableCell>{e.category}</TableCell>
+                          <TableCell className="text-sm text-muted-foreground max-w-[200px] truncate">
+                            {e.description}
+                          </TableCell>
+                          <TableCell className="text-right">{formatRp(e.saldo)}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
 
-        {/* ── TAB 4: vs Forecast ───────────────────────────────── */}
-        <TabsContent value="forecast">
+        {/* ── Tab 4: vs Forecast ── */}
+        <TabsContent value="forecast" className="space-y-4 mt-4">
           <Card>
             <CardHeader>
-              <CardTitle>Actual vs Forecast</CardTitle>
-              <CardDescription>
-                Perbandingan arus kas aktual dengan forecast
-              </CardDescription>
+              <CardTitle>📈 Actual vs Forecast</CardTitle>
+              <CardDescription>Perbandingan realisasi kas vs target bulanan</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-6">
-              {loading ? (
-                <Skeleton className="h-64 w-full rounded-lg" />
-              ) : (
-                <>
-                  {/* Summary comparison */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <Card className="bg-blue-50 border-blue-200">
-                      <CardHeader className="pb-2">
-                        <CardDescription className="text-blue-700">Total Aktual</CardDescription>
-                        <CardTitle className="text-blue-800">
-                          {fmt(filteredEntries.reduce((s, e) =>
-                            s + (e.type === "Masuk" ? e.amount : -e.amount), 0
-                          ))}
-                        </CardTitle>
-                      </CardHeader>
-                    </Card>
-                    <Card className="bg-amber-50 border-amber-200">
-                      <CardHeader className="pb-2">
-                        <CardDescription className="text-amber-700">Forecast (Est.)</CardDescription>
-                        <CardTitle className="text-amber-800">
-                          {fmt(filteredEntries.reduce((s, e) =>
-                            s + (e.type === "Masuk" ? e.amount : 0), 0
-                          ) * 0.9)}
-                        </CardTitle>
-                      </CardHeader>
-                    </Card>
-                    <Card className="bg-green-50 border-green-200">
-                      <CardHeader className="pb-2">
-                        <CardDescription className="text-green-700">Variance</CardDescription>
-                        <CardTitle className="text-green-800">
-                          {(() => {
-                            const actual = filteredEntries.reduce((s, e) =>
-                              s + (e.type === "Masuk" ? e.amount : -e.amount), 0
-                            );
-                            const forecast = filteredEntries.reduce((s, e) =>
-                              s + (e.type === "Masuk" ? e.amount : 0), 0
-                            ) * 0.9;
-                            return fmt(actual - forecast);
-                          })()}
-                        </CardTitle>
-                      </CardHeader>
-                    </Card>
-                  </div>
+            <CardContent>
+              <div className="flex items-center gap-3 mb-4">
+                <Label className="text-sm">Bulan:</Label>
+                <Input
+                  type="month"
+                  value={forecastMonth}
+                  onChange={(e) => setForecastMonth(e.target.value)}
+                  className="w-48"
+                />
+              </div>
 
-                  {/* Daily comparison table */}
-                  <div>
-                    <h3 className="font-semibold mb-2">Detail Harian</h3>
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Tanggal</TableHead>
-                          <TableHead className="text-right">Aktual Masuk</TableHead>
-                          <TableHead className="text-right">Aktual Keluar</TableHead>
-                          <TableHead className="text-right">Net Aktual</TableHead>
-                          <TableHead className="text-right">Forecast</TableHead>
-                          <TableHead className="text-right">Variance</TableHead>
-                          <TableHead>Status</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {Object.entries(
-                          filteredEntries.reduce<Record<string, { masuk: number; keluar: number }>>((acc, e) => {
-                            if (!acc[e.date]) acc[e.date] = { masuk: 0, keluar: 0 };
-                            if (e.type === "Masuk") acc[e.date].masuk += e.amount;
-                            else acc[e.date].keluar += e.amount;
-                            return acc;
-                          }, {})
-                        ).sort(([a], [b]) => a.localeCompare(b)).map(([date, { masuk, keluar }]) => {
-                          const net = masuk - keluar;
-                          const forecast = masuk * 0.95;
-                          const variance = net - forecast;
-                          const pct = forecast > 0 ? Math.round((net / forecast) * 100) : 0;
-                          return (
-                            <TableRow key={date}>
-                              <TableCell>{fmtDate(date)}</TableCell>
-                              <TableCell className="text-right text-green-600">{fmt(masuk)}</TableCell>
-                              <TableCell className="text-right text-red-600">{fmt(keluar)}</TableCell>
-                              <TableCell className="text-right font-medium">{fmt(net)}</TableCell>
-                              <TableCell className="text-right text-muted-foreground">{fmt(forecast)}</TableCell>
-                              <TableCell className={`text-right ${variance >= 0 ? "text-green-600" : "text-red-600"}`}>
-                                {variance >= 0 ? "+" : ""}{fmt(variance)}
-                              </TableCell>
-                              <TableCell>
-                                {pct >= 100 ? (
-                                  <Badge className="bg-green-100 text-green-800">✓ On Track</Badge>
-                                ) : pct >= 80 ? (
-                                  <Badge className="bg-amber-100 text-amber-800">⚠ Close</Badge>
-                                ) : (
-                                  <Badge className="bg-red-100 text-red-800">✗ Off</Badge>
-                                )}
-                              </TableCell>
-                            </TableRow>
-                          );
-                        })}
-                        {filteredEntries.length === 0 && (
-                          <TableRow>
-                            <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                              Tidak ada data untuk dibandingkan. Input data cash harian terlebih dahulu.
+              {loading ? (
+                <div className="space-y-2">
+                  <Skeleton className="h-8 w-full" />
+                  <Skeleton className="h-8 w-full" />
+                  <Skeleton className="h-8 w-full" />
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Kategori</TableHead>
+                        <TableHead className="text-right">Actual Masuk</TableHead>
+                        <TableHead className="text-right">Actual Keluar</TableHead>
+                        <TableHead className="text-right">Target</TableHead>
+                        <TableHead className="text-right">Variance</TableHead>
+                        <TableHead>Status</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {Object.entries(forecastTargets).map(([cat, target]) => {
+                        const actual = categoryBreakdown[cat] || { masuk: 0, keluar: 0 };
+                        const actualTotal = actual.masuk - actual.keluar;
+                        const variance = target > 0 ? ((actualTotal - target) / target) * 100 : 0;
+                        const isPositive = variance >= 0;
+                        return (
+                          <TableRow key={cat}>
+                            <TableCell className="font-medium">{cat}</TableCell>
+                            <TableCell className="text-right text-green-600">{formatRp(actual.masuk)}</TableCell>
+                            <TableCell className="text-right text-red-600">{formatRp(actual.keluar)}</TableCell>
+                            <TableCell className="text-right">{formatRp(target)}</TableCell>
+                            <TableCell
+                              className={`text-right font-medium ${isPositive ? "text-green-600" : "text-red-600"}`}
+                            >
+                              {isPositive ? "+" : ""}{variance.toFixed(1)}%
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant={isPositive ? "default" : "destructive"}>
+                                {isPositive ? "✅ On Track" : "⚠️ Below Target"}
+                              </Badge>
                             </TableCell>
                           </TableRow>
-                        )}
-                      </TableBody>
-                    </Table>
-                  </div>
+                        );
+                      })}
+                      {/* Total row */}
+                      <TableRow className="font-bold border-t-2">
+                        <TableCell>TOTAL</TableCell>
+                        <TableCell className="text-right text-green-600">
+                          {formatRp(periodSummary?.totalMasuk || 0)}
+                        </TableCell>
+                        <TableCell className="text-right text-red-600">
+                          {formatRp(periodSummary?.totalKeluar || 0)}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {formatRp(Object.values(forecastTargets).reduce((a, b) => a + b, 0))}
+                        </TableCell>
+                        <TableCell className="text-right">-</TableCell>
+                        <TableCell>-</TableCell>
+                      </TableRow>
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
-                  {/* Placeholder chart area */}
-                  <Card className="border-dashed border-2">
-                    <CardContent className="py-12 text-center text-muted-foreground">
-                      <TrendingUp className="h-8 w-8 mx-auto mb-2 opacity-40" />
-                      <p className="text-sm">Chart visualization coming soon</p>
-                      <p className="text-xs mt-1">Data actual vs forecast akan ditampilkan dalam grafik</p>
-                    </CardContent>
-                  </Card>
-                </>
+          {/* Daily Breakdown */}
+          <Card>
+            <CardHeader>
+              <CardTitle>📅 Daily Breakdown</CardTitle>
+              <CardDescription>Ringkasan kas harian per tanggal</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {loading ? (
+                <Skeleton className="h-40 w-full" />
+              ) : dailyBreakdown.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Tidak ada data untuk periode ini.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Tanggal</TableHead>
+                        <TableHead className="text-right">Masuk</TableHead>
+                        <TableHead className="text-right">Keluar</TableHead>
+                        <TableHead className="text-right">Net</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {dailyBreakdown.map((d) => (
+                        <TableRow key={d.date}>
+                          <TableCell>{formatDate(d.date)}</TableCell>
+                          <TableCell className="text-right text-green-600">{formatRp(d.masuk)}</TableCell>
+                          <TableCell className="text-right text-red-600">{formatRp(d.keluar)}</TableCell>
+                          <TableCell
+                            className={`text-right font-medium ${d.net >= 0 ? "text-green-600" : "text-red-600"}`}
+                          >
+                            {formatRp(d.net)}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
               )}
             </CardContent>
           </Card>

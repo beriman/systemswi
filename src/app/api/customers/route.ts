@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { googleWorkspaceDegradedSource, isGoogleWorkspaceAuthError } from "@/lib/api/google-workspace-error";
 import { appendRows, readRange, updateRow } from "@/lib/sheets/sheets-real";
 import { appendSwiMemoryLog } from "@/lib/google/audit-log";
+import { ensureCustomerTables } from "@/lib/customer/init-db";
 
 export const runtime = "nodejs";
 
@@ -183,6 +184,7 @@ function getDbSafe(): any {
     if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir, { recursive: true });
     const db = new Database(dbPath);
     db.pragma("journal_mode = WAL");
+    ensureCustomerTables(db);
     return db;
   } catch {
     return null;
@@ -289,6 +291,11 @@ async function readCrm() {
     return { ...sheetsData, sourceStatus: "live" as const, source: "Google Sheets" };
   } catch (error) {
     if (isGoogleWorkspaceAuthError(error)) {
+      // Last-resort: try SQLite even if empty (might have data on this instance)
+      const sqliteFallback = readFromSqlite();
+      if (sqliteFallback && (sqliteFallback.customers.length > 0 || sqliteFallback.interactions.length > 0)) {
+        return { ...sqliteFallback, sourceStatus: "live" as const, source: "SQLite (fallback)" };
+      }
       return { customers: [], interactions: [], sourceStatus: "degraded" as const, source: "Google Sheets (blocked)" };
     }
     throw error;
@@ -296,15 +303,35 @@ async function readCrm() {
 }
 
 // ── GET ─────────────────────────────────────────────────────────
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    const { searchParams } = new URL(request.url);
+    const q = text(searchParams.get("q")).toLowerCase();
+    const segmentParam = text(searchParams.get("segment")).toLowerCase();
+
     const { customers, interactions, sourceStatus, source } = await readCrm();
+
+    // Server-side search & filter
+    const filteredCustomers = customers.filter((c) => {
+      if (segmentParam && segmentParam !== "all" && c.segment !== segmentParam) return false;
+      if (q) {
+        const needle = [c.name, c.whatsapp, c.interest, c.source, c.segment, c.id, c.notes]
+          .join(" ")
+          .toLowerCase();
+        if (!needle.includes(q)) return false;
+      }
+      return true;
+    });
+
     return NextResponse.json({
       source,
       sourceStatus,
-      customers,
+      customers: filteredCustomers,
       interactions,
-      summary: summarize(customers, interactions),
+      summary: summarize(filteredCustomers, interactions),
+      query: q || null,
+      segmentFilter: segmentParam || "all",
+      totalBeforeFilter: customers.length,
     });
   } catch (error) {
     if (isGoogleWorkspaceAuthError(error)) {

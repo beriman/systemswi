@@ -1,100 +1,163 @@
-// GET /api/cash-harian — List entries (filter: startDate, endDate)
+// GET /api/cash-harian — List cash entries (filter: date, type, category, startDate, endDate)
 // POST /api/cash-harian — Create new entry
 import { NextRequest, NextResponse } from "next/server";
-import {
-  getEntriesByDateRange,
-  createEntry,
-  ensureCashHarianInitialized,
-} from "@/lib/sheets/cash-harian-sheets";
-import { isGoogleWorkspaceAuthError, googleWorkspaceDegradedSource } from "@/lib/api/google-workspace-error";
+import { readSheet, appendRows } from "@/lib/sheets/sheets-real";
+import { googleWorkspaceWriteBlockedSource } from "@/lib/api/google-workspace-error";
 
 export const runtime = "nodejs";
 
-export async function GET(req: NextRequest) {
+const SHEET_NAME = "CashHarian";
+
+// Column order:
+// A: EntryId, B: Date, C: Type (Masuk/Keluar), D: Category, E: Description
+// F: Amount, G: Saldo, H: InputBy, I: InputDate
+const HEADERS = [
+  "EntryId", "Date", "Type", "Category", "Description",
+  "Amount", "Saldo", "InputBy", "InputDate",
+];
+
+function rowToEntry(row: string[], rowNumber: number) {
+  return {
+    entryId: row[0] || "",
+    date: row[1] || "",
+    type: row[2] || "",
+    category: row[3] || "",
+    description: row[4] || "",
+    amount: Number(row[5]) || 0,
+    saldo: Number(row[6]) || 0,
+    inputBy: row[7] || "",
+    inputDate: row[8] || "",
+    rowNumber,
+  };
+}
+
+async function ensureHeader() {
+  const raw = await readSheet(SHEET_NAME);
+  if (raw.length === 0 || raw[0][0] !== "EntryId") {
+    await appendRows(SHEET_NAME, [HEADERS]);
+  }
+}
+
+export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(req.url);
+    const { searchParams } = new URL(request.url);
+    const date = searchParams.get("date") || "";
+    const type = searchParams.get("type") || "";
+    const category = searchParams.get("category") || "";
     const startDate = searchParams.get("startDate") || "";
     const endDate = searchParams.get("endDate") || "";
 
-    await ensureCashHarianInitialized();
-    const entries = await getEntriesByDateRange(startDate, endDate);
+    const raw = await readSheet(SHEET_NAME);
+    const hasHeader = raw.length > 0 && raw[0][0] === "EntryId";
+    const dataRows = hasHeader ? raw.slice(1) : raw;
+
+    let results = dataRows
+      .filter((row) => row && row[0])
+      .map((row, i) => rowToEntry(row, i + (hasHeader ? 2 : 1)));
+
+    if (date) {
+      results = results.filter((r) => r.date === date);
+    }
+    if (type) {
+      results = results.filter((r) => r.type.toLowerCase() === type.toLowerCase());
+    }
+    if (category) {
+      results = results.filter((r) =>
+        r.category.toLowerCase().includes(category.toLowerCase())
+      );
+    }
+    if (startDate) {
+      results = results.filter((r) => r.date >= startDate);
+    }
+    if (endDate) {
+      results = results.filter((r) => r.date <= endDate);
+    }
+
+    // Sort by date ascending
+    results.sort((a, b) => a.date.localeCompare(b.date));
+
+    const totalMasuk = results
+      .filter((r) => r.type === "Masuk")
+      .reduce((s, r) => s + r.amount, 0);
+    const totalKeluar = results
+      .filter((r) => r.type === "Keluar")
+      .reduce((s, r) => s + r.amount, 0);
+    const saldoAkhir = results.length > 0 ? results[results.length - 1].saldo : 0;
 
     return NextResponse.json({
-      source: "Google Sheets: Cash_Harian",
+      source: `Google Sheets: ${SHEET_NAME}`,
       sourceStatus: "live",
       generatedAt: new Date().toISOString(),
-      filters: { startDate: startDate || undefined, endDate: endDate || undefined },
-      count: entries.length,
-      data: entries,
+      summary: { totalMasuk, totalKeluar, saldoAkhir, count: results.length },
+      count: results.length,
+      data: results,
     });
   } catch (error) {
-    if (isGoogleWorkspaceAuthError(error)) {
-      return NextResponse.json({
-        ...googleWorkspaceDegradedSource("Google Sheets: Cash_Harian", error),
-        data: [],
-      });
-    }
     return NextResponse.json(
-      { error: "Failed to fetch cash harian entries", details: String(error) },
+      { error: "Failed to fetch cash harian", details: String(error) },
       { status: 500 }
     );
   }
 }
 
-export async function POST(req: NextRequest) {
+export async function POST(request: NextRequest) {
   try {
-    const body = await req.json();
-    const date = String(body.date || "").trim();
-    const type = String(body.type || "Masuk").trim() as "Masuk" | "Keluar";
-    const category = String(body.category || "").trim();
-    const description = String(body.description || "").trim();
-    const amount = Number(body.amount) || 0;
-    const inputBy = String(body.inputBy || "").trim();
+    const body = await request.json();
+    const { date, type, category, description, amount, inputBy } = body;
 
-    if (!date) {
+    if (!date || !type || !amount) {
       return NextResponse.json(
-        { error: "date is required (YYYY-MM-DD)" },
-        { status: 400 }
-      );
-    }
-    if (type !== "Masuk" && type !== "Keluar") {
-      return NextResponse.json(
-        { error: "type must be 'Masuk' or 'Keluar'" },
-        { status: 400 }
-      );
-    }
-    if (amount <= 0) {
-      return NextResponse.json(
-        { error: "amount must be greater than 0" },
+        { error: "Missing required fields: date, type, amount are required" },
         { status: 400 }
       );
     }
 
-    await ensureCashHarianInitialized();
-    const result = await createEntry({
-      date,
-      type,
-      category,
-      description,
-      amount,
-      inputBy,
-    });
-
-    return NextResponse.json({ success: true, data: result }, { status: 201 });
-  } catch (error) {
-    if (isGoogleWorkspaceAuthError(error)) {
+    if (!["Masuk", "Keluar"].includes(type)) {
       return NextResponse.json(
-        {
-          sourceStatus: "blocked",
-          source: "Google Sheets: Cash_Harian",
-          error: "Google Workspace OAuth perlu re-auth sebelum bisa menambah entry",
-          details: String(error),
-        },
-        { status: 503 }
+        { error: "Type must be 'Masuk' or 'Keluar'" },
+        { status: 400 }
       );
     }
+
+    const amt = Number(amount);
+    if (amt <= 0) {
+      return NextResponse.json(
+        { error: "Amount must be positive" },
+        { status: 400 }
+      );
+    }
+
+    await ensureHeader();
+
+    // Read existing to compute running saldo
+    const raw = await readSheet(SHEET_NAME);
+    const hasHeader = raw.length > 0 && raw[0][0] === "EntryId";
+    const dataRows = hasHeader ? raw.slice(1) : raw;
+    const existing = dataRows.filter((row) => row && row[0]).map(rowToEntry);
+    const lastSaldo = existing.length > 0 ? existing[existing.length - 1].saldo : 0;
+    const newSaldo = type === "Masuk" ? lastSaldo + amt : lastSaldo - amt;
+
+    const entryId = `CH-${Date.now()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+    const now = new Date().toISOString().slice(0, 19).replace("T", " ");
+    const row: (string | number)[] = [
+      entryId, date, type, category || "Lain-lain", description || "",
+      amt, newSaldo, inputBy || "system", now,
+    ];
+
+    await appendRows(SHEET_NAME, [row]);
+
     return NextResponse.json(
-      { error: "Failed to create cash harian entry", details: String(error) },
+      {
+        source: `Google Sheets: ${SHEET_NAME}`,
+        sourceStatus: "live",
+        message: "Cash entry created successfully",
+        data: rowToEntry(row as string[], 0),
+      },
+      { status: 201 }
+    );
+  } catch (error) {
+    return NextResponse.json(
+      googleWorkspaceWriteBlockedSource(SHEET_NAME, error),
       { status: 500 }
     );
   }

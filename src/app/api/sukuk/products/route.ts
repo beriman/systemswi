@@ -1,116 +1,66 @@
-// GET /api/sukuk/products — List all sukuk micro products
-// POST /api/sukuk/products — Create new sukuk micro product
-// Uses SQLite when available, falls back to Google Sheets on Vercel
+// GET /api/sukuk/products — List all products
+// POST /api/sukuk/products — Create new product
 import { NextRequest, NextResponse } from "next/server";
-import {
-  getSukukProductsFromSheets,
-  addSukukProductToSheets,
-} from "@/lib/sheets/sukuk-sheets";
-import { readRange } from "@/lib/sheets/sheets-real";
+import { readRange, appendRows } from "@/lib/sheets/sheets-real";
+import { getLocalProducts, addLocalProduct } from "@/lib/sheets/sukuk-local-data";
 
-function getDbSafe() {
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { getDb } = require("@/lib/db");
-    return getDb();
-  } catch {
-    return null;
-  }
+async function getProductsFromSheets() {
+  const rows = await readRange("SukukProduk!A6:L13");
+  if (!rows || rows.length === 0) return [];
+  const dataRows = rows[0]?.[0] === "ID Produk" ? rows.slice(1) : rows;
+  return dataRows
+    .filter((r) => r && r[0])
+    .map((r) => ({
+      id: Number(r && r[0]) || 0,
+      kode: r[0] || "",
+      nama: r[1] || "",
+      deskripsi: r[2] || "",
+      kategori: r[3] || "",
+      modal_dibutuhkan: Number(r[4]) || 0,
+      target_investor: Number(r[5]) || 0,
+      nisbah: r[6] || "",
+      status: r[7] || "open",
+      pic_produk: r[8] || "",
+      tanggal_launch: r[9] || "",
+    }));
 }
 
 export async function GET() {
   try {
-    // Read directly from Google Sheets (source of truth)
-    const { products, source } = await getSukukProductsFromSheets();
-
-    // Enrich with investment summary from Sheets
-    let investments: any[] = [];
-    try {
-      const invRows = await readRange("SukukMikro_Investments!A1:J1000");
-      if (invRows && invRows.length > 1) {
-        investments = invRows.slice(1).filter((r) => r.some(Boolean));
-      }
-    } catch {
-      // ignore — investments are optional enrichment
+    const sheetData = await getProductsFromSheets();
+    if (sheetData.length > 0) {
+      return NextResponse.json({ products: sheetData, source: "sheets" });
     }
-
-    const enriched = products.map((p) => {
-      const productInvestments = investments.filter((inv) => inv[1] === p.id || inv[2] === p.id);
-      const totalTerKumpul = productInvestments.reduce((sum, inv) => sum + (Number(inv[5]) || 0), 0);
-      const unitTerjual = productInvestments.reduce((sum, inv) => sum + (Number(inv[4]) || 0), 0);
-      return {
-        ...p,
-        unit_terjual: unitTerjual,
-        total_terkumpul: totalTerKumpul,
-      };
-    });
-
-    return NextResponse.json({
-      products: enriched,
-      source,
-      sourceStatus: source === "sheets" ? "live" : "degraded",
-      warning:
-        source === "sheets"
-          ? undefined
-          : "Data source tidak tersedia.",
-    });
-  } catch (error) {
-    return NextResponse.json(
-      { products: [], source: "degraded", sourceStatus: "degraded", warning: "Gagal memuat data", details: String(error) },
-      { status: 200 }
-    );
-  }
+  } catch {}
+  const localData = getLocalProducts();
+  return NextResponse.json({ products: localData, source: "local" });
 }
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-
-    const kode = body.kode?.trim();
-    const nama = body.nama?.trim();
-    const harga_per_unit = Number(body.harga_per_unit) || 0;
-    const jumlah_unit = Number(body.jumlah_unit) || 0;
-
-    if (!kode || !nama || harga_per_unit <= 0 || jumlah_unit <= 0) {
-      return NextResponse.json(
-        { error: "kode, nama, harga_per_unit, dan jumlah_unit wajib diisi dengan benar" },
-        { status: 400 }
-      );
-    }
-
-    // Write to Google Sheets (source of truth)
-    const added = await addSukukProductToSheets({
-      id: kode,
-      nama,
-      deskripsi: body.deskripsi || "",
-      kategori: body.kategori || "merchandise",
-      modal_dibutuhkan: harga_per_unit * jumlah_unit,
-      target_investor: jumlah_unit,
-      nisbah: `${body.nisbah_investor || 50}:${body.nisbah_pengelola || 50}`,
-      status: body.status || "open",
-      pic: body.pic || "",
-      tanggal_launch: body.tanggal_launch || "",
-    });
-
-    if (added) {
-      return NextResponse.json({
-        product: {
-          id: kode, kode, nama,
-          deskripsi: body.deskripsi || "",
-          kategori: body.kategori || "merchandise",
-          harga_per_unit, jumlah_unit,
-          nilai_sukuk: harga_per_unit * jumlah_unit,
-          status: body.status || "open",
-          from_sheets: true,
-        },
-        source: "sheets",
-      }, { status: 201 });
-    }
-
-    return NextResponse.json({ error: "Gagal menyimpan produk" }, { status: 500 });
-  } catch (error: any) {
+    try {
+      const kode = body.kode || `SM-${Date.now()}`;
+      const row = [
+        kode,
+        body.nama || "",
+        body.deskripsi || "",
+        body.kategori || "merchandise",
+        Number(body.harga_per_unit || body.modal_dibutuhkan) || 0,
+        Number(body.jumlah_unit || body.target_investor) || 0,
+        body.nisbah || "60:40",
+        body.status || "open",
+        body.pic_produk || "",
+        body.tanggal_launch || new Date().toISOString().slice(0, 10),
+      ];
+      await appendRows("SukukProduk", [row]);
+      return NextResponse.json({ product: { kode, ...body }, source: "sheets" }, { status: 201 });
+    } catch {}
+    const newProduct = addLocalProduct(body);
+    return NextResponse.json({ product: newProduct, source: "local" }, { status: 201 });
+  } catch (error) {
     return NextResponse.json(
-      { error: "Gagal membuat produk sukuk mikro", details: String(error) },
+      { error: "Failed to create product", details: String(error) },
       { status: 500 }
     );
   }

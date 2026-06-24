@@ -1,100 +1,110 @@
-// GET /api/buku-kas/[id] — Get entry detail
+// GET /api/buku-kas/[id] — Get single entry detail
 // PUT /api/buku-kas/[id] — Update entry
 import { NextRequest, NextResponse } from "next/server";
-import {
-  readBukuKasSheet,
-  parseBukuKasRows,
-  updateBukuKasRow,
-  recalculateAndWriteSaldo,
-  CATEGORIES,
-  type BukuKasEntry,
-} from "@/lib/buku-kas/sheets";
-import { googleWorkspaceDegradedSource, isGoogleWorkspaceAuthError } from "@/lib/api/google-workspace-error";
+import { readSheet, updateRow } from "@/lib/sheets/sheets-real";
+import { googleWorkspaceWriteBlockedSource } from "@/lib/api/google-workspace-error";
 
-const SOURCE = "Google Sheets: Buku_Kas";
+export const runtime = "nodejs";
 
-function s(row: string[], idx: number): string {
-  return row[idx] || "";
+const SHEET_NAME = "BukuKas";
+
+function rowToEntry(row: string[], rowNumber: number) {
+  return {
+    entryId: row[0] || "",
+    date: row[1] || "",
+    type: row[2] || "",
+    category: row[3] || "",
+    description: row[4] || "",
+    debit: Number(row[5]) || 0,
+    credit: Number(row[6]) || 0,
+    saldo: Number(row[7]) || 0,
+    reference: row[8] || "",
+    inputBy: row[9] || "",
+    inputDate: row[10] || "",
+    rowNumber,
+  };
 }
 
 export async function GET(
-  req: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id } = await params;
-    const rows = await readBukuKasSheet();
-    const entries = parseBukuKasRows(rows);
-    const entry = entries.find((e) => e.id === id);
+    const raw = await readSheet(SHEET_NAME);
+    const hasHeader = raw.length > 0 && raw[0][0] === "EntryId";
+    const dataRows = hasHeader ? raw.slice(1) : raw;
 
-    if (!entry) {
-      return NextResponse.json({ error: "Entry not found" }, { status: 404 });
+    const idx = dataRows.findIndex((row) => row && row[0] === id);
+    if (idx === -1) {
+      return NextResponse.json(
+        { error: `Buku kas entry not found: ${id}` },
+        { status: 404 }
+      );
     }
 
-    return NextResponse.json({ source: SOURCE, sourceStatus: "live", entry });
+    const entry = rowToEntry(dataRows[idx], idx + (hasHeader ? 2 : 1));
+    return NextResponse.json({
+      source: `Google Sheets: ${SHEET_NAME}`,
+      sourceStatus: "live",
+      data: entry,
+    });
   } catch (error) {
-    if (isGoogleWorkspaceAuthError(error)) {
-      return NextResponse.json({
-        ...googleWorkspaceDegradedSource(SOURCE, error),
-        entry: null,
-      });
-    }
-    return NextResponse.json({ error: "Failed to fetch entry detail", details: String(error) }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to fetch buku kas entry", details: String(error) },
+      { status: 500 }
+    );
   }
 }
 
 export async function PUT(
-  req: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id } = await params;
-    const body = await req.json();
+    const body = await request.json();
+    const raw = await readSheet(SHEET_NAME);
+    const hasHeader = raw.length > 0 && raw[0][0] === "EntryId";
+    const dataRows = hasHeader ? raw.slice(1) : raw;
 
-    const rows = await readBukuKasSheet();
-    const entries = parseBukuKasRows(rows);
-    const existing = entries.find((e) => e.id === id);
-
-    if (!existing) {
-      return NextResponse.json({ error: "Entry not found" }, { status: 404 });
+    const idx = dataRows.findIndex((row) => row && row[0] === id);
+    if (idx === -1) {
+      return NextResponse.json(
+        { error: `Buku kas entry not found: ${id}` },
+        { status: 404 }
+      );
     }
 
-    const type: "D" | "K" = body.type === "K" ? "K" : (existing.type as "D" | "K");
-    const category = body.category || existing.category;
-    const validCategory = CATEGORIES.includes(category as typeof CATEGORIES[number]) ? category : existing.category;
+    const rowNum = idx + (hasHeader ? 2 : 1);
+    const existing = dataRows[idx];
 
-    const updated: Omit<BukuKasEntry, "row"> = {
+    const updatedRow = [
       id,
-      date: body.date || existing.date,
-      type,
-      category: validCategory,
-      amount: body.amount !== undefined ? Number(body.amount) : existing.amount,
-      description: body.description !== undefined ? body.description : existing.description,
-      reference: body.reference !== undefined ? body.reference : existing.reference,
-      saldo: existing.saldo,
-    };
+      body.date ?? existing[1] ?? "",
+      body.type ?? existing[2] ?? "",
+      body.category ?? existing[3] ?? "",
+      body.description ?? existing[4] ?? "",
+      body.debit !== undefined ? Number(body.debit) : Number(existing[5]) || 0,
+      body.credit !== undefined ? Number(body.credit) : Number(existing[6]) || 0,
+      body.saldo !== undefined ? Number(body.saldo) : Number(existing[7]) || 0,
+      body.reference ?? existing[8] ?? "",
+      body.inputBy ?? existing[9] ?? "",
+      new Date().toISOString().slice(0, 19).replace("T", " "),
+    ];
 
-    await updateBukuKasRow(existing.row, updated);
-
-    // Recalculate all saldo
-    const refreshedRows = await readBukuKasSheet();
-    const refreshedEntries = parseBukuKasRows(refreshedRows);
-    await recalculateAndWriteSaldo(refreshedEntries);
+    await updateRow(SHEET_NAME, rowNum, updatedRow);
 
     return NextResponse.json({
-      success: true,
-      entry: { ...updated, row: existing.row },
-      message: "Entry updated successfully.",
+      source: `Google Sheets: ${SHEET_NAME}`,
+      sourceStatus: "live",
+      message: "Buku kas entry updated successfully",
+      data: rowToEntry(updatedRow, rowNum),
     });
   } catch (error) {
-    if (isGoogleWorkspaceAuthError(error)) {
-      return NextResponse.json({
-        sourceStatus: "blocked",
-        source: SOURCE,
-        error: "Google Workspace OAuth perlu re-auth sebelum bisa update entry buku kas",
-        details: String(error),
-      }, { status: 503 });
-    }
-    return NextResponse.json({ error: "Failed to update entry", details: String(error) }, { status: 500 });
+    return NextResponse.json(
+      googleWorkspaceWriteBlockedSource(SHEET_NAME, error),
+      { status: 500 }
+    );
   }
 }

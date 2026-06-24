@@ -1,65 +1,72 @@
-// PUT /api/cash-harian/[id] — Update an entry
+// PUT /api/cash-harian/[id] — Update cash entry
 import { NextRequest, NextResponse } from "next/server";
-import { updateEntry, ensureCashHarianInitialized } from "@/lib/sheets/cash-harian-sheets";
-import { isGoogleWorkspaceAuthError, googleWorkspaceWriteBlockedSource } from "@/lib/api/google-workspace-error";
+import { readSheet, updateRow } from "@/lib/sheets/sheets-real";
+import { googleWorkspaceWriteBlockedSource } from "@/lib/api/google-workspace-error";
 
 export const runtime = "nodejs";
 
+const SHEET_NAME = "CashHarian";
+
+function rowToEntry(row: string[], rowNumber: number) {
+  return {
+    entryId: row[0] || "",
+    date: row[1] || "",
+    type: row[2] || "",
+    category: row[3] || "",
+    description: row[4] || "",
+    amount: Number(row[5]) || 0,
+    saldo: Number(row[6]) || 0,
+    inputBy: row[7] || "",
+    inputDate: row[8] || "",
+    rowNumber,
+  };
+}
+
 export async function PUT(
-  req: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id } = await params;
-    const body = await req.json();
+    const body = await request.json();
+    const raw = await readSheet(SHEET_NAME);
+    const hasHeader = raw.length > 0 && raw[0][0] === "EntryId";
+    const dataRows = hasHeader ? raw.slice(1) : raw;
 
-    const type = body.type
-      ? String(body.type).trim() as "Masuk" | "Keluar"
-      : undefined;
-
-    if (type && type !== "Masuk" && type !== "Keluar") {
+    const idx = dataRows.findIndex((row) => row && row[0] === id);
+    if (idx === -1) {
       return NextResponse.json(
-        { error: "type must be 'Masuk' or 'Keluar'" },
-        { status: 400 }
-      );
-    }
-
-    if (body.amount !== undefined && Number(body.amount) <= 0) {
-      return NextResponse.json(
-        { error: "amount must be greater than 0" },
-        { status: 400 }
-      );
-    }
-
-    await ensureCashHarianInitialized();
-    const result = await updateEntry(id, {
-      date: body.date ? String(body.date).trim() : undefined,
-      type,
-      category: body.category !== undefined ? String(body.category).trim() : undefined,
-      description: body.description !== undefined ? String(body.description).trim() : undefined,
-      amount: body.amount !== undefined ? Number(body.amount) : undefined,
-      inputBy: body.inputBy !== undefined ? String(body.inputBy).trim() : undefined,
-    });
-
-    if (!result) {
-      return NextResponse.json(
-        { error: `Entry with id '${id}' not found` },
+        { error: `Cash entry not found: ${id}` },
         { status: 404 }
       );
     }
 
-    return NextResponse.json({ success: true, data: result });
+    const rowNum = idx + (hasHeader ? 2 : 1);
+    const existing = dataRows[idx];
+
+    const updatedRow = [
+      id,
+      body.date ?? existing[1] ?? "",
+      body.type ?? existing[2] ?? "",
+      body.category ?? existing[3] ?? "",
+      body.description ?? existing[4] ?? "",
+      body.amount !== undefined ? Number(body.amount) : Number(existing[5]) || 0,
+      body.saldo !== undefined ? Number(body.saldo) : Number(existing[6]) || 0,
+      body.inputBy ?? existing[7] ?? "",
+      new Date().toISOString().slice(0, 19).replace("T", " "),
+    ];
+
+    await updateRow(SHEET_NAME, rowNum, updatedRow);
+
+    return NextResponse.json({
+      source: `Google Sheets: ${SHEET_NAME}`,
+      sourceStatus: "live",
+      message: "Cash entry updated successfully",
+      data: rowToEntry(updatedRow, rowNum),
+    });
   } catch (error) {
-    if (isGoogleWorkspaceAuthError(error)) {
-      return NextResponse.json(
-        {
-          ...googleWorkspaceWriteBlockedSource("Google Sheets: Cash_Harian", error),
-        },
-        { status: 503 }
-      );
-    }
     return NextResponse.json(
-      { error: "Failed to update cash harian entry", details: String(error) },
+      googleWorkspaceWriteBlockedSource(SHEET_NAME, error),
       { status: 500 }
     );
   }

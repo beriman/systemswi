@@ -119,23 +119,23 @@ export default function CustomersPage() {
   const [query, setQuery] = useState("");
   const [segmentFilter, setSegmentFilter] = useState<"all" | "vip" | "loyal" | "regular" | "new">("all");
 
-  // Filtered customers
+  // Filtered customers (server-side filtering via API; this is just a pass-through)
   const filteredCustomers = useMemo(() => {
-    const needle = query.toLowerCase();
-    return (data?.customers || []).filter((c) => {
-      if (segmentFilter !== "all" && c.segment !== segmentFilter) return false;
-      return [c.name, c.whatsapp, c.interest, c.source, c.segment]
-        .join(" ").toLowerCase().includes(needle);
-    });
-  }, [data, query, segmentFilter]);
+    return data?.customers || [];
+  }, [data]);
 
   // ── Data Loading ──
 
   async function loadAll() {
     setLoading(true);
     try {
+      const params = new URLSearchParams();
+      if (query) params.set("q", query);
+      if (segmentFilter !== "all") params.set("segment", segmentFilter);
+      const qs = params.toString();
+      
       const [crmRes, segRes] = await Promise.all([
-        fetch("/api/customers", { cache: "no-store" }),
+        fetch(`/api/customers${qs ? `?${qs}` : ""}`, { cache: "no-store" }),
         fetch("/api/customers/segments", { cache: "no-store" }),
       ]);
       const crm: CustomerPayload = await crmRes.json();
@@ -143,7 +143,10 @@ export default function CustomersPage() {
       setData(crm);
       setSegments(seg);
       const src = crm.source || "SQLite + Google Sheets";
-      setStatus(crm.warning || `Customer 360 siap — source: ${src}`);
+      const filterNote = crm.totalBeforeFilter !== undefined && crm.totalBeforeFilter !== crm.customers.length
+        ? ` (${crm.customers.length} dari ${crm.totalBeforeFilter} customer)` 
+        : "";
+      setStatus(crm.warning || `Customer 360 siap — source: ${src}${filterNote}`);
     } catch (error) {
       setStatus(`Gagal memuat: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
@@ -152,6 +155,12 @@ export default function CustomersPage() {
   }
 
   useEffect(() => { loadAll(); }, []);
+
+  // Reload when search/filter changes (debounced)
+  useEffect(() => {
+    const timer = setTimeout(() => { loadAll(); }, 300);
+    return () => clearTimeout(timer);
+  }, [query, segmentFilter]);
 
   // ── Customer Detail ──
 
@@ -275,6 +284,7 @@ export default function CustomersPage() {
           <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-6">
             <Metric title="Total Customer" value={data?.summary.totalCustomers || 0} />
             <Metric title="VIP" value={data?.summary.bySegment?.vip || 0} tone="purple" />
+            <Metric title="Loyal" value={data?.summary.bySegment?.loyal || 0} tone="purple" />
             <Metric title="Regular" value={data?.summary.bySegment?.regular || 0} tone="blue" />
             <Metric title="New" value={data?.summary.bySegment?.new || 0} tone="amber" />
             <Metric title="Total CLV" value={formatCurrency(data?.summary.totalClv || 0)} />
@@ -421,7 +431,7 @@ export default function CustomersPage() {
               <CardContent className="space-y-4">
                 <div className="flex gap-3 flex-wrap">
                   <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Cari nama, WA, minat..." className="max-w-sm" />
-                  <div className="flex gap-1">
+                  <div className="flex gap-1 flex-wrap">
                     {(["all", "vip", "loyal", "regular", "new"] as const).map((s) => (
                       <Button key={s} size="sm" variant={segmentFilter === s ? "default" : "outline"}
                         onClick={() => setSegmentFilter(s)}>
