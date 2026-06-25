@@ -182,6 +182,27 @@ export default function DashboardPage() {
                           <div className="text-xs text-muted-foreground">Completed</div>
                         </div>
                       </div>
+                      {/* RTF 2 Highlight */}
+                      {(data?.eventSummary?.totalBudget || 0) > 0 && (
+                        <div className="rounded-lg bg-gradient-to-r from-purple-100 to-pink-50 border border-purple-200 p-3">
+                          <div className="text-xs font-semibold text-purple-700 uppercase tracking-wide">🎉 Road to Fragrantions Vol. 2</div>
+                          <div className="mt-1.5 grid grid-cols-3 gap-2 text-center">
+                            <div>
+                              <div className="text-sm font-bold text-purple-800">{formatCurrency(data.eventSummary.totalBudget)}</div>
+                              <div className="text-[10px] text-muted-foreground">Budget</div>
+                            </div>
+                            <div>
+                              <div className="text-sm font-bold text-orange-600">{formatCurrency(data.eventSummary.totalCost)}</div>
+                              <div className="text-[10px] text-muted-foreground">Actual</div>
+                            </div>
+                            <div>
+                              <div className="text-sm font-bold text-green-600">{formatCurrency(data.eventSummary.totalRevenue - data.eventSummary.totalCost)}</div>
+                              <div className="text-[10px] text-muted-foreground">Net</div>
+                            </div>
+                          </div>
+                          <div className="mt-1.5 text-[10px] text-muted-foreground">Jul 4-5 2026 • Promenade TIM • 42 Tenants</div>
+                        </div>
+                      )}
                       <div className="space-y-2">
                         {(data?.eventSummary?.latestEvents || []).slice(0, 2).map((event: any) => (
                           <div key={event.id || event.name} className="rounded-lg bg-white/70 p-2 text-sm">
