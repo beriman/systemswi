@@ -1,5 +1,4 @@
 {
-  "buildCommand": "echo 'Pre-built'",
-  "outputDirectory": ".next",
+  "buildCommand": "next build",
   "framework": "nextjs"
 }
