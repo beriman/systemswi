@@ -1,5 +1,5 @@
 {
-  "buildCommand": "npm install && next build",
-  "installCommand": "npm install",
+  "buildCommand": "echo 'Pre-built'",
+  "outputDirectory": ".next",
   "framework": "nextjs"
 }
