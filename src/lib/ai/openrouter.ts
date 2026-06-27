@@ -49,7 +49,7 @@ export async function getOpenRouterResponse(
 
     if (!key) {
         // Fallback to mock if no API key
-        console.warn("No OpenRouter API key, using mock response");
+        console.warn("No OpenRouter API configured, using mock response");
         const { getAIResponse } = await import("./mock-responses");
         return getAIResponse(userMessage);
     }

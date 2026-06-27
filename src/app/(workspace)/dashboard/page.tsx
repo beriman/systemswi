@@ -260,24 +260,38 @@ export default function DashboardPage() {
               <Card className="border-orange-100 bg-orange-50/50">
                 <CardHeader>
                   <CardTitle className="text-lg">⚡ Next Actions</CardTitle>
-                  <CardDescription>Shortcut operasional harian</CardDescription>
+                  <CardDescription>Shortcut operasional harian per divisi</CardDescription>
                 </CardHeader>
-                <CardContent className="space-y-2">
-                  <ActionLink href="/operations" title="Operations command center" detail="PO → receive → inventory → produksi → QC → jual → CRM → report" />
-                  <ActionLink href="/finance" title="Review finance" detail="Saldo bank dan setoran modal" />
-                  <ActionLink href="/events" title="Update Fragrantions" detail="Tenant, sponsor, budget, timeline" />
-                  <ActionLink href="/production" title="Catat batch produksi" detail="Bahan, bottling, packaging, QC" />
-                  <ActionLink href="/inventory" title="Cek restock alert" detail="Bahan, packaging, merch TIM, movement stock" />
-                  <ActionLink href="/procurement" title="Buat PO / Receiving QC" detail="Supplier, purchase order, barang masuk" />
-                  <ActionLink href="/documents" title="Generate dokumen" detail="Invoice, proposal sponsor, agreement, RAB" />
-                  <ActionLink href="/compliance" title="Review compliance batch" detail="Formula, QC, traceability, label" />
-                  <ActionLink href="/alerts" title="Cek alert operasional" detail="Stock, event, finance, deadline" />
-                  <ActionLink href="/customers" title="Sync customer CRM" detail="WhatsApp intake, consent, CLV, follow-up" />
-                  <ActionLink href="/scent-profile" title="AI scent profile" detail="Interview customer → draft aroma brief" />
-                  <ActionLink href="/automation" title="Preview WhatsApp" detail="FAQ, broadcast, customer intake tanpa auto-send" />
-                  <ActionLink href="/brands" title="Analisa brand" detail="Selling, COGS, expense, profit" />
-                  <ActionLink href="/tax-compliance" title="🏛️ Tax & Compliance" detail="Kalender pajak, dokumen, OSS, Pajak Tracking" />
-                  <ActionLink href="/sukuk" title="Sukuk Mikro" detail="Produk, investasi, distribusi profit" />
+                <CardContent className="space-y-3">
+                  <div>
+                    <div className="text-[10px] font-semibold text-emerald-600 uppercase mb-1">Produksi</div>
+                    <div className="space-y-1">
+                      <ActionLink href="/production" title="Catat batch" detail="Bahan, bottling, packaging, QC" />
+                      <ActionLink href="/inventory" title="Restock alert" detail="Bahan, packaging, merch" />
+                      <ActionLink href="/procurement" title="Buat PO" detail="Supplier, receiving QC" />
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-semibold text-purple-600 uppercase mb-1">Event</div>
+                    <div className="space-y-1">
+                      <ActionLink href="/events" title="Update Fragrantions" detail="Tenant, sponsor, budget" />
+                      <ActionLink href="/crm" title="CRM pipeline" detail="Tenant & sponsor follow-up" />
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-semibold text-blue-600 uppercase mb-1">Website & Finance</div>
+                    <div className="space-y-1">
+                      <ActionLink href="/finance" title="Review finance" detail="Saldo bank, setoran modal" />
+                      <ActionLink href="/ecommerce" title="Orders" detail="Fulfillment, status" />
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-semibold text-gray-500 uppercase mb-1">Admin</div>
+                    <div className="space-y-1">
+                      <ActionLink href="/alerts" title="Cek alerts" detail="Stock, event, deadline" />
+                      <ActionLink href="/tax-compliance" title="Tax & Compliance" detail="Pajak, OSS, LKPM" />
+                    </div>
+                  </div>
                 </CardContent>
               </Card>
             </div>
@@ -630,33 +644,94 @@ export default function DashboardPage() {
             )}
           </TabsContent>
 
-          {/* ── Quick Links Tab ── */}
-          <TabsContent value="quicklinks" className="space-y-4">
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              <QuickLink href="/operations" title="🧭 Operations" description="End-to-end workflow command center" />
-              <QuickLink href="/finance" title="💰 Finance Detail" description="Keuangan, saham, setoran modal" />
-              <QuickLink href="/events" title="🎉 Events" description="Fragrantions portfolio & planning" />
-              <QuickLink href="/production" title="🏭 Produksi" description="Batch, HPP, QC, dan stock" />
-              <QuickLink href="/inventory" title="📦 Inventory" description="Bahan, packaging, merch TIM, alert" />
-              <QuickLink href="/procurement" title="🧾 Procurement" description="Supplier, PO, receiving QC" />
-              <QuickLink href="/compliance" title="✅ Compliance" description="Formula, batch, QC, label" />
-              <QuickLink href="/documents" title="📄 Documents" description="Invoice, proposal, RAB, report" />
-              <QuickLink href="/billing" title="💳 Billing & Piutang" description="Tagihan tenant & sponsor outstanding" />
-              <QuickLink href="/reports" title="📊 Reports" description="Weekly/monthly auto report" />
-              <QuickLink href="/alerts" title="🔔 Alerts" description="Prioritas tindakan lintas modul" />
-              <QuickLink href="/customers" title="👥 Customers" description="CRM, consent, follow-up" />
-              <QuickLink href="/scent-profile" title="🧪 Scent Profile" description="Interview → draft aroma brief" />
-              <QuickLink href="/automation" title="💬 WhatsApp" description="FAQ, broadcast, customer intake" />
-              <QuickLink href="/sukuk" title="🪙 Sukuk Mikro" description="Produk, investasi, profit syariah" />
-              <QuickLink href="/tax-compliance" title="🏛️ Tax & Compliance" description="Pajak, dokumen, OSS, Pajak Tracking" />
-              <QuickLink href="/investor" title="📈 Investor Relations" description="Sukuk deck, financial projections" />
-              <QuickLink href="/sheets" title="📋 Google Sheets" description="Buka data spreadsheet langsung" />
-              <QuickLink href="/crm" title="🤝 CRM Hub" description="Contact directory, follow-up tracker" />
-              <QuickLink href="/email" title="📧 Email" description="Inbox, search, send" />
-              <QuickLink href="/workflow" title="🔄 Workflow" description="7-stage operational pipeline" />
-              <QuickLink href="/ai-chat" title="🤖 AI Chat" description="Context-aware assistant" />
-              <QuickLink href="/users" title="👥 Users" description="User management, role-based access" />
-              <QuickLink href="/settings" title="⚙️ Settings" description="System configuration" />
+          {/* ── Quick Links Tab (by Division) ── */}
+          <TabsContent value="quicklinks" className="space-y-6">
+            {/* Divisi Produksi */}
+            <div>
+              <h3 className="text-sm font-semibold text-emerald-700 uppercase tracking-wider mb-3 flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                Divisi Produksi
+              </h3>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <QuickLink href="/production" title="🏭 Produksi" description="Batch, HPP, estimasi stok" />
+                <QuickLink href="/inventory" title="📦 Inventory" description="Bahan, packaging, merch TIM" />
+                <QuickLink href="/procurement" title="🧾 Procurement" description="Supplier, PO, receiving QC" />
+                <QuickLink href="/qc" title="🔬 QC Check" description="Quality control batch produksi" />
+                <QuickLink href="/formulas" title="🧪 Formula" description="Resin, bahan, costing" />
+                <QuickLink href="/reorder" title="🔄 Reorder Alert" description="Stok minimum & auto alert" />
+                <QuickLink href="/compliance" title="✅ Compliance" description="Traceability, label, BPOM" />
+                <QuickLink href="/production-analytics" title="📈 Prod. Analytics" description="Analisis efisiensi produksi" />
+              </div>
+            </div>
+
+            {/* Divisi Website & Commerce */}
+            <div>
+              <h3 className="text-sm font-semibold text-blue-700 uppercase tracking-wider mb-3 flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+                Divisi Website & E-Commerce
+              </h3>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <QuickLink href="/ecommerce" title="🛒 E-Commerce" description="Online store, order, fulfillment" />
+                <QuickLink href="/store-daily" title="🏪 Store Daily" description="Penjualan harian store" />
+                <QuickLink href="/email" title="📧 Email" description="Gmail inbox, send" />
+                <QuickLink href="/sheets" title="📋 Google Sheets" description="Data spreadsheet langsung" />
+                <QuickLink href="/drive" title="📁 Google Drive" description="Dokumen & file perusahaan" />
+                <QuickLink href="/documents" title="📄 Documents" description="Invoice, proposal, RAB" />
+                <QuickLink href="/billing" title="💳 Billing" description="Tagihan & piutang" />
+              </div>
+            </div>
+
+            {/* Divisi Event */}
+            <div>
+              <h3 className="text-sm font-semibold text-purple-700 uppercase tracking-wider mb-3 flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-purple-500"></span>
+                Divisi Event
+              </h3>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <QuickLink href="/events" title="🎉 Events" description="Fragrantions portfolio & planning" />
+                <QuickLink href="/crm" title="🤝 CRM & Commercial" description="Tenant, sponsor, pipeline" />
+                <QuickLink href="/merch" title="👕 Merch TIM" description="Merchandise event" />
+                <QuickLink href="/portfolio" title="📸 Portfolio" description="Dokumentasi event" />
+                <QuickLink href="/upcoming-events" title="📅 Upcoming" description="Event mendatang" />
+                <QuickLink href="/reports" title="📊 Reports" description="Laporan mingguan/bulanan" />
+              </div>
+            </div>
+
+            {/* Divisi Store (Coming Soon) */}
+            <div>
+              <h3 className="text-sm font-semibold text-orange-700 uppercase tracking-wider mb-3 flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-orange-500"></span>
+                Divisi Store
+                <span className="text-[10px] bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded font-normal">Coming Soon</span>
+              </h3>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <QuickLink href="/store-daily" title="🏪 Daily Sales" description="Penjualan harian store" />
+                <QuickLink href="/sales-target" title="🎯 Sales Target" description="Target vs actual penjualan" />
+                <QuickLink href="/customers" title="👥 Customers" description="CRM, consent, CLV" />
+                <QuickLink href="/bep" title="📉 BEP Analysis" description="Break even point store" />
+              </div>
+            </div>
+
+            {/* Cross-Division Tools */}
+            <div>
+              <h3 className="text-sm font-semibold text-gray-600 uppercase tracking-wider mb-3 flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-gray-400"></span>
+                Umum & Admin
+              </h3>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <QuickLink href="/finance" title="💰 Finance" description="Keuangan, saham, setoran" />
+                <QuickLink href="/tax-compliance" title="🏛️ Tax & Compliance" description="Pajak, OSS, Pajak Tracking" />
+                <QuickLink href="/operations" title="🧭 Operations" description="Command center end-to-end" />
+                <QuickLink href="/alerts" title="🔔 Alerts" description="Prioritas tindakan lintas modul" />
+                <QuickLink href="/workflow" title="🔄 Workflow" description="7-stage operational pipeline" />
+                <QuickLink href="/automation" title="💬 WhatsApp" description="FAQ, broadcast, intake" />
+                <QuickLink href="/bpjs" title="🏥 BPJS" description="Ketenagakerjaan & kesehatan" />
+                <QuickLink href="/sukuk" title="🪙 Sukuk Mikro" description="Produk, investasi, profit" />
+                <QuickLink href="/investor" title="📈 Investor" description="Relations & projections" />
+                <QuickLink href="/ai-chat" title="🤖 AI Chat" description="Context-aware assistant" />
+                <QuickLink href="/users" title="👥 Users" description="Management & role access" />
+                <QuickLink href="/settings" title="⚙️ Settings" description="System configuration" />
+              </div>
             </div>
           </TabsContent>
         </Tabs>

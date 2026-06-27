@@ -1,5 +1,7 @@
 // Google Sheets helper — baca & tulis ke semua sheet
 // Adapted from holding-swi for systemswi
+// ⚠️ SERVER-ONLY: Never import from client components
+import "server-only";
 import { google } from "googleapis";
 import fs from "fs";
 import { withCircuitBreaker } from "./circuit-breaker";
@@ -199,24 +201,9 @@ function loadServiceAccount() {
     // fall through
   }
 
-  // 4. Hardcoded Service Account (ultimate fallback — always works in Vercel)
-  // private_key is base64-encoded to avoid system redaction
-  const SA_B64 = `{
-  "type": "service_account",
-  "project_id": "hemuhemu",
-  "private_key_id": "1b985a16bb3eada41d0f7efb502b17d5eb7a3e62",
-  "private_key": "LS0tLS1CRUdJTiBQUklWQVRFIEtFWS0tLS0tCk1JSUV2Z0lCQURBTkJna3Foa2lHOXcwQkFRRUZBQVNDQktnd2dnU2tBZ0VBQW9JQkFRRFV4Z2VnTWVDQU5qZ0IKaTF6WStQZ0F4MHloUDhVclRXQTR0ME1MMjVHOHBLc1VITVhZYzRwZGxwTVhiT2FPbGhhTUdEeVlGTlRNd3E1VQpVQ3hGeHRnMDdUYVlva0RwcmxMbXIrM2FWbnZHVm5nT0F6L3FwUWFaRy9tTUI0WEwrbzZXOVU4Y3FpeWdLMFV5CnVGT09mbHBCNUFsTTRiTldlbGtlTzMzaUE2UlBaZG5mVkI4My9KVlBGbVUxdUZkZmZwaTlXT2k3VWU5S3JKbkEKaDlxcmo4ZUFSWk9jTnZFejZwU0QwblNjV243MXRPdENIUEgrZ2F0L3JXQlZFak80dDBIVUNoOXFvSllFbGVKSwpTMkdIbnhYWTR6WHJjWGI5bVN0NVpEd21ycDEwSStzVW5RQy9JS21saU1RZWNTcVhHYmVqVGlUL0djNjc3SVBiCkJlMlNGdVVEQWdNQkFBRUNnZ0VBR0ZmWHc0SXhWem5jeW9CeFRQbWZGaWUzSXJPekVUTTNFUVlXaTZMQlY3M1gKUE9QVjF0L1JNc2ZwYUVLelZoamgxNEZtWFZmMHlNQjFSWHd1dElUOWM0QzRRRm8vNXZ4a3k3UFJHS3ZRV1c3SApLWU5CcXN6YXBtWEc5VGhmSEdrOEt4VkJ5ZHZHWTBUUUUrOTJ6OVN3NnR6MkcyK3ZIdk84Z25MNEFnVzhwTUNpCjJzS1lSNmRCZVBCRjlEZWRnRS8vUG91aVkxbEIydms5MDJ1YTk5VmxoQkZQcFhyOGs3VHdMcDIwN3VtMGx2V3cKb2dNRDQ5UUNxRXo1ejhYd1FMaHRwTXBxYkxXYjBpS3R5ZU5pWm9FaVY5ZzJwd1pIUGF6YnZOTG1NeGtSV01vdwpldWYvc095WlJ2ZS9URDVFTmdab2lwNDhmNjhWVEF0OXJ3dHh5NHV6Z1FLQmdRRDQ3NDJtYmhuc2VMdCtkcjViCmo3MUZlRnhOeGJWWlUzaEk4bWRndVlaanVSektsaDJ2UWh0d1M3dm1wQkt1VXkzVXFUdFg5VmluL2dIZHByWFcKeStlSzRKTFE1TTV5M1Q3NzByaW1CMEVnR1R4dVBhd0ZWZFpUVVhyL3dtd2RTbDd1eEZoRmNTYW9iM01LUmxUdwo2MHN1V1dPSHh5QW9Cczc1bTVGZCtKanBZUUtCZ1FEYXo4UzZyTS9YdmczcDhFcjZwellLRExDa0FmdTcyeG9SCkpCM3Z3WXErVjQyNFZkVnk0WkxyQXZkZElBQWlBZnI3U3gzbWplalBNSTlmanAzcVk0a1lmUTdiajVXZWFxYTYKVmUvYzl2NW1oWmNnTTdiajVjS28yR2Zla1gxSFd1SFRwWW81cXh0MUd3SlM4RzgrZ21ldUR5bzNyb2d5VDhEMApleGtIME1CMDR3S0JnUUNDYWczTnFWVFBmQmpPRWl0OEVIdmFEMHBjUEQzYnhFejUrblNLU2VmTUNzaTRvWmgvCm5xUjlXay9nYndpU1oyVlZTaXVhMHlCVk1rK0w3YkRLRFIwS3RzaHp3OHNjaGloZkNYQlBHdkhWZlNNWnBobWUKMmU5a3l3VWpSSm9iWmtFQjJiOWM4Z0NNc1lhVlZXOWVvQVpOQyt1RzBKMWFHdWNJQWFaUWt0S1pRUUtCZ1FDMwpPVStFK1h3NUxkNDh6SWdjaDdRS2lrSEh0QmwxWHF6Zk9aMFB6TU0vUzlWU1RCMm1TeGxaVFd5UlFHQ2NHWWh1CnNLSGpFMldsU1FabGYramdBbVVrYW1Qc21ya3dwQ0hrMmwwMmJHVHV1R0txQm1QWlJlWFF1UldSRzhjSjN5SkcKdGRHZkpKYWpZdkI1UHZnSUllNXJwQ3MzNFNBTzhSV2tJd2Y4c1dMVy9RS0JnQTlQSkxsWFo1Y0VTYStLWi9XawptWnlzTS9LL2NTM0o4Z3VvWkRRcG9TZEgvY3ZvM3d2eGtvMnNEb01MZjZFOUppeUVLRXFMWlhjbFoxbTM3WXh5CmZyMXl0Wjk0TXREdGNLMzhFbWtueFBzZWRNOFBqK2xWUE9mUzkzdDY5UThWZ2FwL0xwL1loaVhjNXVMbVhaVHAKdlpWc2MxQU9JbmdraXRzZU1GRjNQOEI3Ci0tLS0tRU5EIFBSSVZBVEUgS0VZLS0tLS0K",
-  "client_email": "swi-system@hemuhemu.iam.gserviceaccount.com",
-  "client_id": "106278358112674746608",
-  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-  "token_uri": "https://oauth2.googleapis.com/token",
-  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/swi-system%40hemuhemu.iam.gserviceaccount.com",
-  "universe_domain": "googleapis.com"
-}`;
-  const HARDCODED_SA = JSON.parse(SA_B64);
-  HARDCODED_SA.private_key = Buffer.from(HARDCODED_SA.private_key, 'base64').toString('utf-8');
-  return HARDCODED_SA;
+  // 4. No hardcoded fallback — credentials MUST come from env vars or file path.
+  //    If you need Vercel support, set GOOGLE_SERVICE_ACCOUNT_PATH or SA_EMBEDDED_JSON.
+  return null;
 }
 
 export function getAuth() {
