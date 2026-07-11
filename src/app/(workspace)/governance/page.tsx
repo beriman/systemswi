@@ -116,7 +116,12 @@ export default function GovernancePage() {
           <h2 className="text-2xl font-bold">⚖️ Governance / TARIF Dashboard</h2>
           <p className="text-muted-foreground">Monitoring GCG dari Google Sheets: transparency, accountability, responsibility, independency, fairness, dan pengecualian etika keuangan.</p>
         </div>
-        <Button onClick={() => load()} disabled={loading} variant="outline">Refresh</Button>
+        <div className="flex flex-wrap gap-2">
+          <Button onClick={() => load()} disabled={loading} variant="outline">Refresh</Button>
+          <Button asChild variant="outline">
+            <a href="/api/governance/dashboard?format=csv">Export CSV</a>
+          </Button>
+        </div>
       </div>
 
       <RoleGate feature="dashboard">

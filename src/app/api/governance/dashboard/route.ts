@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { googleWorkspaceDegradedSource, isGoogleWorkspaceAuthError } from "@/lib/api/google-workspace-error";
 import { readRange, readSheet } from "@/lib/sheets/sheets-real";
 
@@ -60,6 +60,39 @@ function isOverdue(dueDate: string): boolean {
   return Number.isFinite(due) && due < today;
 }
 
+function csvCell(value: unknown): string {
+  const textValue = String(value ?? "");
+  return /[",\n]/.test(textValue) ? `"${textValue.replace(/"/g, '""')}"` : textValue;
+}
+
+function toGovernanceCsv(payload: {
+  generatedAt: string;
+  sourceStatus: SourceStatus;
+  overallScore: number;
+  scores: GcgScore[];
+  summary: Record<string, unknown>;
+  exceptions: Array<{ type: string; severity: string; entityId: string; description: string; amount: number; owner: string }>;
+  nextActions: string[];
+}): string {
+  const rows: unknown[][] = [
+    ["Section", "Metric", "Value", "Notes"],
+    ["Header", "Generated At", payload.generatedAt, payload.sourceStatus],
+    ["Header", "Overall GCG Score", payload.overallScore, "Rata-rata Transparency, Accountability, Responsibility, Independency, Fairness"],
+    ...payload.scores.map((score) => ["Score", score.label, score.score, `${score.status}: ${score.evidence}`]),
+  ];
+
+  Object.entries(payload.summary).forEach(([section, value]) => {
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      Object.entries(value as Record<string, unknown>).forEach(([metric, metricValue]) => rows.push([`Summary:${section}`, metric, metricValue, ""]));
+    }
+  });
+
+  payload.exceptions.forEach((item) => rows.push(["Exception", item.type, item.amount, `${item.severity} | ${item.entityId || "TBA"} | ${item.owner || "Belum dicatat"} | ${item.description || "Belum dicatat"}`]));
+  payload.nextActions.forEach((action, index) => rows.push(["Next Action", index + 1, action, ""]));
+
+  return rows.map((row) => row.map(csvCell).join(",")).join("\n");
+}
+
 async function readRows(): Promise<{ rows: Record<string, string[][]>; sourceStatus: SourceStatus; warning?: string; details?: string }> {
   let googleAuthError: unknown = null;
   const emptyOnAuthError = (error: unknown): string[][] => {
@@ -85,7 +118,7 @@ async function readRows(): Promise<{ rows: Record<string, string[][]>; sourceSta
   };
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
     const { rows, sourceStatus, warning, details } = await readRows();
     const expenses = rows.expenses.slice(1).filter((row) => text(row[0]));
@@ -147,7 +180,7 @@ export async function GET() {
 
     const overallScore = Math.round(scores.reduce((sum, score) => sum + score.score, 0) / scores.length);
 
-    return NextResponse.json({
+    const payload = {
       source: SOURCE,
       sourceStatus,
       warning,
@@ -202,7 +235,18 @@ export async function GET() {
         vendorExceptions.length ? "Lengkapi benchmark vendor dan deklarasi related-party sebelum transaksi besar." : "Vendor register tidak menunjukkan exception dari data terbaca.",
         personalPaidNotInLedger.length ? "Cocokkan expense Personal Paid approved ke Shareholder_Ledger." : "Personal-paid expense sudah cocok atau belum ada data personal-paid.",
       ],
-    });
+    };
+
+    if (req.nextUrl.searchParams.get("format") === "csv") {
+      return new NextResponse(toGovernanceCsv(payload), {
+        headers: {
+          "Content-Type": "text/csv; charset=utf-8",
+          "Content-Disposition": `attachment; filename="governance-dashboard-${new Date().toISOString().slice(0, 10)}.csv"`,
+        },
+      });
+    }
+
+    return NextResponse.json(payload);
   } catch (error) {
     if (isGoogleWorkspaceAuthError(error)) {
       return NextResponse.json({
