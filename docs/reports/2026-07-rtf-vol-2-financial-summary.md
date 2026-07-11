@@ -104,6 +104,22 @@ Masukkan sebagai event closeout:
 - Operational expense: Rp 20.568.177
 - Net event result for SWI: Rp 8.989.384
 
+### Distribusi Laba Bersih Internal SWI
+
+Karena sistem SWI menggunakan struktur holding, laba bersih event dibagi antara Holding SWI dan Divisi EO/Event.
+
+| Penerima Internal | Persentase | Nilai |
+|---|---:|---:|
+| Holding SWI | 30% | Rp 2.696.815 |
+| Divisi EO/Event | 70% | Rp 6.292.569 |
+| **Total net SWI** | **100%** | **Rp 8.989.384** |
+
+Verifikasi:
+
+```text
+Rp 2.696.815 + Rp 6.292.569 = Rp 8.989.384
+```
+
 ### Buku_Kas / Cash_Harian
 
 Transfer dari SWI ke Wapiq harus dicatat sebagai **advance operasional event / kasbon PIC event**, bukan langsung expense final, sampai realisasi biaya dan kembalian dicocokkan.
