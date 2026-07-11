@@ -84,7 +84,7 @@ export const SHEETS: Record<string, { range: string; description: string }> = {
   Formula_Master:      { range: "Formula_Master!A1:L1000",       description: "Master formula/resep parfum" },
   Formula_Ingredients: { range: "Formula_Ingredients!A1:J1000",  description: "Komposisi bahan per formula" },
   Formula_Cost_Summary:{ range: "Formula_Cost_Summary!A1:I1000",  description: "Ringkasan cost per formula" },
-  ExpenseSubmissions:{ range: "Expense_Submissions!A1:L1000",    description: "Expense submissions dengan approval flow" },
+  ExpenseSubmissions:{ range: "Expense_Submissions!A1:R1000",    description: "Expense submissions dengan approval flow + GCG fields" },
   ExpenseApprovers:{ range: "Expense_Approvers!A1:D100",         description: "List approver expense" },
   SalesTargets:      { range: "Sales_Targets!A1:K1000",            description: "Sales targets per brand per month" },
   SalesActuals:      { range: "Sales_Actuals!A1:J1000",            description: "Actual sales transactions" },
