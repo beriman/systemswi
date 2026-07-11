@@ -1,12 +1,10 @@
 "use client";
 
 import { useState, useEffect, type FormEvent } from "react";
-import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -25,6 +23,12 @@ interface Expense {
   reviewedBy?: string;
   reviewedDate?: string;
   notes?: string;
+  division?: string;
+  coaCategory?: string;
+  paymentMethod?: string;
+  relatedBrand?: string;
+  proofRequired?: string;
+  shareholderDebtFlag?: string;
 }
 
 interface ExpenseStats {
@@ -37,6 +41,11 @@ interface ExpenseStats {
   approvedThisMonthAmount: number;
   rejectedCount: number;
   rejectedAmount: number;
+  needsProofCount?: number;
+  needsProofAmount?: number;
+  withoutDivisionCount?: number;
+  personalPaidCount?: number;
+  personalPaidAmount?: number;
 }
 
 interface ExpenseApiResponse {
@@ -45,6 +54,30 @@ interface ExpenseApiResponse {
   stats?: ExpenseStats;
   budgetVsActual?: Record<string, { budget: number; actual: number }>;
   error?: string;
+}
+
+interface EventOption {
+  id: string;
+  name: string;
+}
+
+interface EventsApiResponse {
+  events?: EventOption[];
+}
+
+interface ExpenseSubmissionPayload {
+  date: string;
+  submitterName: string;
+  relatedEvent: string;
+  category: string;
+  description: string;
+  amount: number;
+  division: string;
+  coaCategory: string;
+  paymentMethod: string;
+  relatedBrand: string;
+  notes: string;
+  proofUrl?: string;
 }
 
 // ── Helpers ──
@@ -79,6 +112,9 @@ function getStatusEmoji(status: string) {
 }
 
 const CATEGORIES = ["Bahan Baku", "Iklan", "Sewa Booth", "Transport", "Packaging", "Lainnya"];
+const DIVISIONS = ["Produksi", "Event", "Website", "Store", "Holding"];
+const PAYMENT_METHODS = ["Company Paid", "Cash", "Bank", "Personal Paid"];
+const RELATED_BRANDS = ["SWI Holding", "L'Arc~en~Scent", "Pixel Potion", "Nuscentza"];
 
 // ── Main Page Component ──
 export default function ExpensesPage() {
@@ -129,8 +165,8 @@ export default function ExpensesPage() {
     try {
       const res = await fetch("/api/events");
       if (!res.ok) return;
-      const json = await res.json();
-      setEvents((json.events || []).map((e: any) => ({ id: e.id, name: e.name })));
+      const json: EventsApiResponse = await res.json();
+      setEvents((json.events || []).map((e) => ({ id: e.id, name: e.name })));
     } catch {
       // Events API may not be available
     }
@@ -143,13 +179,17 @@ export default function ExpensesPage() {
     const form = new FormData(event.currentTarget);
 
     const proofFile = form.get("proofFile") as File | null;
-    const payload: any = {
+    const payload: ExpenseSubmissionPayload = {
       date: String(form.get("date") || ""),
       submitterName: String(form.get("submitterName") || ""),
       relatedEvent: String(form.get("relatedEvent") || ""),
       category: String(form.get("category") || "Lainnya"),
       description: String(form.get("description") || ""),
       amount: Number(form.get("amount") || 0),
+      division: String(form.get("division") || ""),
+      coaCategory: String(form.get("coaCategory") || ""),
+      paymentMethod: String(form.get("paymentMethod") || "Company Paid"),
+      relatedBrand: String(form.get("relatedBrand") || ""),
       notes: String(form.get("notes") || ""),
     };
 
@@ -301,6 +341,37 @@ export default function ExpensesPage() {
                   </select>
                 </div>
                 <div>
+                  <Label htmlFor="division">Division *</Label>
+                  <select id="division" name="division" className="w-full border rounded-md px-3 py-2 text-sm" required>
+                    <option value="">-- Pilih Division --</option>
+                    {DIVISIONS.map((division) => (
+                      <option key={division} value={division}>{division}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <Label htmlFor="coaCategory">COA Category</Label>
+                  <Input id="coaCategory" name="coaCategory" placeholder="Ikut kategori / COA" />
+                </div>
+                <div>
+                  <Label htmlFor="paymentMethod">Payment Method</Label>
+                  <select id="paymentMethod" name="paymentMethod" className="w-full border rounded-md px-3 py-2 text-sm" defaultValue="Company Paid">
+                    {PAYMENT_METHODS.map((method) => (
+                      <option key={method} value={method}>{method}</option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-muted-foreground mt-1">Personal Paid ditandai sebagai hutang pemegang saham setelah approved.</p>
+                </div>
+                <div>
+                  <Label htmlFor="relatedBrand">Related Brand</Label>
+                  <select id="relatedBrand" name="relatedBrand" className="w-full border rounded-md px-3 py-2 text-sm" defaultValue="SWI Holding">
+                    <option value="">-- Tidak spesifik --</option>
+                    {RELATED_BRANDS.map((brand) => (
+                      <option key={brand} value={brand}>{brand}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
                   <Label htmlFor="description">Deskripsi</Label>
                   <Input id="description" name="description" placeholder="Deskripsi pengeluaran" />
                 </div>
@@ -417,6 +488,21 @@ export default function ExpensesPage() {
               </CardContent>
             </Card>
           </div>
+
+          <Card className="border-amber-200 bg-amber-50/60">
+            <CardHeader>
+              <CardTitle className="text-base text-amber-900">⚖️ TARIF Governance Warnings</CardTitle>
+              <CardDescription>Angka berasal dari Expense_Submissions; kosong berarti belum dicatat, bukan diasumsikan aman.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid gap-3 md:grid-cols-4 text-sm">
+                <div><div className="font-semibold">Needs Proof</div><div>{stats?.needsProofCount || 0} item — {formatCurrency(stats?.needsProofAmount || 0)}</div></div>
+                <div><div className="font-semibold">Tanpa Division</div><div>{stats?.withoutDivisionCount || 0} item</div></div>
+                <div><div className="font-semibold">Personal Paid</div><div>{stats?.personalPaidCount || 0} item — {formatCurrency(stats?.personalPaidAmount || 0)}</div></div>
+                <div><div className="font-semibold">Audit Trail</div><div>Approve/reject dicatat ke Governance_Audit_Log.</div></div>
+              </div>
+            </CardContent>
+          </Card>
 
           {/* Budget vs Actual per Event */}
           {Object.keys(budgetVsActual).length > 0 && (

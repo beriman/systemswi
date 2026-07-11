@@ -1,6 +1,7 @@
 // Expense Approval Flow — Google Sheets helper
 // Uses the same Google OAuth token as the main SWI spreadsheet
 import { google } from "googleapis";
+import type { OAuth2Client } from "google-auth-library";
 import fs from "fs";
 
 export const SPREADSHEET_ID = process.env.GOOGLE_SHEETS_ID || "1lQ_FX6v-aX0XNwkRO6TyYLU1NGq6lAMFvK88S09KZsA";
@@ -12,8 +13,16 @@ export const EXPENSE_SHEETS = {
   Approvers: "Expense_Approvers",
 };
 
+const EXPENSE_SUBMISSION_HEADERS = [
+  "Submission ID", "Date", "Submitter Name", "Related Event",
+  "Category", "Description", "Amount", "Proof URL",
+  "Status", "Reviewed By", "Reviewed Date", "Notes",
+  "Division", "COA Category", "Payment Method", "Related Brand",
+  "Proof Required", "Shareholder Debt Flag",
+];
+
 // ── Auth ──
-let cachedAuth: any = null;
+let cachedAuth: OAuth2Client | null = null;
 
 function loadCredentialsFromFile() {
   try {
@@ -127,7 +136,23 @@ export async function ensureExpenseSheet(sheetName: string, headers: string[]): 
   });
 
   const exists = ss.data.sheets?.some((s) => s.properties?.title === sheetName);
-  if (exists) return;
+  if (exists) {
+    const current = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${sheetName}!A1:Z1`,
+    });
+    const currentHeader = current.data.values?.[0] || [];
+    const needsHeaderRefresh = headers.some((header, index) => currentHeader[index] !== header);
+    if (needsHeaderRefresh) {
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: SPREADSHEET_ID,
+        range: `${sheetName}!A1:Z1`,
+        valueInputOption: "USER_ENTERED",
+        requestBody: { values: [headers] },
+      });
+    }
+    return;
+  }
 
   await sheets.spreadsheets.batchUpdate({
     spreadsheetId: SPREADSHEET_ID,
@@ -146,11 +171,7 @@ export async function ensureExpenseSheet(sheetName: string, headers: string[]): 
 
 // ── Initialize expense sheets ──
 export async function initializeExpenseSheets(): Promise<void> {
-  await ensureExpenseSheet(EXPENSE_SHEETS.Submissions, [
-    "Submission ID", "Date", "Submitter Name", "Related Event",
-    "Category", "Description", "Amount", "Proof URL",
-    "Status", "Reviewed By", "Reviewed Date", "Notes",
-  ]);
+  await ensureExpenseSheet(EXPENSE_SHEETS.Submissions, EXPENSE_SUBMISSION_HEADERS);
 
   await ensureExpenseSheet(EXPENSE_SHEETS.Approvers, [
     "Approver ID", "Name", "Role", "Email",

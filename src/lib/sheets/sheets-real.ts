@@ -64,6 +64,7 @@ export const SHEETS: Record<string, { range: string; description: string }> = {
   QCChecklist:       { range: "QC_Checklist!A1:I1000",          description: "QC checklist results per batch and stage" },
   QC_Results:        { range: "QC_Results!A1:N1000",            description: "QC results per batch — scores and status" },
   AgentAuditLog:     { range: "Agent_Audit_Log!A1:H10000",      description: "Agent action audit trail — all agent actions logged here" },
+  GovernanceAuditLog:{ range: "Governance_Audit_Log!A1:N10000", description: "Human approval and GCG governance audit trail" },
   Invoices:          { range: "Invoices!A1:P1000",              description: "Invoice records — number, customer, items, totals, status, proof URL" },
   AgentApprovals:    { range: "Agent_Approvals!A1:J5000",       description: "Pending and resolved approval requests from agents" },
   ProductionWaste:   { range: "Production_Waste!A1:K1000",      description: "Waste/reject tracking per batch" },

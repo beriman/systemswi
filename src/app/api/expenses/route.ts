@@ -4,7 +4,6 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   readExpenseSheet,
   appendExpenseRows,
-  ensureExpenseSheet,
   initializeExpenseSheets,
   EXPENSE_SHEETS,
 } from "@/lib/expense/sheets";
@@ -41,6 +40,12 @@ interface ExpenseSubmission {
   reviewedBy: string;
   reviewedDate: string;
   notes: string;
+  division: string;
+  coaCategory: string;
+  paymentMethod: string;
+  relatedBrand: string;
+  proofRequired: string;
+  shareholderDebtFlag: string;
 }
 
 function parseExpenseRows(rows: string[][]): ExpenseSubmission[] {
@@ -58,6 +63,12 @@ function parseExpenseRows(rows: string[][]): ExpenseSubmission[] {
     reviewedBy: s(row, 9),
     reviewedDate: s(row, 10),
     notes: s(row, 11),
+    division: s(row, 12),
+    coaCategory: s(row, 13),
+    paymentMethod: s(row, 14),
+    relatedBrand: s(row, 15),
+    proofRequired: s(row, 16),
+    shareholderDebtFlag: s(row, 17),
   }));
 }
 
@@ -73,7 +84,6 @@ export async function GET(req: NextRequest) {
     const rows = await readExpenseSheet(EXPENSE_SHEETS.Submissions);
     let expenses = parseExpenseRows(rows);
 
-    // Apply filters
     if (statusFilter) {
       expenses = expenses.filter((e) => e.status.toLowerCase() === statusFilter.toLowerCase());
     }
@@ -84,15 +94,16 @@ export async function GET(req: NextRequest) {
       expenses = expenses.filter((e) => e.category.toLowerCase() === categoryFilter.toLowerCase());
     }
 
-    // Compute dashboard stats
     const pending = expenses.filter((e) => e.status === "Pending");
     const approved = expenses.filter((e) => e.status === "Approved");
     const rejected = expenses.filter((e) => e.status === "Rejected");
+    const needsProof = expenses.filter((e) => e.status === "Needs Proof" || (e.amount > 0 && !e.proofUrl));
+    const withoutDivision = expenses.filter((e) => !e.division);
+    const personalPaid = expenses.filter((e) => e.paymentMethod === "Personal Paid" || e.shareholderDebtFlag === "Yes");
 
     const currentMonth = today().slice(0, 7);
     const approvedThisMonth = approved.filter((e) => e.date.startsWith(currentMonth));
 
-    // Budget vs actual per event
     const eventMap: Record<string, { budget: number; actual: number }> = {};
     for (const exp of expenses) {
       if (!eventMap[exp.relatedEvent]) {
@@ -103,7 +114,6 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Read Event_Budget for budget amounts
     try {
       const budgetRows = await readSheet("EventBudget");
       if (budgetRows.length > 1) {
@@ -126,13 +136,18 @@ export async function GET(req: NextRequest) {
       stats: {
         total: expenses.length,
         pendingCount: pending.length,
-        pendingAmount: pending.reduce((s, e) => s + e.amount, 0),
+        pendingAmount: pending.reduce((sum, e) => sum + e.amount, 0),
         approvedCount: approved.length,
-        approvedAmount: approved.reduce((s, e) => s + e.amount, 0),
+        approvedAmount: approved.reduce((sum, e) => sum + e.amount, 0),
         approvedThisMonthCount: approvedThisMonth.length,
-        approvedThisMonthAmount: approvedThisMonth.reduce((s, e) => s + e.amount, 0),
+        approvedThisMonthAmount: approvedThisMonth.reduce((sum, e) => sum + e.amount, 0),
         rejectedCount: rejected.length,
-        rejectedAmount: rejected.reduce((s, e) => s + e.amount, 0),
+        rejectedAmount: rejected.reduce((sum, e) => sum + e.amount, 0),
+        needsProofCount: needsProof.length,
+        needsProofAmount: needsProof.reduce((sum, e) => sum + e.amount, 0),
+        withoutDivisionCount: withoutDivision.length,
+        personalPaidCount: personalPaid.length,
+        personalPaidAmount: personalPaid.reduce((sum, e) => sum + e.amount, 0),
       },
       budgetVsActual: eventMap,
     });
@@ -141,7 +156,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({
         ...googleWorkspaceDegradedSource(EXPENSES_SOURCE, error),
         expenses: [],
-        stats: { total: 0, pendingCount: 0, pendingAmount: 0, approvedCount: 0, approvedAmount: 0, approvedThisMonthCount: 0, approvedThisMonthAmount: 0, rejectedCount: 0, rejectedAmount: 0 },
+        stats: { total: 0, pendingCount: 0, pendingAmount: 0, approvedCount: 0, approvedAmount: 0, approvedThisMonthCount: 0, approvedThisMonthAmount: 0, rejectedCount: 0, rejectedAmount: 0, needsProofCount: 0, needsProofAmount: 0, withoutDivisionCount: 0, personalPaidCount: 0, personalPaidAmount: 0 },
         budgetVsActual: {},
       });
     }
@@ -160,6 +175,12 @@ export async function POST(req: NextRequest) {
     const category = body.category || "Lainnya";
     const validCategories = ["Bahan Baku", "Iklan", "Sewa Booth", "Transport", "Packaging", "Lainnya"];
     const finalCategory = validCategories.includes(category) ? category : "Lainnya";
+    const amount = n(body.amount);
+    const proofUrl = body.proofUrl || "";
+    const paymentMethod = body.paymentMethod || "Company Paid";
+    const shareholderDebtFlag = paymentMethod === "Personal Paid" || body.shareholderDebtFlag === true || body.shareholderDebtFlag === "Yes" ? "Yes" : "No";
+    const proofRequired = amount > 0 ? "Yes" : "No";
+    const status = proofRequired === "Yes" && !proofUrl ? "Needs Proof" : "Pending";
 
     const row = [
       submissionId,
@@ -168,12 +189,18 @@ export async function POST(req: NextRequest) {
       body.relatedEvent || "",
       finalCategory,
       body.description || "",
-      n(body.amount),
-      body.proofUrl || "",
-      "Pending",
+      amount,
+      proofUrl,
+      status,
       "",
       "",
       body.notes || "",
+      body.division || "",
+      body.coaCategory || finalCategory,
+      paymentMethod,
+      body.relatedBrand || "",
+      proofRequired,
+      shareholderDebtFlag,
     ];
 
     await appendExpenseRows(EXPENSE_SHEETS.Submissions, [row]);
@@ -181,7 +208,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       success: true,
       submissionId,
-      message: "Expense submitted successfully. Waiting for approval.",
+      status,
+      message: status === "Needs Proof" ? "Expense submitted with Needs Proof status." : "Expense submitted successfully. Waiting for approval.",
     }, { status: 201 });
   } catch (error) {
     if (isGoogleWorkspaceAuthError(error)) {
