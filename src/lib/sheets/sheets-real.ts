@@ -66,6 +66,7 @@ export const SHEETS: Record<string, { range: string; description: string }> = {
   AgentAuditLog:     { range: "Agent_Audit_Log!A1:H10000",      description: "Agent action audit trail — all agent actions logged here" },
   GovernanceAuditLog:{ range: "Governance_Audit_Log!A1:N10000", description: "Human approval and GCG governance audit trail" },
   ShareholderLedger:{ range: "Shareholder_Ledger!A1:M10000", description: "Modal, hutang pemegang saham, gaji tertunda, dan reimbursement" },
+  ComplianceRegister:{ range: "Compliance_Register!A1:J10000", description: "LKPM, BPJS, pajak, legal, BPOM/Halal governance obligations" },
   Invoices:          { range: "Invoices!A1:P1000",              description: "Invoice records — number, customer, items, totals, status, proof URL" },
   AgentApprovals:    { range: "Agent_Approvals!A1:J5000",       description: "Pending and resolved approval requests from agents" },
   ProductionWaste:   { range: "Production_Waste!A1:K1000",      description: "Waste/reject tracking per batch" },

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { appendRows, readRange } from "@/lib/sheets/sheets-real";
+import { listComplianceRegister, summarizeComplianceRegister } from "@/lib/governance/compliance-register";
 
 export const runtime = "nodejs";
 
@@ -93,18 +94,21 @@ function summarize(checks: ReturnType<typeof parseChecks>, batches: ReturnType<t
 
 export async function GET() {
   try {
-    const [checkRows, batchRows, qcRows] = await Promise.all([
+    const [checkRows, batchRows, qcRows, complianceRegister] = await Promise.all([
       readRange("Compliance_Checks!A1:L1000").catch(() => []),
       readRange("Product_Batches!A1:M1000").catch(() => []),
       readRange("QC_Checklist!A1:I1000").catch(() => []),
+      listComplianceRegister().catch(() => []),
     ]);
     const checks = parseChecks(checkRows);
     const batches = parseBatches(batchRows);
     const qcChecklist = parseQc(qcRows);
     return NextResponse.json({
-      source: "Google Sheets: Compliance_Checks + Product_Batches + QC_Checklist",
+      source: "Google Sheets: Compliance_Checks + Product_Batches + QC_Checklist + Compliance_Register",
       generatedAt: new Date().toISOString(),
       summary: summarize(checks, batches, qcChecklist),
+      complianceRegisterSummary: summarizeComplianceRegister(complianceRegister),
+      complianceRegister: complianceRegister.slice(0, 50),
       checks: checks.slice(0, 50),
       batches: batches.slice(0, 50),
       qcChecklist: qcChecklist.slice(0, 80),

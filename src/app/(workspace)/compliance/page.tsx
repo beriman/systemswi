@@ -2,6 +2,21 @@
 
 import { FormEvent, useEffect, useState } from "react";
 
+type ComplianceRegisterEntry = {
+  id: string;
+  area: string;
+  obligation: string;
+  period: string;
+  dueDate: string;
+  status: string;
+  owner: string;
+  sourceProof: string;
+  riskLevel: string;
+  notes: string;
+  daysUntilDue: number | null;
+  riskBadge: "green" | "yellow" | "red" | "gray";
+};
+
 type ComplianceData = {
   source: string;
   generatedAt: string;
@@ -14,6 +29,8 @@ type ComplianceData = {
     qcFailed: number;
     traceabilityDraft: number;
   };
+  complianceRegisterSummary?: { total: number; open: number; overdue: number; dueSoon: number; completed: number; missingProof: number };
+  complianceRegister?: ComplianceRegisterEntry[];
   checks: Array<{ formulaId: string; formulaName: string; product: string; ifraCategory: string; status: string; allergenLabel: string; findings: string; reference: string }>;
   batches: Array<{ batchId: string; product: string; formulaId: string; productionDate: string; quantity: number; unit: string; qcStatus: string; traceabilityStatus: string; inventoryReference: string; proofUrl: string }>;
   qcChecklist: Array<{ checklistId: string; batchId: string; stage: string; item: string; result: string; proofUrl: string; notes: string }>;
@@ -28,6 +45,10 @@ const badgeClass: Record<string, string> = {
   pending: "bg-amber-500/15 text-amber-300",
   complete: "bg-emerald-500/15 text-emerald-300",
   incomplete: "bg-orange-500/15 text-orange-300",
+  green: "bg-emerald-500/15 text-emerald-300",
+  yellow: "bg-amber-500/15 text-amber-300",
+  red: "bg-red-500/15 text-red-300",
+  gray: "bg-white/10 text-white/60",
 };
 
 function MetricCard({ label, value, hint }: { label: string; value: string; hint: string }) {
@@ -64,7 +85,7 @@ export default function CompliancePage() {
   }
 
   useEffect(() => {
-    loadCompliance().catch((error) => {
+    void Promise.resolve().then(() => loadCompliance()).catch((error) => {
       setMessage(`❌ ${String(error)}`);
       setLoading(false);
     });
@@ -118,8 +139,27 @@ export default function CompliancePage() {
         <section className="grid gap-4 md:grid-cols-4">
           <MetricCard label="Formula Checks" value={String(data?.summary.totalChecks || 0)} hint="IFRA/BPOM/label review" />
           <MetricCard label="Needs Review" value={String(data?.summary.needsReview || 0)} hint="draft / belum approved" />
-          <MetricCard label="Product Batches" value={String(data?.summary.totalBatches || 0)} hint="traceability records" />
-          <MetricCard label="QC Failed" value={String(data?.summary.qcFailed || 0)} hint="butuh tindakan" />
+          <MetricCard label="GCG Overdue" value={String(data?.complianceRegisterSummary?.overdue || 0)} hint="LKPM/BPJS/Pajak/legal" />
+          <MetricCard label="GCG Due Soon" value={String(data?.complianceRegisterSummary?.dueSoon || 0)} hint="jatuh tempo ≤ 7 hari" />
+        </section>
+
+        <section className="rounded-3xl bg-white/[0.04] p-5 ring-1 ring-white/10">
+          <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+            <div>
+              <h2 className="text-xl font-semibold">GCG Compliance Register</h2>
+              <p className="text-sm text-white/45">LKPM, BPJSKT, BPJSKS, pajak, legal, BPOM/Halal. Bukti kosong berarti belum dicatat, bukan diasumsikan selesai.</p>
+            </div>
+            <a href="/api/governance/compliance-register" className="text-sm text-[#5eead4] hover:underline">API register →</a>
+          </div>
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full min-w-[900px] text-left text-sm">
+              <thead className="text-xs uppercase text-white/40"><tr><th className="py-3 pr-4">Area</th><th className="py-3 pr-4">Obligation</th><th className="py-3 pr-4">Due</th><th className="py-3 pr-4">Status</th><th className="py-3 pr-4">Owner</th><th className="py-3 pr-4">Proof</th></tr></thead>
+              <tbody className="divide-y divide-white/10">
+                {data?.complianceRegister?.slice(0, 12).map((item) => <tr key={item.id} className="text-white/70"><td className="py-3 pr-4"><div className="font-medium text-white">{item.area}</div><div className="text-xs text-white/40">{item.id}</div></td><td className="py-3 pr-4"><div>{item.obligation}</div><div className="text-xs text-white/40">{item.period || "TBA"} • Risiko: {item.riskLevel || "TBA"}</div></td><td className="py-3 pr-4">{item.dueDate || "TBA"}</td><td className="py-3 pr-4"><span className={`rounded-full px-2 py-1 text-xs ${badgeClass[item.riskBadge] || badgeClass.gray}`}>{item.status || "TBA"}</span></td><td className="py-3 pr-4">{item.owner || "Belum dicatat"}</td><td className="py-3 pr-4">{item.sourceProof ? <a href={item.sourceProof} className="text-[#5eead4] hover:underline">Bukti</a> : <span className="text-white/40">Belum dicatat</span>}</td></tr>)}
+                {!data?.complianceRegister?.length && <tr><td colSpan={6} className="py-6 text-center text-white/45">Belum ada Compliance_Register.</td></tr>}
+              </tbody>
+            </table>
+          </div>
         </section>
 
         <section className="grid gap-6 lg:grid-cols-3">
