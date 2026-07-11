@@ -3,6 +3,7 @@ export function isGoogleWorkspaceAuthError(error: unknown) {
   return (
     message.includes("invalid_grant") ||
     message.includes("invalid credentials") ||
+    message.includes("invalid authentication credentials") ||
     message.includes("token has been expired or revoked") ||
     message.includes("invalid_token")
   );

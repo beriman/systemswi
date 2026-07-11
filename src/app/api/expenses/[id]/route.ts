@@ -9,6 +9,7 @@ import {
 } from "@/lib/expense/sheets";
 import { appendRows } from "@/lib/sheets/sheets-real";
 import { logGovernanceActionSafe } from "@/lib/governance/audit";
+import { appendShareholderLedgerEntryOnce } from "@/lib/shareholder/ledger";
 import { googleWorkspaceDegradedSource, isGoogleWorkspaceAuthError } from "@/lib/api/google-workspace-error";
 
 const EXPENSES_SOURCE = "Google Sheets: Expense_Submissions";
@@ -141,6 +142,27 @@ export async function PUT(
     });
 
     if (status === "Approved") {
+      const isPersonalPaid = s(existing, 14) === "Personal Paid" || s(existing, 17) === "Yes";
+      if (isPersonalPaid) {
+        try {
+          await appendShareholderLedgerEntryOnce(`expense:${id}`, {
+            date: s(existing, 1) || now,
+            shareholder: s(existing, 2) || "Beriman Juliano",
+            type: "Hutang Pemegang Saham",
+            division: s(existing, 12) || "Belum dicatat",
+            description: s(existing, 5) || `Personal-paid expense ${id}`,
+            debit: n(existing[6]),
+            credit: 0,
+            approvalStatus: "Approved",
+            approvedBy: reviewedBy || "Beriman Juliano",
+            proofUrl: s(existing, 7),
+            notes: `Auto-created from approved personal-paid expense:${id}. ${notes || s(existing, 11) || ""}`,
+          });
+        } catch {
+          // Shareholder ledger append is best-effort; don't fail the approval
+        }
+      }
+
       try {
         await appendRows("BrandExpenses", [[
           `exp-${id}`,
