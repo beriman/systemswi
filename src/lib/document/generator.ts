@@ -32,6 +32,19 @@ export type RabContext = {
   tenantRows?: number;
   sponsorRows?: number;
   inventoryRows?: number;
+  tenantOutstanding?: number;
+  sponsorPipelineValue?: number;
+  expensePendingCount?: number;
+  expensePendingAmount?: number;
+  expenseNeedsProofCount?: number;
+  expenseWithoutDivisionCount?: number;
+  personalPaidExpenseAmount?: number;
+  shareholderDebtOutstanding?: number;
+  complianceOpenCount?: number;
+  complianceOverdueCount?: number;
+  vendorExceptionCount?: number;
+  vendorRelatedPartyCount?: number;
+  governanceAuditRows?: number;
 };
 
 // Generate document content based on type and data
@@ -58,8 +71,12 @@ export function generateDocumentContent(
             return generateProposal(data, letterNumber, now);
         case "rab":
             return generateRAB(data, letterNumber, now, context);
+        case "event_closeout_report":
+            return generateEventCloseoutReport(data, letterNumber, now, context);
         case "laporan_keuangan":
             return generateLaporanKeuangan(data, letterNumber, now);
+        case "monthly_gcg_report":
+            return generateMonthlyGcgReport(data, letterNumber, now, context);
         case "monthly_report":
             return generateMonthlyReport(data, letterNumber, now, context);
         case "laporan_progress":
@@ -91,6 +108,10 @@ function autoDocNumber(prefix: string): string {
     const now = new Date();
     const stamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
     return `${prefix}-${stamp}-${String(now.getTime()).slice(-5)}`;
+}
+
+function normalize(value: string | undefined): string {
+    return String(value || "").trim().toLowerCase();
 }
 
 function generateInvoice(data: Record<string, string>, letterNumber: string = "", date: string): string {
@@ -337,6 +358,99 @@ ${data.summary || "-"}
 
 ---
 Dibuat oleh: Finance Team
+`;
+}
+
+function generateEventCloseoutReport(data: Record<string, string>, letterNumber: string = "", date: string, context?: RabContext): string {
+    const selectedEvent = normalize(data.event);
+    const eventRows = (context?.eventBudgetSummary || []).filter((event) => !selectedEvent || normalize(event.name).includes(selectedEvent) || selectedEvent.includes(normalize(event.name)));
+    const rows = eventRows.length ? eventRows : (context?.eventBudgetSummary || []);
+    const budget = rows.reduce((sum, event) => sum + event.budget, 0);
+    const actual = rows.reduce((sum, event) => sum + event.actual, 0);
+    const remaining = budget - actual;
+    const eventTable = rows.length
+        ? `| Event | Budget | Actual | Remaining | Status |\n|---|---:|---:|---:|---|\n${rows.map((event) => `| ${event.name || "TBA"} | ${rupiah(event.budget)} | ${rupiah(event.actual)} | ${rupiah(event.remaining)} | ${event.status || "TBA"} |`).join("\n")}`
+        : "Belum ada data Event_Budget yang cocok. Isi TBA/0 sampai Sheets dilengkapi.";
+
+    return `
+# EVENT CLOSEOUT REPORT
+**Event: ${data.event || "TBA"}**
+
+---
+
+**Nomor**: ${letterNumber || autoDocNumber("CLOSEOUT-SWI")}
+**Tanggal Laporan**: ${date}
+**Periode**: ${data.period || "TBA"}
+
+## 1. Budget vs Actual
+${eventTable}
+
+- Total budget terbaca: **${rupiah(budget)}**
+- Total actual terbaca: **${rupiah(actual)}**
+- Remaining / variance: **${rupiah(remaining)}**
+
+## 2. Revenue, Receivable, Payable
+- Tenant outstanding dari Event_Tenants: **${rupiah(context?.tenantOutstanding || 0)}**
+- Sponsor pipeline/outstanding dari Event_Sponsors: **${rupiah(context?.sponsorPipelineValue || 0)}**
+- Payable yang belum tercatat di Sheets: **TBA** — jangan diisi manual tanpa source.
+
+## 3. Dokumentasi Media
+${data.documentation_url || "TBA — tambahkan Drive/Instagram/media link setelah diverifikasi."}
+
+## 4. Lessons Learned
+${data.lessons_learned || "TBA — isi setelah post-event review bersama PIC."}
+
+## 5. Next Actions
+${data.next_actions || "1. Validasi tenant/sponsor paid vs outstanding.\n2. Lengkapi proof expense dan invoice.\n3. Rekonsiliasi payable/receivable sebelum event ditutup."}
+
+---
+Draft internal systemswi — semua angka berasal dari Google Sheets context dan harus diverifikasi PIC Event/Finance sebelum dibagikan.
+`;
+}
+
+function generateMonthlyGcgReport(data: Record<string, string>, letterNumber: string = "", date: string, context?: RabContext): string {
+    return `
+# MONTHLY GCG / TARIF REPORT
+**Periode: ${data.period || "TBA"}**
+
+---
+
+**Nomor**: ${letterNumber || autoDocNumber("GCG-SWI")}
+**Tanggal Laporan**: ${date}
+
+## Executive Summary TARIF
+Dokumen ini memakai Google Sheets sebagai source of truth. Jika angka belum tersedia, tampil **0/TBA** dan tidak boleh diganti dengan estimasi tanpa bukti.
+
+## Transparency
+- Expense pending: **${context?.expensePendingCount || 0}** item / **${rupiah(context?.expensePendingAmount || 0)}**.
+- Expense needs proof / tanpa bukti lengkap: **${context?.expenseNeedsProofCount || 0}** item.
+- Expense tanpa division/COA: **${context?.expenseWithoutDivisionCount || 0}** item.
+
+## Accountability
+- Governance_Audit_Log rows: **${context?.governanceAuditRows || 0}**.
+- Approval/reject wajib punya actor, before/after status, notes, amount, division, dan proof URL jika ada.
+
+## Responsibility
+- Compliance open: **${context?.complianceOpenCount || 0}** item.
+- Compliance overdue: **${context?.complianceOverdueCount || 0}** item.
+
+## Independency
+- Vendor exception/benchmark/COI perlu review: **${context?.vendorExceptionCount || 0}** vendor.
+- Related-party vendor tercatat: **${context?.vendorRelatedPartyCount || 0}** vendor.
+
+## Fairness & Etika Keuangan
+- Hutang pemegang saham outstanding: **${rupiah(context?.shareholderDebtOutstanding || 0)}**.
+- Personal-paid expense terdeteksi: **${rupiah(context?.personalPaidExpenseAmount || 0)}**.
+- Personal-paid yang approved harus direkonsiliasi ke Shareholder_Ledger; jangan dianggap lunas tanpa bukti pembayaran.
+
+## Catatan Direksi
+${data.director_notes || "TBA"}
+
+## Follow-up / Keputusan
+${data.follow_up || "1. Review expense pending dan needs-proof.\n2. Lengkapi division/COA untuk expense material.\n3. Follow-up compliance overdue.\n4. Lengkapi vendor benchmark dan deklarasi conflict-of-interest."}
+
+---
+Draft internal systemswi — review Direksi/Finance sebelum dibagikan ke pemegang saham.
 `;
 }
 

@@ -94,6 +94,20 @@ export const DOCUMENT_TEMPLATES: DocumentTemplate[] = [
         ],
     },
     {
+        id: "tpl-event-closeout-report",
+        type: "event_closeout_report",
+        name: "Event Closeout Report",
+        description: "Laporan penutupan event: budget vs actual, revenue tenant/sponsor, payable/receivable, dokumentasi, dan lessons learned berbasis Sheets",
+        icon: "✅",
+        fields: [
+            { id: "event", label: "Pilih Event", type: "event", required: true },
+            { id: "period", label: "Periode", type: "text", placeholder: "Juli 2026" },
+            { id: "documentation_url", label: "Link Dokumentasi / Drive", type: "text", placeholder: "TBA jika belum ada" },
+            { id: "lessons_learned", label: "Lessons Learned", type: "textarea", placeholder: "Catatan panitia setelah event" },
+            { id: "next_actions", label: "Next Actions", type: "textarea" },
+        ],
+    },
+    {
         id: "tpl-lapkeu",
         type: "laporan_keuangan",
         name: "Laporan Keuangan",
@@ -104,6 +118,18 @@ export const DOCUMENT_TEMPLATES: DocumentTemplate[] = [
             { id: "period_start", label: "Periode Mulai", type: "date", required: true },
             { id: "period_end", label: "Periode Akhir", type: "date", required: true },
             { id: "summary", label: "Ringkasan", type: "textarea" },
+        ],
+    },
+    {
+        id: "tpl-monthly-gcg-report",
+        type: "monthly_gcg_report",
+        name: "Monthly GCG Report",
+        description: "Laporan TARIF/GCG bulanan: expense proof, audit trail, shareholder debt, compliance, vendor COI, dan exceptions dari Google Sheets",
+        icon: "⚖️",
+        fields: [
+            { id: "period", label: "Periode", type: "text", required: true, placeholder: "Juli 2026" },
+            { id: "director_notes", label: "Catatan Direksi", type: "textarea" },
+            { id: "follow_up", label: "Follow-up / Keputusan", type: "textarea" },
         ],
     },
     {

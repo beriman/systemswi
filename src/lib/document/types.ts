@@ -6,7 +6,9 @@ export type DocumentType =
     | "tenant_agreement"
     | "proposal"
     | "rab"
+    | "event_closeout_report"
     | "laporan_keuangan"
+    | "monthly_gcg_report"
     | "monthly_report"
     | "laporan_progress"
     | "surat_undangan"
@@ -63,7 +65,9 @@ export const DOCUMENT_TYPE_LABELS: Record<DocumentType, string> = {
     tenant_agreement: "Tenant Agreement",
     proposal: "Proposal Event",
     rab: "Rencana Anggaran Biaya",
+    event_closeout_report: "Event Closeout Report",
     laporan_keuangan: "Laporan Keuangan",
+    monthly_gcg_report: "Monthly GCG Report",
     monthly_report: "Monthly Report",
     laporan_progress: "Laporan Progress",
     surat_undangan: "Surat Undangan",
