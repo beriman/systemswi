@@ -3,6 +3,7 @@
 // ⚠️ SERVER-ONLY: Never import from client components
 import "server-only";
 import { google } from "googleapis";
+import type { JWT, OAuth2Client } from "google-auth-library";
 import fs from "fs";
 import { withCircuitBreaker } from "./circuit-breaker";
 
@@ -92,7 +93,7 @@ export const SHEETS: Record<string, { range: string; description: string }> = {
 };
 
 // ── Auth ──────────────────────────────────────────────────────────
-let cachedAuth: any = null;
+let cachedAuth: JWT | OAuth2Client | null = null;
 
 // ── Read cache ────────────────────────────────────────────────────
 // Most workspace pages aggregate the same Google Sheets ranges repeatedly.
@@ -407,7 +408,7 @@ export async function deleteRow(sheetName: string, rowNumber: number): Promise<v
     fields: "sheets.properties",
   });
   const sheetId = ss.data.sheets?.find(
-    (s: any) => s.properties?.title === sheetName
+    (sheet) => sheet.properties?.title === sheetName
   )?.properties?.sheetId;
 
   if (sheetId === undefined) throw new Error(`Sheet "${sheetName}" not found`);
