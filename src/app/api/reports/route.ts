@@ -5,7 +5,7 @@ import { EVENT_SHEETS, readEventSheet } from "@/lib/event/sheets";
 
 export const runtime = "nodejs";
 
-type ReportType = "weekly_dashboard" | "monthly_financial" | "quarterly_investor" | "annual_report";
+type ReportType = "weekly_dashboard" | "monthly_financial" | "monthly_gcg" | "quarterly_investor" | "annual_report";
 type SourceStatus = "live" | "degraded";
 
 type ReportTemplate = {
@@ -16,7 +16,7 @@ type ReportTemplate = {
   requiredFields: string[];
 };
 
-const REPORT_TYPES: ReportType[] = ["weekly_dashboard", "monthly_financial", "quarterly_investor", "annual_report"];
+const REPORT_TYPES: ReportType[] = ["weekly_dashboard", "monthly_financial", "monthly_gcg", "quarterly_investor", "annual_report"];
 
 type ReportContext = {
   sourceStatus: SourceStatus;
@@ -32,6 +32,17 @@ type ReportContext = {
   lowStockCount: number;
   openPoCount: number;
   complianceReviewCount: number;
+  expensePendingCount: number;
+  expensePendingAmount: number;
+  expenseNeedsProofCount: number;
+  expenseWithoutDivisionCount: number;
+  personalPaidExpenseAmount: number;
+  shareholderDebtOutstanding: number;
+  complianceOpenCount: number;
+  complianceOverdueCount: number;
+  vendorExceptionCount: number;
+  vendorRelatedPartyCount: number;
+  governanceAuditRows: number;
   generatedAt: string;
 };
 
@@ -48,6 +59,13 @@ const REPORT_TEMPLATES: ReportTemplate[] = [
     name: "Monthly Financial Report",
     cadence: "Bulanan",
     description: "Draft laporan bulanan untuk direksi dengan KPI kas, modal disetor, pipeline event, dan risiko operasional.",
+    requiredFields: ["period"],
+  },
+  {
+    type: "monthly_gcg",
+    name: "Monthly GCG Report",
+    cadence: "Bulanan",
+    description: "Ringkasan TARIF/GCG: expense approval, audit trail, shareholder debt, compliance, vendor independency, dan exceptions berbasis Google Sheets.",
     requiredFields: ["period"],
   },
   {
@@ -109,6 +127,11 @@ async function readContext(): Promise<ReportContext> {
     complianceChecks,
     productBatches,
     qcChecklist,
+    expenseSubmissions,
+    shareholderLedger,
+    complianceRegister,
+    vendorRegister,
+    governanceAuditLog,
   ] = await Promise.all([
     readSheet("RekeningKoran").catch(emptyOnAuthError),
     readSheet("PemegangSaham").catch(emptyOnAuthError),
@@ -121,6 +144,11 @@ async function readContext(): Promise<ReportContext> {
     readRange("Compliance_Checks!A1:L1000").catch(emptyOnAuthError),
     readRange("Product_Batches!A1:M1000").catch(emptyOnAuthError),
     readRange("QC_Checklist!A1:I1000").catch(emptyOnAuthError),
+    readSheet("ExpenseSubmissions").catch(emptyOnAuthError),
+    readSheet("ShareholderLedger").catch(emptyOnAuthError),
+    readSheet("ComplianceRegister").catch(emptyOnAuthError),
+    readSheet("VendorRegister").catch(emptyOnAuthError),
+    readSheet("GovernanceAuditLog").catch(emptyOnAuthError),
   ]);
 
   const bankBalance = rekeningKoran.slice(0, 3).reduce((sum, row) => sum + amount(row[4]), 0);
@@ -168,6 +196,37 @@ async function readContext(): Promise<ReportContext> {
     }),
   ].length;
 
+  const expenseRows = expenseSubmissions.slice(1).filter((row) => text(row[0]));
+  const expensePending = expenseRows.filter((row) => text(row[8]).toLowerCase() === "pending");
+  const expenseNeedsProof = expenseRows.filter((row) => text(row[8]).toLowerCase() === "needs proof" || (amount(row[6]) > 0 && !text(row[7])));
+  const expenseWithoutDivision = expenseRows.filter((row) => !text(row[12]));
+  const personalPaidExpenses = expenseRows.filter((row) => text(row[14]).toLowerCase() === "personal paid" || ["yes", "true", "1"].includes(text(row[17]).toLowerCase()));
+
+  const shareholderDebtOutstanding = shareholderLedger.slice(1).reduce((sum, row) => {
+    const status = text(row[9]).toLowerCase();
+    if (status && ["rejected", "cancelled"].includes(status)) return sum;
+    return sum + amount(row[6]) - amount(row[7]);
+  }, 0);
+
+  const complianceOpen = complianceRegister.slice(1).filter((row) => {
+    const status = text(row[5]).toLowerCase();
+    return text(row[0]) && !["submitted", "paid", "complete", "completed"].includes(status);
+  });
+  const today = new Date(`${new Date().toISOString().slice(0, 10)}T00:00:00Z`).getTime();
+  const complianceOverdueCount = complianceOpen.filter((row) => {
+    const due = text(row[4]);
+    if (!due) return false;
+    const dueTime = new Date(`${due}T00:00:00Z`).getTime();
+    return Number.isFinite(dueTime) && dueTime < today;
+  }).length;
+
+  const vendorRows = vendorRegister.slice(1).filter((row) => text(row[0]));
+  const vendorRelatedParty = vendorRows.filter((row) => ["yes", "ya", "true", "1"].includes(text(row[4]).toLowerCase()));
+  const vendorExceptionCount = vendorRows.filter((row) => {
+    const related = ["yes", "ya", "true", "1"].includes(text(row[4]).toLowerCase());
+    return related || !text(row[6]) || !text(row[7]) || !text(row[8]);
+  }).length;
+
   const degraded = googleAuthError ? googleWorkspaceDegradedSource("Google Sheets report context", googleAuthError) : null;
 
   return {
@@ -184,6 +243,17 @@ async function readContext(): Promise<ReportContext> {
     lowStockCount,
     openPoCount,
     complianceReviewCount,
+    expensePendingCount: expensePending.length,
+    expensePendingAmount: expensePending.reduce((sum, row) => sum + amount(row[6]), 0),
+    expenseNeedsProofCount: expenseNeedsProof.length,
+    expenseWithoutDivisionCount: expenseWithoutDivision.length,
+    personalPaidExpenseAmount: personalPaidExpenses.reduce((sum, row) => sum + amount(row[6]), 0),
+    shareholderDebtOutstanding,
+    complianceOpenCount: complianceOpen.length,
+    complianceOverdueCount,
+    vendorExceptionCount,
+    vendorRelatedPartyCount: vendorRelatedParty.length,
+    governanceAuditRows: Math.max(governanceAuditLog.length - 1, 0),
     generatedAt: new Date().toISOString(),
   };
 }
@@ -197,6 +267,9 @@ function generateReport(type: ReportType, period: string, context: ReportContext
   const quarterlySection = type === "quarterly_investor"
     ? `\n## Quarterly Investor Update\n### Progress Kuartal\n- Finance: saldo bank dan modal disetor disajikan terpisah agar investor tidak salah membaca kas operasional sebagai modal.\n- Event/Fragrantions: tenant outstanding dan sponsor pipeline masih diklasifikasi sebagai piutang/pipeline sampai status paid.\n- Operasional: low-stock, open PO, dan compliance/QC review menjadi indikator risiko eksekusi kuartal ini.\n\n### Investor Readiness Checklist\n- [ ] Direksi mengonfirmasi angka modal disetor dan sisa kewajiban.\n- [ ] Finance mengonfirmasi saldo bank terhadap rekening koran.\n- [ ] PIC Event mengonfirmasi tenant/sponsor paid vs outstanding.\n- [ ] Operasional mengonfirmasi status inventory, PO, dan QC.\n- [ ] Legal/finance review sebelum dibagikan ke pihak eksternal.\n` : "";
 
+  const monthlyGcgSection = type === "monthly_gcg"
+    ? `\n## Monthly GCG / TARIF Summary\n### Transparency\n- Expense pending: **${context.expensePendingCount}** item / **${rupiah(context.expensePendingAmount)}**.\n- Expense needs proof / tanpa bukti lengkap: **${context.expenseNeedsProofCount}** item.\n- Expense tanpa division: **${context.expenseWithoutDivisionCount}** item.\n\n### Accountability\n- Governance audit trail tercatat: **${context.governanceAuditRows}** baris.\n- Approval/reject manusia harus tercatat di Governance_Audit_Log; jika 0, treat sebagai gap audit, bukan berarti aman.\n\n### Responsibility\n- Compliance open: **${context.complianceOpenCount}** item.\n- Compliance overdue: **${context.complianceOverdueCount}** item.\n\n### Independency\n- Vendor exception/benchmark/COI perlu review: **${context.vendorExceptionCount}** vendor.\n- Related-party vendor tercatat: **${context.vendorRelatedPartyCount}** vendor.\n\n### Fairness & Etika Keuangan\n- Hutang pemegang saham outstanding: **${rupiah(context.shareholderDebtOutstanding)}**.\n- Personal-paid expense terdeteksi: **${rupiah(context.personalPaidExpenseAmount)}**.\n- Angka personal-paid harus direkonsiliasi ke Shareholder_Ledger setelah approved; jangan dianggap lunas tanpa proof/payment record.\n\n### TARIF Exceptions untuk Follow-up\n- [ ] Review expense pending dan needs-proof.\n- [ ] Lengkapi division/COA untuk semua expense material.\n- [ ] Cocokkan personal-paid expense dengan Shareholder_Ledger.\n- [ ] Follow-up compliance overdue/due soon.\n- [ ] Lengkapi benchmark vendor dan deklarasi conflict-of-interest.\n` : "";
+
   const investorSection = type === "quarterly_investor" || type === "annual_report"
     ? `\n## Investor / Governance Notes\n- Modal disetor: **${rupiah(context.paidInCapital)}**.\n- Sisa kewajiban modal: **${rupiah(context.outstandingCapital)}**.\n- Angka proyeksi/yield tetap draft dan perlu review direksi/konsultan sebelum dibagikan eksternal.\n`
     : "";
@@ -205,7 +278,7 @@ function generateReport(type: ReportType, period: string, context: ReportContext
     ? `\n## Annual Report Template\n### 1. Profil Perusahaan & Governance\n- Profil PT Sensasi Wangi Indonesia, struktur holding, brand, event, dan unit operasional.\n- Struktur pemegang saham, modal ditempatkan, modal disetor, dan sisa kewajiban modal.\n\n### 2. Ringkasan Kinerja Finansial\n- Saldo bank: **${rupiah(context.bankBalance)}** (bukan setoran modal).\n- Modal disetor: **${rupiah(context.paidInCapital)}**; outstanding modal: **${rupiah(context.outstandingCapital)}**.\n- Data revenue/expense final harus ditarik dari Laporan_Bulanan dan divalidasi finance.\n\n### 3. Kinerja Event & Commercial Pipeline\n- Event tercatat: **${context.eventCount}**.\n- Tenant outstanding: **${rupiah(context.tenantOutstanding)}**.\n- Sponsor pipeline aktif: **${rupiah(context.sponsorPipelineValue)}**.\n- Pipeline bukan revenue final sampai invoice paid dan bukti pembayaran tersedia.\n\n### 4. Operasi, Inventory, Procurement, Compliance\n- Low-stock item: **${context.lowStockCount}**.\n- Open PO: **${context.openPoCount}**.\n- Compliance/QC perlu review: **${context.complianceReviewCount}**.\n\n### 5. Risiko, Mitigasi, dan Prioritas Tahun Berikutnya\n- Risiko kas/modal: validasi bank mingguan dan follow-up sisa kewajiban modal.\n- Risiko event: percepat collection tenant/sponsor dan booth assignment.\n- Risiko supply chain: tutup PO terbuka dan update receiving/QC.\n- Risiko compliance: semua formula/batch harus melalui SDS/COA/BPOM/IFRA review sebelum klaim eksternal.\n\n### Annual Report Readiness Checklist\n- [ ] Finance close tahunan selesai.\n- [ ] Rekening koran cocok dengan dashboard.\n- [ ] Pipeline event dipisahkan antara paid, outstanding, dan draft.\n- [ ] Inventory/procurement opname diverifikasi operator.\n- [ ] Compliance/QC register selesai direview.\n- [ ] Direksi menyetujui versi final sebelum publikasi.\n`
     : "";
 
-  return `# ${title}\nPeriode: **${period || "TBA"}**\nGenerated: ${context.generatedAt}\n${verification}\n## Executive Snapshot\n- Saldo bank terpantau: **${rupiah(context.bankBalance)}**.\n- Modal disetor: **${rupiah(context.paidInCapital)}**; sisa kewajiban modal: **${rupiah(context.outstandingCapital)}**.\n- Event tercatat: **${context.eventCount}**; outstanding tenant: **${rupiah(context.tenantOutstanding)}**; pipeline sponsor aktif: **${rupiah(context.sponsorPipelineValue)}**.\n- Risiko operasional: **${context.lowStockCount}** low-stock item, **${context.openPoCount}** open PO, **${context.complianceReviewCount}** compliance/QC item perlu review.\n\n## Finance\n- Data finance dibaca dari Laporan_Bulanan (${context.financeRows} rows) + Rekening_Koran + PemegangSaham.\n- Jangan samakan saldo bank dengan setoran modal; keduanya ditampilkan terpisah untuk mencegah salah tafsir.\n\n## Event Commercial\n- Tenant outstanding perlu follow-up sebelum jatuh tempo invoice.\n- Sponsor pipeline bernilai uang hanya komitmen/pipeline, bukan revenue final sampai status paid.\n\n## Operations\n- Low stock dan open PO perlu ditutup lewat Inventory/Procurement.\n- Item compliance/QC perlu validasi SDS/COA/BPOM/IFRA sebelum produksi/penjualan.\n${quarterlySection}${investorSection}${annualSection}\n## Catatan Operator\n${notes || "TBA — tambahkan insight manual dari rapat mingguan/bulanan sebelum dikirim."}\n\n---\nDokumen ini adalah draft internal systemswi. Semua angka final harus diverifikasi ke Google Sheets dan approval PIC terkait sebelum publikasi.\n`;
+  return `# ${title}\nPeriode: **${period || "TBA"}**\nGenerated: ${context.generatedAt}\n${verification}\n## Executive Snapshot\n- Saldo bank terpantau: **${rupiah(context.bankBalance)}**.\n- Modal disetor: **${rupiah(context.paidInCapital)}**; sisa kewajiban modal: **${rupiah(context.outstandingCapital)}**.\n- Event tercatat: **${context.eventCount}**; outstanding tenant: **${rupiah(context.tenantOutstanding)}**; pipeline sponsor aktif: **${rupiah(context.sponsorPipelineValue)}**.\n- Risiko operasional: **${context.lowStockCount}** low-stock item, **${context.openPoCount}** open PO, **${context.complianceReviewCount}** compliance/QC item perlu review.\n\n## Finance\n- Data finance dibaca dari Laporan_Bulanan (${context.financeRows} rows) + Rekening_Koran + PemegangSaham.\n- Jangan samakan saldo bank dengan setoran modal; keduanya ditampilkan terpisah untuk mencegah salah tafsir.\n\n## Event Commercial\n- Tenant outstanding perlu follow-up sebelum jatuh tempo invoice.\n- Sponsor pipeline bernilai uang hanya komitmen/pipeline, bukan revenue final sampai status paid.\n\n## Operations\n- Low stock dan open PO perlu ditutup lewat Inventory/Procurement.\n- Item compliance/QC perlu validasi SDS/COA/BPOM/IFRA sebelum produksi/penjualan.\n${quarterlySection}${monthlyGcgSection}${investorSection}${annualSection}\n## Catatan Operator\n${notes || "TBA — tambahkan insight manual dari rapat mingguan/bulanan sebelum dikirim."}\n\n---\nDokumen ini adalah draft internal systemswi. Semua angka final harus diverifikasi ke Google Sheets dan approval PIC terkait sebelum publikasi.\n`;
 }
 
 export async function GET() {
