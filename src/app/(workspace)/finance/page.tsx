@@ -10,12 +10,58 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 
+interface BankAccountSummary {
+  bank: string;
+  nama: string;
+  noRek: string;
+  saldoAkhir: string;
+  saldoAwal: string;
+}
+
+interface ShareholderSummary {
+  nama: string;
+  jumlahSaham: number;
+  kewajiban: number;
+  sudahSetor: number;
+  sisaKewajiban?: number;
+  progress: number;
+  persen: string;
+}
+
+interface SukukInfo {
+  akad?: string;
+  status?: string;
+  nilai?: string;
+  nisbah?: string;
+  yield?: string;
+}
+
+interface SukukInvestorSummary {
+  no: string | number;
+  nama: string;
+  jenis: string;
+  unit: string | number;
+  nominal: number;
+  status: string;
+}
+
+interface RekapRekeningRow {
+  bulan: string;
+  akun: string;
+  periode: string;
+  saldoAwal: string;
+  totalMasuk: string;
+  totalKeluar: string;
+  saldoAkhir: string;
+  jTxns: string | number;
+}
+
 interface DashboardData {
-  bankAccounts: any[];
+  bankAccounts: BankAccountSummary[];
   totalSaldoAkhir: number;
   totalSaldoAwal?: number;
   mutasiSummary?: { totalDebet: number; totalKredit: number; mutasiCount: number };
-  shareholders: any[];
+  shareholders: ShareholderSummary[];
   totalModalDasar: number;
   totalModalDitempatkan: number;
   totalSudahSetor: number;
@@ -25,10 +71,10 @@ interface DashboardData {
   sharePrice: number;
   shareholderNotes: string[];
   shareholderDataSource: string;
-  sukukInfo: any;
-  sukukInvestors: any[];
+  sukukInfo: SukukInfo;
+  sukukInvestors: SukukInvestorSummary[];
   totalUnitTerjual: number;
-  rekapData: any[];
+  rekapData: RekapRekeningRow[];
 }
 
 interface FinanceTransaction {
@@ -114,6 +160,34 @@ interface HoldingSetoranProjection {
   nextActions: string[];
 }
 
+interface ShareholderLedgerEntry {
+  id: string;
+  date: string;
+  shareholder: string;
+  type: string;
+  division: string;
+  description: string;
+  debit: number;
+  credit: number;
+  balance: string;
+  approvalStatus: string;
+  approvedBy: string;
+  proofUrl: string;
+  notes: string;
+}
+
+interface ShareholderLedgerData {
+  sourceStatus?: string;
+  warning?: string;
+  entries: ShareholderLedgerEntry[];
+  stats: {
+    totalEntries: number;
+    outstandingDebt: number;
+    personalPaidCount: number;
+    personalPaidAmount: number;
+  };
+}
+
 function formatCurrency(amount: number): string {
   if (!amount && amount !== 0) return "Rp 0";
   return new Intl.NumberFormat("id-ID", {
@@ -129,6 +203,7 @@ export default function FinancePage() {
   const [reconciliation, setReconciliation] = useState<FinanceReconciliation | null>(null);
   const [cashflowProjection, setCashflowProjection] = useState<FinanceCashflowProjection | null>(null);
   const [holdingSetoran, setHoldingSetoran] = useState<HoldingSetoranProjection | null>(null);
+  const [shareholderLedger, setShareholderLedger] = useState<ShareholderLedgerData | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [uploadingProof, setUploadingProof] = useState(false);
@@ -147,11 +222,12 @@ export default function FinancePage() {
   useEffect(() => {
     async function fetchData() {
       try {
-        const [dashboardRes, reconciliationRes, cashflowRes, setoranRes] = await Promise.all([
+        const [dashboardRes, reconciliationRes, cashflowRes, setoranRes, shareholderLedgerRes] = await Promise.all([
           fetch("/api/dashboard"),
           fetch("/api/finance/reconciliation", { cache: "no-store" }),
           fetch("/api/finance/cashflow", { cache: "no-store" }),
           fetch("/api/finance/setoran", { cache: "no-store" }),
+          fetch("/api/shareholder-ledger", { cache: "no-store" }),
           fetchTransactions(),
         ]);
         if (!dashboardRes.ok) throw new Error("Failed to fetch dashboard");
@@ -165,6 +241,9 @@ export default function FinancePage() {
         }
         if (setoranRes.ok) {
           setHoldingSetoran(await setoranRes.json());
+        }
+        if (shareholderLedgerRes.ok) {
+          setShareholderLedger(await shareholderLedgerRes.json());
         }
       } catch (err) {
         setError(String(err));
@@ -666,6 +745,82 @@ export default function FinancePage() {
                       </div>
                     </div>
                   </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Shareholder Ledger */}
+            <Card className="border-rose-200 bg-rose-50/40">
+              <CardHeader>
+                <CardTitle>Hutang Pemegang Saham — Shareholder Ledger</CardTitle>
+                <CardDescription>
+                  Memisahkan biaya operasional yang dibayar pribadi dari modal disetor. Source of truth: Google Sheets Shareholder_Ledger.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {shareholderLedger ? (
+                  <>
+                    {shareholderLedger.sourceStatus === "degraded" && (
+                      <div className="rounded-md border border-yellow-300 bg-yellow-50 px-3 py-2 text-sm text-yellow-800">
+                        ⚠️ {shareholderLedger.warning || "Google Workspace OAuth degraded; ledger live belum bisa dibaca."}
+                      </div>
+                    )}
+                    <div className="grid gap-3 md:grid-cols-4">
+                      <div className="rounded-lg border bg-background p-3">
+                        <div className="text-xs text-muted-foreground">Outstanding hutang</div>
+                        <div className="text-lg font-bold text-rose-700">{formatCurrency(shareholderLedger.stats.outstandingDebt)}</div>
+                      </div>
+                      <div className="rounded-lg border bg-background p-3">
+                        <div className="text-xs text-muted-foreground">Personal-paid rows</div>
+                        <div className="text-lg font-bold">{shareholderLedger.stats.personalPaidCount}</div>
+                      </div>
+                      <div className="rounded-lg border bg-background p-3">
+                        <div className="text-xs text-muted-foreground">Personal-paid amount</div>
+                        <div className="text-lg font-bold">{formatCurrency(shareholderLedger.stats.personalPaidAmount)}</div>
+                      </div>
+                      <div className="rounded-lg border bg-background p-3">
+                        <div className="text-xs text-muted-foreground">Total ledger rows</div>
+                        <div className="text-lg font-bold">{shareholderLedger.stats.totalEntries}</div>
+                      </div>
+                    </div>
+                    <div className="rounded-md border bg-background overflow-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Tanggal</TableHead>
+                            <TableHead>Pemegang Saham</TableHead>
+                            <TableHead>Jenis</TableHead>
+                            <TableHead>Divisi</TableHead>
+                            <TableHead>Deskripsi</TableHead>
+                            <TableHead className="text-right">Debit</TableHead>
+                            <TableHead className="text-right">Credit</TableHead>
+                            <TableHead>Status</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {shareholderLedger.entries.length === 0 ? (
+                            <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground">Belum ada data Shareholder_Ledger. Personal-paid expense yang approved akan masuk otomatis jika tersedia.</TableCell></TableRow>
+                          ) : shareholderLedger.entries.slice(0, 8).map((entry) => (
+                            <TableRow key={entry.id}>
+                              <TableCell>{entry.date || "TBA"}</TableCell>
+                              <TableCell>{entry.shareholder || "Belum dicatat"}</TableCell>
+                              <TableCell>{entry.type || "TBA"}</TableCell>
+                              <TableCell>{entry.division || "Belum dicatat"}</TableCell>
+                              <TableCell className="max-w-[280px] truncate">{entry.description || "Belum dicatat"}</TableCell>
+                              <TableCell className="text-right text-rose-700">{formatCurrency(entry.debit || 0)}</TableCell>
+                              <TableCell className="text-right text-green-700">{entry.credit ? formatCurrency(entry.credit) : "-"}</TableCell>
+                              <TableCell>{entry.approvalStatus || "Draft"}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Kontrol GCG: jangan menganggap biaya pribadi sudah lunas sebelum ada credit/payment record atau keputusan konversi modal di ledger.
+                    </p>
+                  </>
+                ) : (
+                  <div className="text-sm text-muted-foreground">Memuat Shareholder_Ledger...</div>
                 )}
               </CardContent>
             </Card>
