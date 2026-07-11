@@ -5,9 +5,7 @@ import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
@@ -78,12 +76,61 @@ interface SponsorItem {
   paymentStatus: string;
 }
 
+interface CloseoutExpense {
+  id: string;
+  date: string;
+  submitterName: string;
+  category: string;
+  description: string;
+  amount: number;
+  proofUrl: string;
+  status: string;
+  division: string;
+  paymentMethod: string;
+  shareholderDebtFlag: boolean;
+}
+
+interface CloseoutSummary {
+  plannedBudget: number;
+  actualExpense: number;
+  budgetVariance: number;
+  budgetVariancePct: number;
+  tenantRevenuePaid: number;
+  tenantRevenueExpected: number;
+  sponsorRevenuePaid: number;
+  sponsorRevenueExpected: number;
+  totalRevenuePaid: number;
+  totalRevenueExpected: number;
+  receivable: number;
+  payable: number;
+  finalProfitLoss: number;
+  expensesWithoutProof: number;
+  expensesNeedsProof: number;
+  personalPaidExpenses: number;
+  documentationStatus: string;
+  lessonsLearned: string;
+  expenseByCategory: { category: string; amount: number }[];
+  expenses: CloseoutExpense[];
+}
+
 interface EventDetailData {
   event: EventDetail;
   budget: BudgetItem[];
   tenants: TenantItem[];
   sponsors: SponsorItem[];
   timeline: TimelineItem[];
+  closeout?: CloseoutSummary;
+}
+
+interface EventMediaItem {
+  id: string;
+  type: string;
+  title?: string;
+  url?: string;
+  caption?: string;
+  source?: string;
+  featured?: string;
+  created?: string;
 }
 
 function formatCurrency(amount: number): string {
@@ -130,7 +177,8 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
   const [data, setData] = useState<EventDetailData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<"overview" | "timeline" | "budget" | "tenants" | "sponsors" | "media">("overview");
+  const [tab, setTab] = useState<"overview" | "timeline" | "budget" | "tenants" | "sponsors" | "media" | "closeout">("overview");
+  const [todayMs] = useState(() => Date.now());
 
   // Timeline form
   const [showTimelineForm, setShowTimelineForm] = useState(false);
@@ -143,7 +191,7 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
   const [budgetMsg, setBudgetMsg] = useState<string | null>(null);
 
   // Media state
-  const [mediaItems, setMediaItems] = useState<any[]>([]);
+  const [mediaItems, setMediaItems] = useState<EventMediaItem[]>([]);
   const [mediaLoading, setMediaLoading] = useState(false);
   const [showMediaForm, setShowMediaForm] = useState(false);
   const [mediaSaving, setMediaSaving] = useState(false);
@@ -183,11 +231,18 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
   }, [id]);
 
   useEffect(() => {
-    if (tab === "media") fetchMedia();
+    if (tab !== "media") return;
+    const timeout = window.setTimeout(() => {
+      void fetchMedia();
+    }, 0);
+    return () => window.clearTimeout(timeout);
   }, [tab, fetchMedia]);
 
   useEffect(() => {
-    fetchEvent();
+    const timeout = window.setTimeout(() => {
+      void fetchEvent();
+    }, 0);
+    return () => window.clearTimeout(timeout);
   }, [fetchEvent]);
 
   async function handleAddTimeline(e: React.FormEvent<HTMLFormElement>) {
@@ -301,8 +356,9 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
   if (!data) return null;
 
   const { event, budget, tenants, sponsors, timeline } = data;
+  const closeout = data.closeout;
   const budgetUsed = event.budget > 0 ? Math.round((event.actualCost / event.budget) * 100) : 0;
-  const daysUntilEvent = Math.ceil((new Date(event.startDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+  const daysUntilEvent = Math.ceil((new Date(event.startDate).getTime() - todayMs) / (1000 * 60 * 60 * 24));
   const totalPlannedBudget = budget.reduce((s, b) => s + b.plannedAmount, 0);
   const totalActualBudget = budget.reduce((s, b) => s + b.actualAmount, 0);
   const completedMilestones = timeline.filter((t) => t.completed).length;
@@ -368,6 +424,7 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
           { key: "tenants", label: "🏪 Tenants" },
           { key: "sponsors", label: "🤝 Sponsors" },
           { key: "media", label: "📸 Media" },
+          { key: "closeout", label: "✅ Closeout GCG" },
         ].map((t) => (
           <button
             key={t.key}
@@ -518,7 +575,7 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
 
           {timeline.length > 0 ? (
             <div className="space-y-2">
-              {timeline.sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()).map((ms, idx) => (
+              {timeline.sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()).map((ms) => (
                 <Card key={ms.id} className={ms.completed ? "opacity-70" : ""}>
                   <CardContent className="py-3">
                     <div className="flex items-center gap-4">
@@ -892,6 +949,125 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
             </div>
           ) : (
             <Card><CardContent className="py-8 text-center text-muted-foreground">Belum ada media. Tambahkan foto/video dokumentasi event.</CardContent></Card>
+          )}
+        </div>
+      )}
+
+      {tab === "closeout" && (
+        <div className="space-y-4">
+          <div>
+            <h3 className="text-lg font-semibold">✅ Event Closeout Report</h3>
+            <p className="text-sm text-muted-foreground">Ringkasan RAB vs actual, revenue, piutang, bukti expense, dan catatan GCG. Semua angka berasal dari sheet event/expense; data kosong ditampilkan sebagai 0 atau Belum dicatat.</p>
+          </div>
+
+          {closeout ? (
+            <>
+              <div className="grid gap-4 md:grid-cols-4">
+                <Card>
+                  <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Budget vs Actual</CardTitle></CardHeader>
+                  <CardContent>
+                    <div className={closeout.budgetVariance < 0 ? "text-2xl font-bold text-red-600" : "text-2xl font-bold text-green-600"}>{formatCurrency(closeout.budgetVariance)}</div>
+                    <div className="text-xs text-muted-foreground">Actual {formatCurrency(closeout.actualExpense)} / Budget {formatCurrency(closeout.plannedBudget)} ({closeout.budgetVariancePct}%)</div>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Revenue Tercatat</CardTitle></CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold text-green-600">{formatCurrency(closeout.totalRevenuePaid)}</div>
+                    <div className="text-xs text-muted-foreground">Expected {formatCurrency(closeout.totalRevenueExpected)}</div>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Receivable / Payable</CardTitle></CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">{formatCurrency(closeout.receivable)}</div>
+                    <div className="text-xs text-muted-foreground">Payable {formatCurrency(closeout.payable)}</div>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Final Profit/Loss</CardTitle></CardHeader>
+                  <CardContent>
+                    <div className={closeout.finalProfitLoss >= 0 ? "text-2xl font-bold text-green-600" : "text-2xl font-bold text-red-600"}>{formatCurrency(closeout.finalProfitLoss)}</div>
+                    <div className="text-xs text-muted-foreground">Revenue paid - actual expense</div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              <div className="grid gap-4 lg:grid-cols-2">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Expense by Category</CardTitle>
+                    <CardDescription>{closeout.expenses.length} expense terkait event</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {closeout.expenseByCategory.length ? (
+                      <div className="space-y-2">
+                        {closeout.expenseByCategory.map((item) => (
+                          <div key={item.category} className="flex justify-between text-sm border-b pb-2">
+                            <span>{item.category || "Belum dicatat"}</span>
+                            <span className="font-medium">{formatCurrency(item.amount)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">Belum ada expense event yang tercatat.</p>
+                    )}
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle>TARIF Governance Exceptions</CardTitle>
+                    <CardDescription>Exception ditampilkan sebagai pekerjaan follow-up, bukan angka asumsi.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-3 text-sm">
+                    <div className="flex justify-between"><span>Expense tanpa proof URL</span><Badge className={closeout.expensesWithoutProof ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"}>{closeout.expensesWithoutProof}</Badge></div>
+                    <div className="flex justify-between"><span>Status Needs Proof</span><Badge className={closeout.expensesNeedsProof ? "bg-amber-100 text-amber-700" : "bg-green-100 text-green-700"}>{closeout.expensesNeedsProof}</Badge></div>
+                    <div className="flex justify-between"><span>Personal Paid / Shareholder Debt</span><Badge className={closeout.personalPaidExpenses ? "bg-amber-100 text-amber-700" : "bg-green-100 text-green-700"}>{closeout.personalPaidExpenses}</Badge></div>
+                    <div className="flex justify-between"><span>Dokumentasi media</span><span>{closeout.documentationStatus || "Belum dicatat"}</span></div>
+                    <div className="border-t pt-3"><span className="text-muted-foreground">Lessons learned:</span><p>{closeout.lessonsLearned || "Belum dicatat"}</p></div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              <Card>
+                <CardHeader><CardTitle>Expense Detail untuk Closeout</CardTitle></CardHeader>
+                <CardContent>
+                  {closeout.expenses.length ? (
+                    <div className="rounded-md border overflow-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Tanggal</TableHead>
+                            <TableHead>Deskripsi</TableHead>
+                            <TableHead>Divisi</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead>Bukti</TableHead>
+                            <TableHead className="text-right">Amount</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {closeout.expenses.map((expense) => (
+                            <TableRow key={expense.id}>
+                              <TableCell>{expense.date || "TBA"}</TableCell>
+                              <TableCell>{expense.description || "Belum dicatat"}</TableCell>
+                              <TableCell>{expense.division || "Belum dicatat"}</TableCell>
+                              <TableCell>{expense.status || "Belum dicatat"}</TableCell>
+                              <TableCell>{expense.proofUrl ? <a href={expense.proofUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Ada</a> : "Belum dicatat"}</TableCell>
+                              <TableCell className="text-right">{formatCurrency(expense.amount)}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">Belum ada expense closeout untuk event ini.</p>
+                  )}
+                </CardContent>
+              </Card>
+            </>
+          ) : (
+            <Card><CardContent className="py-8 text-center text-muted-foreground">Closeout belum tersedia dari API.</CardContent></Card>
           )}
         </div>
       )}

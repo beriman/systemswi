@@ -1,6 +1,18 @@
 // GET /api/events/[id] — Get single event details (budget, tenants, sponsors, timeline)
 import { NextRequest, NextResponse } from "next/server";
 import { readEventSheet, EVENT_SHEETS } from "@/lib/event/sheets";
+import { readExpenseSheet, EXPENSE_SHEETS } from "@/lib/expense/sheets";
+
+function parseAmount(value: unknown): number {
+  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+  if (typeof value !== "string") return 0;
+  const parsed = Number(value.replace(/[^\d.-]/g, ""));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function isPaidStatus(value: string): boolean {
+  return ["paid", "lunas", "settled", "completed", "received"].includes(value.toLowerCase().trim());
+}
 
 export async function GET(
   req: NextRequest,
@@ -10,12 +22,13 @@ export async function GET(
     const { id } = await params;
 
     // Fetch all related data in parallel
-    const [events, budget, tenants, sponsors, timeline] = await Promise.all([
+    const [events, budget, tenants, sponsors, timeline, expenses] = await Promise.all([
       readEventSheet(EVENT_SHEETS.Events).catch(() => []),
       readEventSheet(EVENT_SHEETS.Budget).catch(() => []),
       readEventSheet(EVENT_SHEETS.Tenants).catch(() => []),
       readEventSheet(EVENT_SHEETS.Sponsors).catch(() => []),
       readEventSheet(EVENT_SHEETS.Timeline).catch(() => []),
+      readExpenseSheet(EXPENSE_SHEETS.Submissions).catch(() => []),
     ]);
 
     // Find the event
@@ -79,12 +92,79 @@ export async function GET(
       completed: r[5] === "true", completedDate: r[6], notes: r[7] || "", created: r[8] || "",
     }));
 
+    const eventExpenses = expenses.slice(1).filter((r) => r[3] === id || r[3] === event.name).map((r) => ({
+      id: r[0] || "",
+      date: r[1] || "",
+      submitterName: r[2] || "",
+      category: r[4] || "Belum dicatat",
+      description: r[5] || "",
+      amount: parseAmount(r[6]),
+      proofUrl: r[7] || "",
+      status: r[8] || "Belum dicatat",
+      division: r[12] || "Belum dicatat",
+      paymentMethod: r[14] || "Belum dicatat",
+      shareholderDebtFlag: String(r[17] || "").toLowerCase() === "true",
+    }));
+
+    const plannedTotal = eventBudget.reduce((sum, item) => sum + item.plannedAmount, 0) || event.budget;
+    const budgetActualTotal = eventBudget.reduce((sum, item) => sum + item.actualAmount, 0) || event.actualCost;
+    const expenseActualTotal = eventExpenses.reduce((sum, item) => sum + item.amount, 0);
+    const actualExpenseTotal = expenseActualTotal || budgetActualTotal;
+    const tenantRevenuePaid = eventTenants.reduce((sum, item) => sum + item.paymentAmount, 0);
+    const tenantRevenueExpected = eventTenants.reduce((sum, item) => sum + item.fee, 0);
+    const sponsorRevenuePaid = eventSponsors.reduce(
+      (sum, item) => sum + (isPaidStatus(item.paymentStatus) ? item.sponsorshipAmount + item.inKindValue : 0),
+      0
+    );
+    const sponsorRevenueExpected = eventSponsors.reduce((sum, item) => sum + item.sponsorshipAmount + item.inKindValue, 0);
+    const revenuePaidTotal = tenantRevenuePaid + sponsorRevenuePaid || event.revenue;
+    const revenueExpectedTotal = tenantRevenueExpected + sponsorRevenueExpected || event.revenue;
+    const tenantReceivable = eventTenants.reduce((sum, item) => sum + Math.max(item.fee - item.paymentAmount, 0), 0);
+    const sponsorReceivable = eventSponsors.reduce(
+      (sum, item) => sum + (isPaidStatus(item.paymentStatus) ? 0 : item.sponsorshipAmount + item.inKindValue),
+      0
+    );
+    const expensesWithoutProof = eventExpenses.filter((item) => item.amount > 0 && !item.proofUrl).length;
+    const expensesNeedsProof = eventExpenses.filter((item) => ["needs proof", "butuh bukti"].includes(item.status.toLowerCase())).length;
+    const categoryTotals = eventExpenses.reduce<Record<string, number>>((acc, item) => {
+      const key = item.category || "Belum dicatat";
+      acc[key] = (acc[key] || 0) + item.amount;
+      return acc;
+    }, {});
+    const expenseByCategory: { category: string; amount: number }[] = Object.entries(categoryTotals)
+      .map(([category, amount]) => ({ category, amount: Number(amount) || 0 }))
+      .sort((a, b) => b.amount - a.amount);
+
+    const closeout = {
+      plannedBudget: plannedTotal,
+      actualExpense: actualExpenseTotal,
+      budgetVariance: plannedTotal - actualExpenseTotal,
+      budgetVariancePct: plannedTotal > 0 ? Math.round(((actualExpenseTotal - plannedTotal) / plannedTotal) * 10000) / 100 : 0,
+      tenantRevenuePaid,
+      tenantRevenueExpected,
+      sponsorRevenuePaid,
+      sponsorRevenueExpected,
+      totalRevenuePaid: revenuePaidTotal,
+      totalRevenueExpected: revenueExpectedTotal,
+      receivable: tenantReceivable + sponsorReceivable,
+      payable: 0,
+      finalProfitLoss: revenuePaidTotal - actualExpenseTotal,
+      expensesWithoutProof,
+      expensesNeedsProof,
+      personalPaidExpenses: eventExpenses.filter((item) => item.paymentMethod === "Personal Paid" || item.shareholderDebtFlag).length,
+      documentationStatus: "Belum dicatat",
+      lessonsLearned: event.notes || "Belum dicatat",
+      expenseByCategory,
+      expenses: eventExpenses,
+    };
+
     return NextResponse.json({
       event,
       budget: eventBudget,
       tenants: eventTenants,
       sponsors: eventSponsors,
       timeline: eventTimeline,
+      closeout,
     });
   } catch (error) {
     return NextResponse.json({ error: "Failed to fetch event details", details: String(error) }, { status: 500 });
