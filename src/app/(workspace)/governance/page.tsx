@@ -46,6 +46,7 @@ type DashboardPayload = {
     compliance?: { total: number; open: number; overdue: number; dueSoon: number };
     vendor?: { total: number; relatedParty: number; exceptions: number; benchmarkComplete: number };
     audit?: { governanceAuditRows: number };
+    event?: { events: number; budgetRows: number; overBudgetRows: number; overBudgetWithoutNotes: number };
   };
   exceptions?: GovernanceException[];
   nextActions?: string[];
@@ -108,6 +109,7 @@ export default function GovernancePage() {
   const vendor = summary.vendor;
   const shareholder = summary.shareholder;
   const audit = summary.audit;
+  const event = summary.event;
 
   return (
     <div className="space-y-6">
@@ -172,7 +174,7 @@ export default function GovernancePage() {
           {loading && Array.from({ length: 5 }).map((_, index) => <Card key={index}><CardHeader><Skeleton className="h-4 w-24" /></CardHeader><CardContent><Skeleton className="h-12" /></CardContent></Card>)}
         </div>
 
-        <div className="grid gap-4 lg:grid-cols-3">
+        <div className="grid gap-4 lg:grid-cols-4">
           <Card>
             <CardHeader>
               <CardTitle>Responsibility & Compliance</CardTitle>
@@ -207,6 +209,18 @@ export default function GovernancePage() {
               <div className="flex justify-between"><span>Large pending approval</span><b>{expenses?.largeWithoutApprovalCount || 0}</b></div>
               <div className="flex justify-between"><span>Without division/COA</span><b>{expenses?.withoutDivisionCount || 0}</b></div>
               <div className="flex justify-between"><span>Personal paid not in ledger</span><b>{expenses?.personalPaidNotInLedgerCount || 0}</b></div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle>Event Closeout Control</CardTitle>
+              <CardDescription>Budget vs actual dan catatan post-event.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2 text-sm">
+              <div className="flex justify-between"><span>Events</span><b>{event?.events || 0}</b></div>
+              <div className="flex justify-between"><span>Budget rows</span><b>{event?.budgetRows || 0}</b></div>
+              <div className="flex justify-between"><span>Over-budget rows</span><b>{event?.overBudgetRows || 0}</b></div>
+              <div className="flex justify-between text-red-600"><span>Over-budget no notes</span><b>{event?.overBudgetWithoutNotes || 0}</b></div>
             </CardContent>
           </Card>
         </div>
