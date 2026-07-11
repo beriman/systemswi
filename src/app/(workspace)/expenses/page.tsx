@@ -288,7 +288,10 @@ export default function ExpensesPage() {
         }),
       });
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error || json.details || `HTTP ${res.status}`);
+      if (!res.ok) {
+        const blockers = Array.isArray(json.blockers) && json.blockers.length ? `\n- ${json.blockers.join("\n- ")}` : "";
+        throw new Error(`${json.error || json.details || `HTTP ${res.status}`}${blockers}`);
+      }
       fetchExpenses();
     } catch (err) {
       alert(`Gagal ${action.toLowerCase()}: ${String(err)}`);
