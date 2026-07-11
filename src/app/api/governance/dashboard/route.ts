@@ -101,7 +101,7 @@ async function readRows(): Promise<{ rows: Record<string, string[][]>; sourceSta
   };
 
   const [expenses, shareholderLedger, complianceRegister, vendorRegister, governanceAuditLog, tasks] = await Promise.all([
-    readRange("Expense_Submissions!A1:R1000").catch(emptyOnAuthError),
+    readRange("Expense_Submissions!A1:V1000").catch(emptyOnAuthError),
     readSheet("ShareholderLedger").catch(emptyOnAuthError),
     readSheet("ComplianceRegister").catch(emptyOnAuthError),
     readSheet("VendorRegister").catch(emptyOnAuthError),
@@ -136,6 +136,10 @@ export async function GET(req: NextRequest) {
     const approvedExpenses = expenses.filter((row) => text(row[8]).toLowerCase() === "approved");
     const approvedWithReviewer = approvedExpenses.filter((row) => Boolean(text(row[9])));
     const personalPaidExpenses = expenses.filter((row) => text(row[14]).toLowerCase() === "personal paid" || isYes(text(row[17])));
+    const vendorRequiredCategories = new Set(["Bahan Baku", "Packaging", "Sewa Booth"]);
+    const expenseVendorRequired = expenses.filter((row) => vendorRequiredCategories.has(text(row[4])));
+    const expensesWithoutVendor = expenseVendorRequired.filter((row) => !text(row[18]) && !text(row[19]));
+    const expenseRelatedPartyVendor = expenses.filter((row) => isYes(text(row[20])));
 
     const taskWithOwner = tasks.filter((row) => Boolean(text(row[3] || row[4] || row[5])));
     const openCompliance = complianceRegister.filter((row) => !isApproved(text(row[5])));
@@ -167,14 +171,14 @@ export async function GET(req: NextRequest) {
     const transparencyScore = Math.round((percent(expenseWithProof.length, expenses.length) + percent(expenseWithDivision.length, expenses.length)) / 2);
     const accountabilityScore = Math.round((percent(approvedWithReviewer.length, approvedExpenses.length) + percent(taskWithOwner.length, tasks.length) + percent(governanceAuditLog.length > 0 ? 1 : 0, 1)) / 3);
     const responsibilityScore = percent(complianceRegister.length - overdueCompliance.length, complianceRegister.length);
-    const independencyScore = percent(vendorWithBenchmark.length, vendorRegister.length);
+    const independencyScore = Math.round((percent(vendorWithBenchmark.length, vendorRegister.length) + percent(expenseVendorRequired.length - expensesWithoutVendor.length, expenseVendorRequired.length)) / 2);
     const fairnessScore = percent(personalPaidExpenses.length - personalPaidNotInLedger.length, personalPaidExpenses.length);
 
     const scores = [
       makeScore("transparency", "Transparency", transparencyScore, `${expenseWithProof.length}/${expenses.length} expense punya bukti atau amount 0; ${expenseWithDivision.length}/${expenses.length} punya division/COA.`),
       makeScore("accountability", "Accountability", accountabilityScore, `${approvedWithReviewer.length}/${approvedExpenses.length} approved expense punya reviewer; ${governanceAuditLog.length} governance audit rows.`),
       makeScore("responsibility", "Responsibility", responsibilityScore, `${overdueCompliance.length} overdue dari ${complianceRegister.length} compliance item.`),
-      makeScore("independency", "Independency", independencyScore, `${vendorWithBenchmark.length}/${vendorRegister.length} vendor punya benchmark + selected reason.`),
+      makeScore("independency", "Independency", independencyScore, `${vendorWithBenchmark.length}/${vendorRegister.length} vendor punya benchmark + selected reason; ${expenseVendorRequired.length - expensesWithoutVendor.length}/${expenseVendorRequired.length} expense vendor-category punya vendor link.`),
       makeScore("fairness", "Fairness", fairnessScore, `${personalPaidNotInLedger.length}/${personalPaidExpenses.length} personal-paid expense belum terlacak ke ledger.`),
     ];
 
@@ -200,6 +204,9 @@ export async function GET(req: NextRequest) {
           personalPaidCount: personalPaidExpenses.length,
           personalPaidAmount: personalPaidExpenses.reduce((sum, row) => sum + amount(row[6]), 0),
           personalPaidNotInLedgerCount: personalPaidNotInLedger.length,
+          vendorRequiredCount: expenseVendorRequired.length,
+          withoutVendorCount: expensesWithoutVendor.length,
+          relatedPartyVendorExpenseCount: expenseRelatedPartyVendor.length,
         },
         shareholder: {
           ledgerRows: shareholderLedger.length,
@@ -226,6 +233,7 @@ export async function GET(req: NextRequest) {
         ...expenseLargeWithoutApproval.slice(0, 10).map((row) => ({ type: "LARGE_EXPENSE_PENDING_APPROVAL", severity: "high", entityId: text(row[0]), description: text(row[5]) || "Expense besar belum closed approval", amount: amount(row[6]), owner: text(row[2]) || "Belum dicatat" })),
         ...overdueCompliance.slice(0, 10).map((row) => ({ type: "COMPLIANCE_OVERDUE", severity: "high", entityId: text(row[0]), description: text(row[2]) || "Compliance overdue", amount: 0, owner: text(row[6]) || "Belum dicatat" })),
         ...vendorExceptions.slice(0, 10).map((row) => ({ type: "VENDOR_GOVERNANCE_EXCEPTION", severity: isYes(text(row[4])) ? "high" : "medium", entityId: text(row[0]), description: text(row[1]) || "Vendor perlu review benchmark/COI", amount: 0, owner: text(row[3]) || "Belum dicatat" })),
+        ...expensesWithoutVendor.slice(0, 10).map((row) => ({ type: "EXPENSE_VENDOR_NOT_LINKED", severity: amount(row[6]) > 2000000 ? "high" : "medium", entityId: text(row[0]), description: text(row[5]) || "Expense kategori vendor belum dikaitkan ke Vendor_Register", amount: amount(row[6]), owner: text(row[2]) || "Belum dicatat" })),
         ...personalPaidNotInLedger.slice(0, 10).map((row) => ({ type: "PERSONAL_PAID_NOT_IN_LEDGER", severity: "medium", entityId: text(row[0]), description: text(row[5]) || "Personal paid belum cocok ke Shareholder_Ledger", amount: amount(row[6]), owner: text(row[2]) || "Belum dicatat" })),
       ],
       nextActions: [
@@ -233,6 +241,7 @@ export async function GET(req: NextRequest) {
         expensePending.length ? "Review dan approve/reject expense pending; semua keputusan harus masuk Governance_Audit_Log." : "Tidak ada expense pending dari data yang terbaca.",
         overdueCompliance.length ? "Tindaklanjuti compliance overdue dan upload bukti setelah selesai." : "Pantau compliance due soon dan jangan menandai submitted tanpa bukti.",
         vendorExceptions.length ? "Lengkapi benchmark vendor dan deklarasi related-party sebelum transaksi besar." : "Vendor register tidak menunjukkan exception dari data terbaca.",
+        expensesWithoutVendor.length ? "Hubungkan expense Bahan Baku/Packaging/Sewa Booth ke Vendor_Register atau isi vendor name." : "Expense kategori vendor sudah punya vendor link atau belum ada data.",
         personalPaidNotInLedger.length ? "Cocokkan expense Personal Paid approved ke Shareholder_Ledger." : "Personal-paid expense sudah cocok atau belum ada data personal-paid.",
       ],
     };

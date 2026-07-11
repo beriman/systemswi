@@ -29,6 +29,10 @@ interface Expense {
   relatedBrand?: string;
   proofRequired?: string;
   shareholderDebtFlag?: string;
+  vendorId?: string;
+  vendorName?: string;
+  vendorRelatedParty?: string;
+  vendorBenchmarkNotes?: string;
 }
 
 interface ExpenseStats {
@@ -46,6 +50,9 @@ interface ExpenseStats {
   withoutDivisionCount?: number;
   personalPaidCount?: number;
   personalPaidAmount?: number;
+  vendorRequiredCount?: number;
+  withoutVendorCount?: number;
+  vendorRelatedPartyCount?: number;
 }
 
 interface ExpenseApiResponse {
@@ -78,9 +85,22 @@ interface ExpenseSubmissionPayload {
   relatedBrand: string;
   notes: string;
   proofUrl?: string;
+  vendorId?: string;
+  vendorName?: string;
+  vendorRelatedParty?: string;
+  vendorBenchmarkNotes?: string;
 }
 
-// ── Helpers ──
+interface VendorOption {
+  id: string;
+  name: string;
+  category: string;
+  relatedParty: string;
+}
+
+interface VendorApiResponse {
+  vendors?: VendorOption[];
+}
 function formatCurrency(amount: number): string {
   if (!amount && amount !== 0) return "Rp 0";
   return new Intl.NumberFormat("id-ID", {
@@ -136,10 +156,12 @@ export default function ExpensesPage() {
 
   // Events list for dropdown
   const [events, setEvents] = useState<{ id: string; name: string }[]>([]);
+  const [vendors, setVendors] = useState<VendorOption[]>([]);
 
   useEffect(() => {
     fetchExpenses();
     fetchEvents();
+    fetchVendors();
   }, []);
 
   async function fetchExpenses() {
@@ -172,6 +194,17 @@ export default function ExpensesPage() {
     }
   }
 
+  async function fetchVendors() {
+    try {
+      const res = await fetch("/api/governance/vendor-register");
+      if (!res.ok) return;
+      const json: VendorApiResponse = await res.json();
+      setVendors(json.vendors || []);
+    } catch {
+      // Vendor register may not be available; manual vendor fields still work
+    }
+  }
+
   async function handleSubmitExpense(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSubmitting(true);
@@ -191,6 +224,10 @@ export default function ExpensesPage() {
       paymentMethod: String(form.get("paymentMethod") || "Company Paid"),
       relatedBrand: String(form.get("relatedBrand") || ""),
       notes: String(form.get("notes") || ""),
+      vendorId: String(form.get("vendorId") || ""),
+      vendorName: String(form.get("vendorName") || ""),
+      vendorRelatedParty: String(form.get("vendorRelatedParty") || "No"),
+      vendorBenchmarkNotes: String(form.get("vendorBenchmarkNotes") || ""),
     };
 
     if (!payload.submitterName || !payload.amount) {
@@ -372,6 +409,31 @@ export default function ExpensesPage() {
                   </select>
                 </div>
                 <div>
+                  <Label htmlFor="vendorId">Vendor Register</Label>
+                  <select id="vendorId" name="vendorId" className="w-full border rounded-md px-3 py-2 text-sm">
+                    <option value="">-- Belum dikaitkan --</option>
+                    {vendors.map((vendor) => (
+                      <option key={vendor.id} value={vendor.id}>{vendor.name} — {vendor.category}</option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-muted-foreground mt-1">Wajib untuk Bahan Baku, Packaging, dan Sewa Booth jika vendor sudah tercatat.</p>
+                </div>
+                <div>
+                  <Label htmlFor="vendorName">Nama Vendor Manual</Label>
+                  <Input id="vendorName" name="vendorName" placeholder="Isi jika belum ada di Vendor_Register" />
+                </div>
+                <div>
+                  <Label htmlFor="vendorRelatedParty">Related Party Vendor?</Label>
+                  <select id="vendorRelatedParty" name="vendorRelatedParty" className="w-full border rounded-md px-3 py-2 text-sm" defaultValue="No">
+                    <option value="No">No</option>
+                    <option value="Yes">Yes</option>
+                  </select>
+                </div>
+                <div>
+                  <Label htmlFor="vendorBenchmarkNotes">Benchmark / COI Notes</Label>
+                  <Input id="vendorBenchmarkNotes" name="vendorBenchmarkNotes" placeholder="Pembanding harga / alasan pemilihan" />
+                </div>
+                <div>
                   <Label htmlFor="description">Deskripsi</Label>
                   <Input id="description" name="description" placeholder="Deskripsi pengeluaran" />
                 </div>
@@ -499,7 +561,7 @@ export default function ExpensesPage() {
                 <div><div className="font-semibold">Needs Proof</div><div>{stats?.needsProofCount || 0} item — {formatCurrency(stats?.needsProofAmount || 0)}</div></div>
                 <div><div className="font-semibold">Tanpa Division</div><div>{stats?.withoutDivisionCount || 0} item</div></div>
                 <div><div className="font-semibold">Personal Paid</div><div>{stats?.personalPaidCount || 0} item — {formatCurrency(stats?.personalPaidAmount || 0)}</div></div>
-                <div><div className="font-semibold">Audit Trail</div><div>Approve/reject dicatat ke Governance_Audit_Log.</div></div>
+                <div><div className="font-semibold">Vendor/COI</div><div>{stats?.withoutVendorCount || 0}/{stats?.vendorRequiredCount || 0} butuh vendor link; {stats?.vendorRelatedPartyCount || 0} related-party</div></div>
               </div>
             </CardContent>
           </Card>

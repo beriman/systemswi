@@ -18,7 +18,8 @@ const EXPENSE_SUBMISSION_HEADERS = [
   "Category", "Description", "Amount", "Proof URL",
   "Status", "Reviewed By", "Reviewed Date", "Notes",
   "Division", "COA Category", "Payment Method", "Related Brand",
-  "Proof Required", "Shareholder Debt Flag",
+  "Proof Required", "Shareholder Debt Flag", "Vendor ID", "Vendor Name",
+  "Vendor Related Party", "Vendor Benchmark Notes",
 ];
 
 // ── Auth ──

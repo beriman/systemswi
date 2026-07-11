@@ -49,6 +49,10 @@ function parseExpense(row: string[]) {
     relatedBrand: s(row, 15),
     proofRequired: s(row, 16),
     shareholderDebtFlag: s(row, 17),
+    vendorId: s(row, 18),
+    vendorName: s(row, 19),
+    vendorRelatedParty: s(row, 20),
+    vendorBenchmarkNotes: s(row, 21),
   };
 }
 
@@ -122,6 +126,10 @@ export async function PUT(
       s(existing, 15),
       s(existing, 16),
       s(existing, 17),
+      s(existing, 18),
+      s(existing, 19),
+      s(existing, 20),
+      s(existing, 21),
     ];
 
     await updateExpenseRow(EXPENSE_SHEETS.Submissions, rowNum, updatedRow);

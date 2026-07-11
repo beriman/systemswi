@@ -46,6 +46,10 @@ interface ExpenseSubmission {
   relatedBrand: string;
   proofRequired: string;
   shareholderDebtFlag: string;
+  vendorId: string;
+  vendorName: string;
+  vendorRelatedParty: string;
+  vendorBenchmarkNotes: string;
 }
 
 function parseExpenseRows(rows: string[][]): ExpenseSubmission[] {
@@ -69,6 +73,10 @@ function parseExpenseRows(rows: string[][]): ExpenseSubmission[] {
     relatedBrand: s(row, 15),
     proofRequired: s(row, 16),
     shareholderDebtFlag: s(row, 17),
+    vendorId: s(row, 18),
+    vendorName: s(row, 19),
+    vendorRelatedParty: s(row, 20),
+    vendorBenchmarkNotes: s(row, 21),
   }));
 }
 
@@ -100,6 +108,10 @@ export async function GET(req: NextRequest) {
     const needsProof = expenses.filter((e) => e.status === "Needs Proof" || (e.amount > 0 && !e.proofUrl));
     const withoutDivision = expenses.filter((e) => !e.division);
     const personalPaid = expenses.filter((e) => e.paymentMethod === "Personal Paid" || e.shareholderDebtFlag === "Yes");
+    const vendorRequiredCategories = new Set(["Bahan Baku", "Packaging", "Sewa Booth"]);
+    const vendorRequired = expenses.filter((e) => vendorRequiredCategories.has(e.category));
+    const withoutVendor = vendorRequired.filter((e) => !e.vendorId && !e.vendorName);
+    const vendorRelatedParty = expenses.filter((e) => e.vendorRelatedParty === "Yes");
 
     const currentMonth = today().slice(0, 7);
     const approvedThisMonth = approved.filter((e) => e.date.startsWith(currentMonth));
@@ -148,6 +160,9 @@ export async function GET(req: NextRequest) {
         withoutDivisionCount: withoutDivision.length,
         personalPaidCount: personalPaid.length,
         personalPaidAmount: personalPaid.reduce((sum, e) => sum + e.amount, 0),
+        vendorRequiredCount: vendorRequired.length,
+        withoutVendorCount: withoutVendor.length,
+        vendorRelatedPartyCount: vendorRelatedParty.length,
       },
       budgetVsActual: eventMap,
     });
@@ -156,7 +171,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({
         ...googleWorkspaceDegradedSource(EXPENSES_SOURCE, error),
         expenses: [],
-        stats: { total: 0, pendingCount: 0, pendingAmount: 0, approvedCount: 0, approvedAmount: 0, approvedThisMonthCount: 0, approvedThisMonthAmount: 0, rejectedCount: 0, rejectedAmount: 0, needsProofCount: 0, needsProofAmount: 0, withoutDivisionCount: 0, personalPaidCount: 0, personalPaidAmount: 0 },
+        stats: { total: 0, pendingCount: 0, pendingAmount: 0, approvedCount: 0, approvedAmount: 0, approvedThisMonthCount: 0, approvedThisMonthAmount: 0, rejectedCount: 0, rejectedAmount: 0, needsProofCount: 0, needsProofAmount: 0, withoutDivisionCount: 0, personalPaidCount: 0, personalPaidAmount: 0, vendorRequiredCount: 0, withoutVendorCount: 0, vendorRelatedPartyCount: 0 },
         budgetVsActual: {},
       });
     }
@@ -201,6 +216,10 @@ export async function POST(req: NextRequest) {
       body.relatedBrand || "",
       proofRequired,
       shareholderDebtFlag,
+      body.vendorId || "",
+      body.vendorName || "",
+      body.vendorRelatedParty === true || body.vendorRelatedParty === "Yes" ? "Yes" : "No",
+      body.vendorBenchmarkNotes || "",
     ];
 
     await appendExpenseRows(EXPENSE_SHEETS.Submissions, [row]);
