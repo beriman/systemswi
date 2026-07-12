@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { googleWorkspaceDegradedSource, isGoogleWorkspaceAuthError } from "@/lib/api/google-workspace-error";
 import { readRange, readSheet } from "@/lib/sheets/sheets-real";
 import { EVENT_SHEETS, readEventSheet } from "@/lib/event/sheets";
+import { logGovernanceActionSafe } from "@/lib/governance/audit";
+import { appendMonthlyGcgReportSnapshot } from "@/lib/governance/monthly-gcg-report";
 
 export const runtime = "nodejs";
 
@@ -327,6 +329,63 @@ export async function POST(req: NextRequest) {
           totalReports: reports.length,
           types: reports.map((report) => report.type),
           markers: ["Executive Snapshot", "Investor Readiness Checklist", "Annual Report Template"],
+        },
+        context,
+      }, { status: 201 });
+    }
+
+    if (action === "record_monthly_gcg") {
+      const reportPeriod = defaultPeriodFor("monthly_gcg", period);
+      const context = await readContext();
+      if (context.sourceStatus !== "live") {
+        return NextResponse.json({
+          success: false,
+          sourceStatus: "blocked",
+          warning: context.warning || "Google Sheets source degraded; Monthly_GCG_Report tidak ditulis agar tidak mencatat snapshot kosong/TBA sebagai laporan resmi.",
+          details: context.details,
+        }, { status: 200 });
+      }
+
+      const row = await appendMonthlyGcgReportSnapshot({
+        period: reportPeriod,
+        generatedAt: context.generatedAt,
+        createdBy: text(body.createdBy || body.actor || "systemswi"),
+        status: text(body.status || "Draft - Needs Human Review"),
+        expensePendingCount: context.expensePendingCount,
+        expenseNeedsProofCount: context.expenseNeedsProofCount,
+        shareholderDebtOutstanding: context.shareholderDebtOutstanding,
+        complianceOverdueCount: context.complianceOverdueCount,
+        vendorExceptionCount: context.vendorExceptionCount,
+        governanceAuditRows: context.governanceAuditRows,
+        notes: notes || "Snapshot Monthly GCG/TARIF dibuat dari Google Sheets live context; review manusia wajib sebelum distribusi ke pemegang saham.",
+        sourceModule: "/api/reports",
+      });
+
+      await logGovernanceActionSafe({
+        actor: text(body.actor || body.createdBy || "systemswi"),
+        role: text(body.role || "Governance Reporter"),
+        action: "RECORD_MONTHLY_GCG_REPORT",
+        entityType: "Monthly GCG Report",
+        entityId: String(row[0] || reportPeriod),
+        amount: context.shareholderDebtOutstanding,
+        division: "Holding",
+        before: "Not recorded",
+        after: String(row[4] || "Draft - Needs Human Review"),
+        reason: notes || `Monthly GCG snapshot ${reportPeriod}`,
+        proofUrl: "",
+        sourceModule: "/api/reports",
+      });
+
+      return NextResponse.json({
+        success: true,
+        source: "Google Sheets: Monthly_GCG_Report",
+        sourceStatus: "live",
+        generatedAt: new Date().toISOString(),
+        reportLog: {
+          id: row[0],
+          period: row[1],
+          status: row[4],
+          row,
         },
         context,
       }, { status: 201 });

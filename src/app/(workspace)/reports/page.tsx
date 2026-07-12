@@ -53,17 +53,54 @@ type ReportTemplate = {
   description: string;
 };
 
+type GeneratedReport = {
+  id: string;
+  type: string;
+  title: string;
+  period: string;
+  content: string;
+  createdAt: string;
+};
+
+type DashboardData = {
+  totalSaldoAkhir?: number;
+  totalSudahSetor?: number;
+  totalSisaKewajiban?: number;
+  totalSetoranPercent?: number;
+  totalModalDitempatkan?: number;
+  sourceStatus?: string;
+  sukukInfo?: { status?: string; nilai?: string; akad?: string; nisbah?: string; yield?: string };
+  rekapData?: Array<{
+    bulan: string;
+    akun: string;
+    periode: string;
+    saldoAwal: string;
+    totalMasuk: string;
+    totalKeluar: string;
+    saldoAkhir: string;
+  }>;
+  shareholders?: Array<{
+    nama: string;
+    persen: string;
+    jumlahSaham: string;
+    progress: number;
+    kewajiban: number;
+    sudahSetor: number;
+    sisaKewajiban?: number;
+  }>;
+};
+
 export default function ReportsPage() {
-  const [data, setData] = useState<any>(null);
+  const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [templates, setTemplates] = useState<ReportTemplate[]>([]);
   const [reportType, setReportType] = useState("weekly_dashboard");
   const [period, setPeriod] = useState(() => new Date().toLocaleDateString("id-ID", { month: "long", year: "numeric" }));
   const [notes, setNotes] = useState("");
-  const [report, setReport] = useState<any>(null);
+  const [report, setReport] = useState<GeneratedReport | null>(null);
   const [reportStatus, setReportStatus] = useState("");
   const [generating, setGenerating] = useState(false);
-  const [batchReports, setBatchReports] = useState<any[]>([]);
+  const [batchReports, setBatchReports] = useState<GeneratedReport[]>([]);
   const [downloadingPDF, setDownloadingPDF] = useState(false);
 
   useEffect(() => {
@@ -143,6 +180,33 @@ export default function ReportsPage() {
     const filename = `systemswi-report-bundle-${slugify(period)}.md`;
     downloadTextFile(filename, bundle);
     setReportStatus(`Bundle download siap: ${filename} (${reportsToExport.length} report). Belum ada file yang ditulis ke Google Drive.`);
+  };
+
+  const recordMonthlyGcgSnapshot = async () => {
+    setGenerating(true);
+    setReportStatus("Mencatat snapshot Monthly GCG ke Google Sheets...");
+    try {
+      const response = await fetch("/api/reports", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "record_monthly_gcg",
+          period,
+          notes: notes || "Snapshot dicatat dari halaman Reports; review manusia wajib sebelum distribusi.",
+          actor: "systemswi user",
+        }),
+      });
+      const payload = await response.json();
+      if (!response.ok || payload.success === false) {
+        throw new Error(payload?.warning || payload?.error || "Gagal mencatat Monthly_GCG_Report");
+      }
+      setReportStatus(`Monthly_GCG_Report tercatat: ${payload.reportLog?.id || "ID TBA"}. Governance audit log ikut ditulis.`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setReportStatus(`Gagal mencatat Monthly GCG: ${message}`);
+    } finally {
+      setGenerating(false);
+    }
   };
 
   const handleDownloadPDF = useCallback(async () => {
@@ -245,7 +309,10 @@ export default function ReportsPage() {
                       📥 Export Semua PDF
                     </Button>
                   </div>
-                  <p className="text-xs text-muted-foreground">QA otomatis: membuat weekly, monthly, quarterly investor, dan annual report dalam satu request. Download Markdown/PDF bersifat lokal/browser; tidak menulis ke Drive/Docs sampai operator menyimpan manual atau workflow save terpisah disetujui.</p>
+                  <Button onClick={recordMonthlyGcgSnapshot} disabled={generating || !period} variant="outline" className="w-full">
+                    ✅ Catat Snapshot Monthly GCG ke Sheets
+                  </Button>
+                  <p className="text-xs text-muted-foreground">QA otomatis: membuat weekly, monthly, quarterly investor, dan annual report dalam satu request. Download Markdown/PDF bersifat lokal/browser. Tombol snapshot Monthly GCG menulis ringkasan live ke Monthly_GCG_Report dan Governance_Audit_Log untuk jejak kesiapan laporan.</p>
                   {reportStatus && <p className="rounded-md border bg-muted px-3 py-2 text-sm text-muted-foreground">ℹ️ {reportStatus}</p>}
                 </CardContent>
               </Card>
@@ -331,7 +398,7 @@ export default function ReportsPage() {
                   <div className="rounded-md border overflow-auto">
                     <Table>
                       <TableHeader><TableRow><TableHead>Bulan</TableHead><TableHead>Akun</TableHead><TableHead>Periode</TableHead><TableHead className="text-right">Saldo Awal</TableHead><TableHead className="text-right">Masuk</TableHead><TableHead className="text-right">Keluar</TableHead><TableHead className="text-right">Saldo Akhir</TableHead></TableRow></TableHeader>
-                      <TableBody>{data.rekapData.map((row: any, i: number) => <TableRow key={i}><TableCell className="font-medium">{row.bulan}</TableCell><TableCell>{row.akun}</TableCell><TableCell className="text-xs">{row.periode}</TableCell><TableCell className="text-right text-xs">{row.saldoAwal}</TableCell><TableCell className="text-right text-green-600 text-xs">{row.totalMasuk}</TableCell><TableCell className="text-right text-red-600 text-xs">{row.totalKeluar}</TableCell><TableCell className="text-right font-medium text-xs">{row.saldoAkhir}</TableCell></TableRow>)}</TableBody>
+                      <TableBody>{data.rekapData.map((row, i) => <TableRow key={i}><TableCell className="font-medium">{row.bulan}</TableCell><TableCell>{row.akun}</TableCell><TableCell className="text-xs">{row.periode}</TableCell><TableCell className="text-right text-xs">{row.saldoAwal}</TableCell><TableCell className="text-right text-green-600 text-xs">{row.totalMasuk}</TableCell><TableCell className="text-right text-red-600 text-xs">{row.totalKeluar}</TableCell><TableCell className="text-right font-medium text-xs">{row.saldoAkhir}</TableCell></TableRow>)}</TableBody>
                     </Table>
                   </div>
                 ) : <p className="text-muted-foreground text-center py-8">Tidak ada data rekap rekening</p>}
@@ -348,7 +415,7 @@ export default function ReportsPage() {
               <CardContent>
                 {loading ? <div className="space-y-2">{[1,2,3].map(i => <Skeleton key={i} className="h-20 w-full" />)}</div> : (
                   <div className="grid gap-4 md:grid-cols-3">
-                    {data?.shareholders?.map((sh: any, i: number) => <div key={i} className="p-4 border rounded-lg"><div className="flex justify-between items-start mb-2"><div><h4 className="font-semibold">{sh.nama}</h4><span className="text-xs text-muted-foreground">{sh.persen} • {sh.jumlahSaham} saham</span></div><span className={`text-xs px-2 py-1 rounded ${sh.progress >= 100 ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700"}`}>{sh.progress.toFixed(1)}%</span></div><div className="space-y-1 text-sm"><div className="flex justify-between"><span className="text-muted-foreground">Kewajiban:</span><span>{formatCurrency(sh.kewajiban)}</span></div><div className="flex justify-between"><span className="text-muted-foreground">Disetor:</span><span className="text-green-600">{formatCurrency(sh.sudahSetor)}</span></div><div className="flex justify-between border-t pt-1"><span className="font-medium">Sisa:</span><span className="font-bold text-red-600">{formatCurrency(sh.sisaKewajiban ?? (sh.kewajiban - sh.sudahSetor))}</span></div></div><div className="mt-3"><div className="w-full bg-gray-200 rounded-full h-2"><div className="bg-blue-600 h-2 rounded-full" style={{ width: `${Math.min(sh.progress, 100)}%` }} /></div></div></div>)}
+                    {data?.shareholders?.map((sh, i) => <div key={i} className="p-4 border rounded-lg"><div className="flex justify-between items-start mb-2"><div><h4 className="font-semibold">{sh.nama}</h4><span className="text-xs text-muted-foreground">{sh.persen} • {sh.jumlahSaham} saham</span></div><span className={`text-xs px-2 py-1 rounded ${sh.progress >= 100 ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700"}`}>{sh.progress.toFixed(1)}%</span></div><div className="space-y-1 text-sm"><div className="flex justify-between"><span className="text-muted-foreground">Kewajiban:</span><span>{formatCurrency(sh.kewajiban)}</span></div><div className="flex justify-between"><span className="text-muted-foreground">Disetor:</span><span className="text-green-600">{formatCurrency(sh.sudahSetor)}</span></div><div className="flex justify-between border-t pt-1"><span className="font-medium">Sisa:</span><span className="font-bold text-red-600">{formatCurrency(sh.sisaKewajiban ?? (sh.kewajiban - sh.sudahSetor))}</span></div></div><div className="mt-3"><div className="w-full bg-gray-200 rounded-full h-2"><div className="bg-blue-600 h-2 rounded-full" style={{ width: `${Math.min(sh.progress, 100)}%` }} /></div></div></div>)}
                   </div>
                 )}
               </CardContent>
