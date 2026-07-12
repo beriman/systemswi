@@ -13,11 +13,33 @@ import { Textarea } from "@/components/ui/textarea";
 
 type TaxItem = Record<string, string>;
 
+type ComplianceRegisterEntry = {
+  id: string;
+  area: string;
+  obligation: string;
+  period: string;
+  dueDate: string;
+  status: string;
+  owner: string;
+  sourceProof: string;
+  riskLevel: string;
+  notes: string;
+  daysUntilDue: number | null;
+  riskBadge: "green" | "yellow" | "red" | "gray";
+};
+
 function statusBadge(status: string) {
   const s = status.toLowerCase();
   if (s === "active" || s === "completed" || s === "✅ selesai") return "bg-green-100 text-green-700";
   if (s === "pending" || s === "⏳ pending") return "bg-yellow-100 text-yellow-700";
   if (s === "expired" || s === "overdue" || s === "❌ overdue") return "bg-red-100 text-red-700";
+  return "bg-gray-100 text-gray-700";
+}
+
+function gcgBadgeClass(badge: ComplianceRegisterEntry["riskBadge"]) {
+  if (badge === "green") return "bg-green-100 text-green-700";
+  if (badge === "yellow") return "bg-yellow-100 text-yellow-700";
+  if (badge === "red") return "bg-red-100 text-red-700";
   return "bg-gray-100 text-gray-700";
 }
 
@@ -47,6 +69,8 @@ export default function TaxCompliancePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [sourceStatus, setSourceStatus] = useState<"live" | "blocked">("live");
+  const [taxComplianceRegister, setTaxComplianceRegister] = useState<ComplianceRegisterEntry[]>([]);
+  const [complianceRegisterStatus, setComplianceRegisterStatus] = useState<"loading" | "live" | "degraded">("loading");
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
 
@@ -60,8 +84,23 @@ export default function TaxCompliancePage() {
     setError(null);
     try {
       const types = ["calendar", "documents", "oss", "pajak"];
-      const results = await Promise.all(types.map((t) => fetch(`/api/tax?type=${t}`, { cache: "no-store" })));
+      const [results, complianceRes] = await Promise.all([
+        Promise.all(types.map((t) => fetch(`/api/tax?type=${t}`, { cache: "no-store" }))),
+        fetch("/api/governance/compliance-register", { cache: "no-store" }).catch(() => null),
+      ]);
       const [calData, docData, ossData, pajakData] = await Promise.all(results.map((r) => r.json()));
+
+      if (complianceRes) {
+        const complianceJson = await complianceRes.json();
+        const entries = Array.isArray(complianceJson.entries) ? (complianceJson.entries as ComplianceRegisterEntry[]) : [];
+        setTaxComplianceRegister(entries.filter((entry) => {
+          const area = entry.area.toLowerCase();
+          return area.includes("pajak") || area.includes("tax") || area.includes("lkpm") || area.includes("legal") || area.includes("oss");
+        }));
+        setComplianceRegisterStatus(complianceJson.sourceStatus === "live" ? "live" : "degraded");
+      } else {
+        setComplianceRegisterStatus("degraded");
+      }
 
       setCalendar(calData.items || []);
       setDocuments(docData.items || []);
@@ -76,7 +115,7 @@ export default function TaxCompliancePage() {
   }, []);
 
   useEffect(() => {
-    fetchData();
+    void Promise.resolve().then(() => fetchData());
   }, [fetchData]);
 
   const handleSave = async (type: string, body: Record<string, string>) => {
@@ -113,6 +152,9 @@ export default function TaxCompliancePage() {
   const activeOss = oss.filter((o) => o.Status === "active").length;
   const pendingOss = oss.filter((o) => o.Status === "pending").length;
   const pendingPajak = pajak.filter((p) => p.Status?.includes("Pending")).length;
+  const gcgTaxOverdue = taxComplianceRegister.filter((item) => item.riskBadge === "red").length;
+  const gcgTaxDueSoon = taxComplianceRegister.filter((item) => item.riskBadge === "yellow").length;
+  const gcgTaxMissingProof = taxComplianceRegister.filter((item) => !item.sourceProof && ["submitted", "paid"].includes(item.status.toLowerCase())).length;
 
   return (
     <div className="space-y-6">
@@ -134,6 +176,12 @@ export default function TaxCompliancePage() {
         </Card>
       )}
 
+      {error && (
+        <Card className="border-red-200 bg-red-50">
+          <CardContent className="py-3 text-red-700 text-sm">{error}</CardContent>
+        </Card>
+      )}
+
       {saveMsg && (
         <Card className={saveMsg.startsWith("✅") ? "border-green-200 bg-green-50" : "border-red-200 bg-red-50"}>
           <CardContent className="py-3 text-sm">{saveMsg}</CardContent>
@@ -148,6 +196,63 @@ export default function TaxCompliancePage() {
         <Kpi title="OSS Aktif" value={activeOss} accent="text-green-600" note={`${pendingOss} pending`} />
         <Kpi title="Pajak Tracked" value={pajak.length} accent="text-blue-600" note={`${pendingPajak} pending`} />
       </div>
+
+      <Card>
+        <CardHeader>
+          <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+            <div>
+              <CardTitle>GCG Compliance_Register — Pajak/LKPM/Legal</CardTitle>
+              <CardDescription>
+                Source of truth governance untuk pajak, LKPM, OSS/legal. Status selesai tanpa proof tetap ditandai perlu bukti; jangan isi angka/status asumsi.
+              </CardDescription>
+            </div>
+            <Badge className={complianceRegisterStatus === "live" ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700"}>
+              {complianceRegisterStatus === "loading" ? "loading" : complianceRegisterStatus}
+            </Badge>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-3 md:grid-cols-3">
+            <Kpi title="GCG Overdue" value={gcgTaxOverdue} accent="text-red-600" note="Compliance_Register" />
+            <Kpi title="GCG Due Soon" value={gcgTaxDueSoon} accent="text-yellow-600" note="≤ 7 hari" />
+            <Kpi title="Selesai Tanpa Bukti" value={gcgTaxMissingProof} accent="text-orange-600" note="wajib proof URL" />
+          </div>
+          {complianceRegisterStatus === "loading" ? (
+            <p className="text-sm text-muted-foreground">Memuat Compliance_Register dari Google Sheets…</p>
+          ) : taxComplianceRegister.length === 0 ? (
+            <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-3 text-sm text-yellow-800">
+              Belum ada item Pajak/LKPM/Legal di Compliance_Register atau Google Workspace sedang degraded. Gunakan /compliance untuk seed/register kewajiban tanpa membuat data fiktif.
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[860px] text-sm">
+                <thead className="text-left text-muted-foreground">
+                  <tr className="border-b">
+                    <th className="py-2 pr-3">Area</th>
+                    <th className="py-2 pr-3">Kewajiban</th>
+                    <th className="py-2 pr-3">Due</th>
+                    <th className="py-2 pr-3">Status</th>
+                    <th className="py-2 pr-3">Owner</th>
+                    <th className="py-2 pr-3">Bukti</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {taxComplianceRegister.slice(0, 12).map((item) => (
+                    <tr key={item.id} className="border-b last:border-0">
+                      <td className="py-2 pr-3 font-medium">{item.area}<div className="text-xs text-muted-foreground">{item.id}</div></td>
+                      <td className="py-2 pr-3">{item.obligation}<div className="text-xs text-muted-foreground">{item.period || "TBA"} • Risiko: {item.riskLevel || "TBA"}</div></td>
+                      <td className="py-2 pr-3">{item.dueDate || "TBA"}</td>
+                      <td className="py-2 pr-3"><Badge className={gcgBadgeClass(item.riskBadge)}>{item.status || "TBA"}</Badge></td>
+                      <td className="py-2 pr-3">{item.owner || "Belum dicatat"}</td>
+                      <td className="py-2 pr-3">{item.sourceProof ? <a className="text-teal-700 underline" href={item.sourceProof}>Bukti</a> : <span className="text-muted-foreground">Belum dicatat</span>}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Alerts */}
       {(overdueItems.length > 0 || upcomingDue.length > 0) && (
