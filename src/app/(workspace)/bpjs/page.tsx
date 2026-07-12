@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -41,6 +41,21 @@ const BPJS_KESEHATAN = {
   note: "Email pendaftaran terdeteksi (21 Okt 2025) namun tidak ada tagihan atau konfirmasi pembayaran BPJS Kesehatan. Perlu verifikasi ke BPJS Kesehatan.",
 };
 
+type ComplianceRegisterEntry = {
+  id: string;
+  area: string;
+  obligation: string;
+  period: string;
+  dueDate: string;
+  status: string;
+  owner: string;
+  sourceProof: string;
+  riskLevel: string;
+  notes: string;
+  daysUntilDue: number | null;
+  riskBadge: "green" | "yellow" | "red" | "gray";
+};
+
 function formatRupiah(amount: number) {
   return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(amount);
 }
@@ -53,8 +68,33 @@ function StatusBadge({ status }: { status: string }) {
   return <Badge className="bg-gray-100 text-gray-700">{status}</Badge>;
 }
 
+function gcgBadgeClass(badge: ComplianceRegisterEntry["riskBadge"]) {
+  if (badge === "green") return "bg-green-100 text-green-700";
+  if (badge === "yellow") return "bg-yellow-100 text-yellow-700";
+  if (badge === "red") return "bg-red-100 text-red-700";
+  return "bg-gray-100 text-gray-700";
+}
+
 export default function BPJSPage() {
   const [activeTab, setActiveTab] = useState("ketenagakerjaan");
+  const [bpjsCompliance, setBpjsCompliance] = useState<ComplianceRegisterEntry[]>([]);
+  const [complianceStatus, setComplianceStatus] = useState<"loading" | "live" | "degraded">("loading");
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/governance/compliance-register", { cache: "no-store" })
+      .then((res) => res.json())
+      .then((json) => {
+        if (cancelled) return;
+        const entries = Array.isArray(json.entries) ? (json.entries as ComplianceRegisterEntry[]) : [];
+        setBpjsCompliance(entries.filter((entry) => entry.area.toUpperCase().startsWith("BPJS")));
+        setComplianceStatus(json.sourceStatus === "live" ? "live" : "degraded");
+      })
+      .catch(() => {
+        if (!cancelled) setComplianceStatus("degraded");
+      });
+    return () => { cancelled = true; };
+  }, []);
 
   return (
     <div className="space-y-6">
@@ -127,6 +167,51 @@ export default function BPJSPage() {
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>GCG Compliance_Register — BPJS</CardTitle>
+          <CardDescription>
+            Source of truth tata kelola: sheet Compliance_Register. Jika bukti kosong, tampilkan Belum dicatat dan jangan diasumsikan selesai.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {complianceStatus === "loading" ? (
+            <p className="text-sm text-muted-foreground">Memuat register BPJS dari Google Sheets…</p>
+          ) : bpjsCompliance.length === 0 ? (
+            <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-3 text-sm text-yellow-800">
+              Belum ada item BPJS di Compliance_Register atau Google Workspace sedang degraded. Buka /compliance untuk seed/register kewajiban BPJSKT dan BPJSKS.
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[760px] text-sm">
+                <thead className="text-left text-muted-foreground">
+                  <tr className="border-b">
+                    <th className="py-2 pr-3">Area</th>
+                    <th className="py-2 pr-3">Kewajiban</th>
+                    <th className="py-2 pr-3">Due</th>
+                    <th className="py-2 pr-3">Status</th>
+                    <th className="py-2 pr-3">Owner</th>
+                    <th className="py-2 pr-3">Bukti</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {bpjsCompliance.map((item) => (
+                    <tr key={item.id} className="border-b last:border-0">
+                      <td className="py-2 pr-3 font-medium">{item.area}<div className="text-xs text-muted-foreground">{item.id}</div></td>
+                      <td className="py-2 pr-3">{item.obligation}<div className="text-xs text-muted-foreground">{item.period || "TBA"} • Risiko: {item.riskLevel || "TBA"}</div></td>
+                      <td className="py-2 pr-3">{item.dueDate || "TBA"}</td>
+                      <td className="py-2 pr-3"><Badge className={gcgBadgeClass(item.riskBadge)}>{item.status || "TBA"}</Badge></td>
+                      <td className="py-2 pr-3">{item.owner || "Belum dicatat"}</td>
+                      <td className="py-2 pr-3">{item.sourceProof ? <a className="text-teal-700 underline" href={item.sourceProof}>Bukti</a> : <span className="text-muted-foreground">Belum dicatat</span>}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Alert */}
       <Card className="border-yellow-200 bg-yellow-50">
@@ -356,8 +441,8 @@ export default function BPJSPage() {
                   <span className="font-medium">Awal bulan (1-5)</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Password e-Billing</span>
-                  <span className="font-mono text-sm">25216707000</span>
+                  <span className="text-muted-foreground">Akses e-Billing</span>
+                  <span className="text-sm text-muted-foreground">Tidak ditampilkan di System SWI</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Estimasi Juni 2026</span>
