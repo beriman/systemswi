@@ -72,6 +72,7 @@ export default function GovernancePage() {
   const [data, setData] = useState<DashboardPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
 
   const load = async (showPending = true) => {
     if (showPending) {
@@ -111,6 +112,20 @@ export default function GovernancePage() {
   const audit = summary.audit;
   const event = summary.event;
 
+  const handleExportPdf = async () => {
+    setIsExportingPdf(true);
+    setError("");
+    try {
+      const { exportElementToPDF } = await import("@/lib/document/pdf-export");
+      const ok = await exportElementToPDF("governance-dashboard-print", `governance-tarif-${new Date().toISOString().slice(0, 10)}.pdf`);
+      if (!ok) throw new Error("Area governance dashboard tidak ditemukan untuk export PDF.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsExportingPdf(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
@@ -123,10 +138,14 @@ export default function GovernancePage() {
           <Button asChild variant="outline">
             <a href="/api/governance/dashboard?format=csv">Export CSV</a>
           </Button>
+          <Button onClick={handleExportPdf} disabled={loading || isExportingPdf} variant="outline">
+            {isExportingPdf ? "Exporting PDF..." : "Export PDF"}
+          </Button>
         </div>
       </div>
 
       <RoleGate feature="dashboard">
+        <div id="governance-dashboard-print" className="space-y-6 bg-background p-1">
         {error && <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>}
         {data?.sourceStatus === "degraded" && <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">⚠️ {data.warning || "Google Sheets source degraded. Angka ditampilkan sebagai 0/TBA sampai auth pulih."}</div>}
 
@@ -264,6 +283,7 @@ export default function GovernancePage() {
             </ul>
           </CardContent>
         </Card>
+        </div>
       </RoleGate>
     </div>
   );
