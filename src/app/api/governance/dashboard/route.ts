@@ -72,6 +72,7 @@ function toGovernanceCsv(payload: {
   scores: GcgScore[];
   summary: Record<string, unknown>;
   exceptions: Array<{ type: string; severity: string; entityId: string; description: string; amount: number; owner: string }>;
+  recentAuditTrail?: Array<{ timestamp: string; actor: string; action: string; entityType: string; entityId: string; amount: number; before: string; after: string; sourceModule: string }>;
   nextActions: string[];
 }): string {
   const rows: unknown[][] = [
@@ -88,6 +89,7 @@ function toGovernanceCsv(payload: {
   });
 
   payload.exceptions.forEach((item) => rows.push(["Exception", item.type, item.amount, `${item.severity} | ${item.entityId || "TBA"} | ${item.owner || "Belum dicatat"} | ${item.description || "Belum dicatat"}`]));
+  (payload.recentAuditTrail || []).forEach((item) => rows.push(["Recent Audit", item.action, item.amount, `${item.timestamp || "TBA"} | ${item.actor || "Belum dicatat"} | ${item.entityType || "TBA"}:${item.entityId || "TBA"} | ${item.before || ""} -> ${item.after || ""} | ${item.sourceModule || "TBA"}`]));
   payload.nextActions.forEach((action, index) => rows.push(["Next Action", index + 1, action, ""]));
 
   return rows.map((row) => row.map(csvCell).join(",")).join("\n");
@@ -188,6 +190,25 @@ export async function GET(req: NextRequest) {
       }))
       .sort((a, b) => b.generatedAt.localeCompare(a.generatedAt))[0] || null;
     const hasMonthlyGcgReport = monthlyGcgReport.length > 0;
+    const recentAuditTrail = governanceAuditLog
+      .map((row) => ({
+        logId: text(row[0]),
+        timestamp: text(row[1]) || "TBA",
+        actor: text(row[2]) || "Belum dicatat",
+        role: text(row[3]) || "TBA",
+        action: text(row[4]) || "TBA",
+        entityType: text(row[5]) || "TBA",
+        entityId: text(row[6]) || "TBA",
+        amount: amount(row[7]),
+        division: text(row[8]) || "Belum dicatat",
+        before: text(row[9]) || "",
+        after: text(row[10]) || "",
+        reason: text(row[11]) || "Belum dicatat",
+        proofUrl: text(row[12]) || "",
+        sourceModule: text(row[13]) || "TBA",
+      }))
+      .sort((a, b) => b.timestamp.localeCompare(a.timestamp))
+      .slice(0, 10);
 
     const transparencyScore = Math.round((percent(expenseWithProof.length, expenses.length) + percent(expenseWithDivision.length, expenses.length) + percent(hasMonthlyGcgReport ? 1 : 0, 1)) / 3);
     const accountabilityScore = Math.round((percent(approvedWithReviewer.length, approvedExpenses.length) + percent(taskWithOwner.length, tasks.length) + percent(governanceAuditLog.length > 0 ? 1 : 0, 1)) / 3);
@@ -272,6 +293,7 @@ export async function GET(req: NextRequest) {
         ...eventBudgetOverActualWithoutNotes.slice(0, 10).map((row) => ({ type: "EVENT_BUDGET_ROW_OVER_ACTUAL_NO_NOTES", severity: "medium", entityId: text(row[1]) || text(row[0]), description: text(row[3]) || text(row[2]) || "Budget row actual > planned tanpa notes", amount: amount(row[5]) - amount(row[4]), owner: "Event PIC" })),
         ...(!hasMonthlyGcgReport ? [{ type: "MONTHLY_GCG_REPORT_NOT_RECORDED", severity: "medium", entityId: "Monthly_GCG_Report", description: "Belum ada log laporan bulanan GCG/TARIF untuk pemegang saham", amount: 0, owner: "Direksi/Finance" }] : []),
       ],
+      recentAuditTrail,
       nextActions: [
         expenseNeedsProof.length ? "Lengkapi proof URL untuk expense berstatus Needs Proof/tanpa bukti." : "Pertahankan disiplin bukti expense.",
         expensePending.length ? "Review dan approve/reject expense pending; semua keputusan harus masuk Governance_Audit_Log." : "Tidak ada expense pending dari data yang terbaca.",

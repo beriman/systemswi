@@ -23,6 +23,23 @@ type GovernanceException = {
   owner: string;
 };
 
+type AuditTrailItem = {
+  logId: string;
+  timestamp: string;
+  actor: string;
+  role: string;
+  action: string;
+  entityType: string;
+  entityId: string;
+  amount: number;
+  division: string;
+  before: string;
+  after: string;
+  reason: string;
+  proofUrl: string;
+  sourceModule: string;
+};
+
 type DashboardPayload = {
   sourceStatus?: string;
   warning?: string;
@@ -50,6 +67,7 @@ type DashboardPayload = {
     event?: { events: number; budgetRows: number; overBudgetRows: number; overBudgetWithoutNotes: number };
   };
   exceptions?: GovernanceException[];
+  recentAuditTrail?: AuditTrailItem[];
   nextActions?: string[];
 };
 
@@ -277,6 +295,35 @@ export default function GovernancePage() {
                 </table>
               </div>
             ) : <p className="text-sm text-muted-foreground">Tidak ada exception dari data yang terbaca saat ini.</p>)}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Recent Governance Audit Trail</CardTitle>
+            <CardDescription>Jejak approve/reject dan aksi GCG manusia dari Governance_Audit_Log.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {loading ? <Skeleton className="h-28" /> : (data?.recentAuditTrail?.length ? (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="text-left text-muted-foreground"><tr><th className="py-2">Waktu</th><th>Actor</th><th>Action</th><th>Entity</th><th>Status</th><th>Amount</th><th>Module</th></tr></thead>
+                  <tbody>
+                    {data.recentAuditTrail.slice(0, 10).map((item) => (
+                      <tr key={item.logId || `${item.timestamp}-${item.entityId}`} className="border-t">
+                        <td className="py-2 whitespace-nowrap">{item.timestamp && item.timestamp !== "TBA" ? new Date(item.timestamp).toLocaleString("id-ID") : "TBA"}</td>
+                        <td>{item.actor || "Belum dicatat"}</td>
+                        <td className="font-medium">{item.action || "TBA"}</td>
+                        <td>{item.entityType || "TBA"}:{item.entityId || "TBA"}</td>
+                        <td>{item.before || ""}{item.before || item.after ? " → " : ""}{item.after || ""}</td>
+                        <td>{rupiah(item.amount)}</td>
+                        <td>{item.sourceModule || "TBA"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : <p className="text-sm text-muted-foreground">Belum ada baris Governance_Audit_Log dari data yang terbaca.</p>)}
           </CardContent>
         </Card>
 
