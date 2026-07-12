@@ -14,6 +14,14 @@ function isPaidStatus(value: string): boolean {
   return ["paid", "lunas", "settled", "completed", "received"].includes(value.toLowerCase().trim());
 }
 
+function isApprovedExpenseStatus(value: string): boolean {
+  return ["approved", "paid", "lunas", "settled", "completed", "submitted"].includes(value.toLowerCase().trim());
+}
+
+function isPayableExpenseStatus(value: string): boolean {
+  return ["pending", "needs proof", "butuh bukti", "approved"].includes(value.toLowerCase().trim());
+}
+
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }  // Next.js 16: params is a Promise
@@ -108,8 +116,13 @@ export async function GET(
 
     const plannedTotal = eventBudget.reduce((sum, item) => sum + item.plannedAmount, 0) || event.budget;
     const budgetActualTotal = eventBudget.reduce((sum, item) => sum + item.actualAmount, 0) || event.actualCost;
-    const expenseActualTotal = eventExpenses.reduce((sum, item) => sum + item.amount, 0);
-    const actualExpenseTotal = expenseActualTotal || budgetActualTotal;
+    const approvedExpenseTotal = eventExpenses
+      .filter((item) => isApprovedExpenseStatus(item.status))
+      .reduce((sum, item) => sum + item.amount, 0);
+    const payableExpenseTotal = eventExpenses
+      .filter((item) => isPayableExpenseStatus(item.status) && item.amount > 0 && item.paymentMethod !== "Personal Paid")
+      .reduce((sum, item) => sum + item.amount, 0);
+    const actualExpenseTotal = approvedExpenseTotal || budgetActualTotal;
     const tenantRevenuePaid = eventTenants.reduce((sum, item) => sum + item.paymentAmount, 0);
     const tenantRevenueExpected = eventTenants.reduce((sum, item) => sum + item.fee, 0);
     const sponsorRevenuePaid = eventSponsors.reduce(
@@ -147,7 +160,7 @@ export async function GET(
       totalRevenuePaid: revenuePaidTotal,
       totalRevenueExpected: revenueExpectedTotal,
       receivable: tenantReceivable + sponsorReceivable,
-      payable: 0,
+      payable: payableExpenseTotal,
       finalProfitLoss: revenuePaidTotal - actualExpenseTotal,
       expensesWithoutProof,
       expensesNeedsProof,

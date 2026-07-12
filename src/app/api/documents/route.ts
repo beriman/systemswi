@@ -43,6 +43,14 @@ const amount = (value: unknown) => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
+function columnIndex(headers: string[], names: string[], fallback: number): number {
+  for (const name of names) {
+    const index = headers.findIndex((header) => header === name);
+    if (index >= 0) return index;
+  }
+  return fallback;
+}
+
 function isDocumentType(value: string): value is DocumentType {
   return Boolean(getTemplateByType(value as DocumentType));
 }
@@ -71,6 +79,7 @@ async function readContext(): Promise<SheetContext> {
     inventory,
     budgetCategories,
     eventBudget,
+    events,
     expenseSubmissions,
     shareholderLedger,
     complianceRegister,
@@ -83,6 +92,7 @@ async function readContext(): Promise<SheetContext> {
     readRange("Inventory_Master!A1:O1000").catch(emptyOnAuthError),
     readRange("Budget_Categories!A1:D50").catch(emptyOnAuthError),
     readRange("Event_Budget!A1:H1000").catch(emptyOnAuthError),
+    readRange("Events!A1:V1000").catch(emptyOnAuthError),
     readRange("Expense_Submissions!A1:V1000").catch(emptyOnAuthError),
     readRange("Shareholder_Ledger!A1:M1000").catch(emptyOnAuthError),
     readRange("Compliance_Register!A1:J1000").catch(emptyOnAuthError),
@@ -119,28 +129,53 @@ async function readContext(): Promise<SheetContext> {
     return text(row[0]) && min > 0 && qty <= min;
   }).length;
 
-  // Aggregate budget data for RAB enrichment
+  // Aggregate budget data for RAB/event closeout enrichment.
+  // Event_Budget schema is: ID, Event ID, Category, Item Name, Planned Amount, Actual Amount, Notes, Created.
+  // Use header-based lookup so generated docs do not silently swap item names into money fields.
   const budgetByCategory: Record<string, number> = {};
   let totalBudget = 0;
   let totalActual = 0;
   const eventBudgetSummary: Array<{ name: string; budget: number; actual: number; remaining: number; status: string }> = [];
 
+  const eventNames = new Map<string, string>();
+  if (events.length > 1) {
+    const eventHeaders = events[0].map((header) => text(header).toLowerCase());
+    const idIdx = columnIndex(eventHeaders, ["id", "event id"], 0);
+    const nameIdx = columnIndex(eventHeaders, ["name", "event name"], 1);
+    for (const row of events.slice(1)) {
+      const id = text(row[idIdx]);
+      if (id) eventNames.set(id, text(row[nameIdx]) || id);
+    }
+  }
+
   if (eventBudget.length > 1) {
+    const headers = eventBudget[0].map((header) => text(header).toLowerCase());
+    const eventIdIdx = columnIndex(headers, ["event id", "event", "event name"], 1);
+    const plannedIdx = columnIndex(headers, ["planned amount", "planned", "budget", "budget amount"], 4);
+    const actualIdx = columnIndex(headers, ["actual amount", "actual", "actual cost", "cost"], 5);
+    const notesIdx = columnIndex(headers, ["notes", "status", "catatan"], 6);
+    const byEvent = new Map<string, { name: string; budget: number; actual: number; notes: string[] }>();
+
     for (const row of eventBudget.slice(1)) {
       if (!row[0]) continue;
-      const evtBudget = amount(row[3]);
-      const evtActual = amount(row[4]);
-      const evtRemaining = amount(row[5]);
-      const evtStatus = text(row[6]) || "ok";
+      const eventId = text(row[eventIdIdx]) || text(row[0]);
+      const evtBudget = amount(row[plannedIdx]);
+      const evtActual = amount(row[actualIdx]);
       totalBudget += evtBudget;
       totalActual += evtActual;
-      eventBudgetSummary.push({
-        name: text(row[1]) || text(row[0]),
-        budget: evtBudget,
-        actual: evtActual,
-        remaining: evtRemaining,
-        status: evtStatus,
-      });
+      const existing = byEvent.get(eventId) || { name: eventNames.get(eventId) || eventId, budget: 0, actual: 0, notes: [] };
+      existing.budget += evtBudget;
+      existing.actual += evtActual;
+      const note = text(row[notesIdx]);
+      if (note) existing.notes.push(note);
+      byEvent.set(eventId, existing);
+    }
+
+    for (const event of Array.from(byEvent.values())) {
+      const remaining = event.budget - event.actual;
+      const ratio = event.budget > 0 ? event.actual / event.budget : 0;
+      const status = event.actual > event.budget && event.budget > 0 ? "over" : ratio >= 0.95 ? "danger" : ratio >= 0.8 ? "warning" : "ok";
+      eventBudgetSummary.push({ name: event.name, budget: event.budget, actual: event.actual, remaining, status: event.notes.join("; ") || status });
     }
   }
 
