@@ -157,6 +157,9 @@ export default function ExpensesPage() {
   // Events list for dropdown
   const [events, setEvents] = useState<{ id: string; name: string }[]>([]);
   const [vendors, setVendors] = useState<VendorOption[]>([]);
+  const [selectedVendorId, setSelectedVendorId] = useState("");
+
+  const selectedVendor = vendors.find((vendor) => vendor.id === selectedVendorId);
 
   useEffect(() => {
     fetchExpenses();
@@ -212,6 +215,10 @@ export default function ExpensesPage() {
     const form = new FormData(event.currentTarget);
 
     const proofFile = form.get("proofFile") as File | null;
+    const vendorId = String(form.get("vendorId") || "");
+    const selectedPayloadVendor = vendors.find((vendor) => vendor.id === vendorId);
+    const manualVendorName = String(form.get("vendorName") || "").trim();
+    const manualRelatedParty = String(form.get("vendorRelatedParty") || "");
     const payload: ExpenseSubmissionPayload = {
       date: String(form.get("date") || ""),
       submitterName: String(form.get("submitterName") || ""),
@@ -224,9 +231,9 @@ export default function ExpensesPage() {
       paymentMethod: String(form.get("paymentMethod") || "Company Paid"),
       relatedBrand: String(form.get("relatedBrand") || ""),
       notes: String(form.get("notes") || ""),
-      vendorId: String(form.get("vendorId") || ""),
-      vendorName: String(form.get("vendorName") || ""),
-      vendorRelatedParty: String(form.get("vendorRelatedParty") || "No"),
+      vendorId,
+      vendorName: manualVendorName || selectedPayloadVendor?.name || "",
+      vendorRelatedParty: selectedPayloadVendor?.relatedParty || manualRelatedParty || "No",
       vendorBenchmarkNotes: String(form.get("vendorBenchmarkNotes") || ""),
     };
 
@@ -266,6 +273,7 @@ export default function ExpensesPage() {
       if (!res.ok) throw new Error(json.error || json.details || `HTTP ${res.status}`);
       setFormMessage(`✅ Expense "${payload.description}" berhasil di-submit! ID: ${json.submissionId}`);
       setShowForm(false);
+      setSelectedVendorId("");
       event.currentTarget.reset();
       fetchExpenses();
     } catch (err) {
@@ -413,17 +421,29 @@ export default function ExpensesPage() {
                 </div>
                 <div>
                   <Label htmlFor="vendorId">Vendor Register</Label>
-                  <select id="vendorId" name="vendorId" className="w-full border rounded-md px-3 py-2 text-sm">
+                  <select
+                    id="vendorId"
+                    name="vendorId"
+                    className="w-full border rounded-md px-3 py-2 text-sm"
+                    value={selectedVendorId}
+                    onChange={(event) => setSelectedVendorId(event.target.value)}
+                  >
                     <option value="">-- Belum dikaitkan --</option>
                     {vendors.map((vendor) => (
                       <option key={vendor.id} value={vendor.id}>{vendor.name} — {vendor.category}</option>
                     ))}
                   </select>
                   <p className="text-xs text-muted-foreground mt-1">Wajib untuk Bahan Baku, Packaging, dan Sewa Booth jika vendor sudah tercatat.</p>
+                  {selectedVendor && (
+                    <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                      Vendor terpilih: {selectedVendor.name} • Kategori {selectedVendor.category || "Belum dicatat"} • Related party: {selectedVendor.relatedParty || "Belum dicatat"}.
+                      {selectedVendor.relatedParty === "Yes" ? " Wajib isi benchmark/alasan objektif sebelum approval." : ""}
+                    </div>
+                  )}
                 </div>
                 <div>
                   <Label htmlFor="vendorName">Nama Vendor Manual</Label>
-                  <Input id="vendorName" name="vendorName" placeholder="Isi jika belum ada di Vendor_Register" />
+                  <Input id="vendorName" name="vendorName" placeholder={selectedVendor ? selectedVendor.name : "Isi jika belum ada di Vendor_Register"} />
                 </div>
                 <div>
                   <Label htmlFor="vendorRelatedParty">Related Party Vendor?</Label>
