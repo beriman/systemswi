@@ -46,6 +46,7 @@ type DashboardPayload = {
     compliance?: { total: number; open: number; overdue: number; dueSoon: number };
     vendor?: { total: number; relatedParty: number; exceptions: number; benchmarkComplete: number };
     audit?: { governanceAuditRows: number };
+    monthlyGcgReport?: { total: number; latestPeriod: string; latestGeneratedAt: string; latestStatus: string };
     event?: { events: number; budgetRows: number; overBudgetRows: number; overBudgetWithoutNotes: number };
   };
   exceptions?: GovernanceException[];
@@ -110,6 +111,7 @@ export default function GovernancePage() {
   const vendor = summary.vendor;
   const shareholder = summary.shareholder;
   const audit = summary.audit;
+  const monthlyGcgReport = summary.monthlyGcgReport;
   const event = summary.event;
 
   const handleExportPdf = async () => {
@@ -149,7 +151,7 @@ export default function GovernancePage() {
         {error && <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>}
         {data?.sourceStatus === "degraded" && <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">⚠️ {data.warning || "Google Sheets source degraded. Angka ditampilkan sebagai 0/TBA sampai auth pulih."}</div>}
 
-        <div className="grid gap-4 md:grid-cols-4">
+        <div className="grid gap-4 md:grid-cols-5">
           <Card className="md:col-span-1">
             <CardHeader>
               <CardTitle>Overall GCG Score</CardTitle>
@@ -172,6 +174,12 @@ export default function GovernancePage() {
           <Card>
             <CardHeader className="pb-2"><CardTitle className="text-sm">Hutang Pemegang Saham</CardTitle></CardHeader>
             <CardContent>{loading ? <Skeleton className="h-8" /> : <><div className="text-xl font-bold">{rupiah(shareholder?.outstandingDebt)}</div><p className="text-sm text-muted-foreground">{shareholder?.ledgerRows || 0} ledger rows</p></>}</CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2"><CardTitle className="text-sm">Monthly GCG Report</CardTitle></CardHeader>
+            <CardContent>
+              {loading ? <Skeleton className="h-8" /> : <><div className="text-2xl font-bold">{monthlyGcgReport?.total || 0}</div><p className="text-sm text-muted-foreground">{monthlyGcgReport?.latestPeriod || "TBA"} • {monthlyGcgReport?.latestStatus || "Belum dicatat"}</p></>}
+            </CardContent>
           </Card>
         </div>
 

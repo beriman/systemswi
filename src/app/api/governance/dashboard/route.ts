@@ -4,7 +4,7 @@ import { readRange, readSheet } from "@/lib/sheets/sheets-real";
 
 export const runtime = "nodejs";
 
-const SOURCE = "Google Sheets: Expense_Submissions + Shareholder_Ledger + Compliance_Register + Vendor_Register + Governance_Audit_Log + Events + Event_Budget";
+const SOURCE = "Google Sheets: Expense_Submissions + Shareholder_Ledger + Compliance_Register + Vendor_Register + Governance_Audit_Log + Monthly_GCG_Report + Events + Event_Budget";
 
 type SourceStatus = "live" | "degraded";
 type ScoreKey = "transparency" | "accountability" | "responsibility" | "independency" | "fairness";
@@ -100,12 +100,13 @@ async function readRows(): Promise<{ rows: Record<string, string[][]>; sourceSta
     return [];
   };
 
-  const [expenses, shareholderLedger, complianceRegister, vendorRegister, governanceAuditLog, tasks, events, eventBudget] = await Promise.all([
+  const [expenses, shareholderLedger, complianceRegister, vendorRegister, governanceAuditLog, monthlyGcgReport, tasks, events, eventBudget] = await Promise.all([
     readRange("Expense_Submissions!A1:V1000").catch(emptyOnAuthError),
     readSheet("ShareholderLedger").catch(emptyOnAuthError),
     readSheet("ComplianceRegister").catch(emptyOnAuthError),
     readSheet("VendorRegister").catch(emptyOnAuthError),
     readSheet("GovernanceAuditLog").catch(emptyOnAuthError),
+    readSheet("MonthlyGcgReport").catch(emptyOnAuthError),
     readSheet("Tasks").catch(emptyOnAuthError),
     readRange("Events!A1:V1000").catch(emptyOnAuthError),
     readRange("Event_Budget!A1:H1000").catch(emptyOnAuthError),
@@ -113,7 +114,7 @@ async function readRows(): Promise<{ rows: Record<string, string[][]>; sourceSta
 
   const degraded = googleAuthError ? googleWorkspaceDegradedSource(SOURCE, googleAuthError) : null;
   return {
-    rows: { expenses, shareholderLedger, complianceRegister, vendorRegister, governanceAuditLog, tasks, events, eventBudget },
+    rows: { expenses, shareholderLedger, complianceRegister, vendorRegister, governanceAuditLog, monthlyGcgReport, tasks, events, eventBudget },
     sourceStatus: degraded ? "degraded" : "live",
     warning: degraded?.warning,
     details: degraded?.details,
@@ -128,6 +129,7 @@ export async function GET(req: NextRequest) {
     const complianceRegister = rows.complianceRegister.slice(1).filter((row) => text(row[0]));
     const vendorRegister = rows.vendorRegister.slice(1).filter((row) => text(row[0]));
     const governanceAuditLog = rows.governanceAuditLog.slice(1).filter((row) => text(row[0]));
+    const monthlyGcgReport = rows.monthlyGcgReport.slice(1).filter((row) => text(row[0]));
     const tasks = rows.tasks.slice(1).filter((row) => text(row[0]));
     const events = rows.events.slice(1).filter((row) => text(row[0]));
     const eventBudget = rows.eventBudget.slice(1).filter((row) => text(row[0]));
@@ -177,14 +179,24 @@ export async function GET(req: NextRequest) {
     const eventsOverBudget = events.filter((row) => amount(row[13]) > amount(row[12]) && amount(row[12]) > 0);
     const eventsOverBudgetWithoutNotes = eventsOverBudget.filter((row) => !text(row[19]));
 
-    const transparencyScore = Math.round((percent(expenseWithProof.length, expenses.length) + percent(expenseWithDivision.length, expenses.length)) / 2);
+    const latestMonthlyGcg = monthlyGcgReport
+      .map((row) => ({
+        id: text(row[0]),
+        period: text(row[1]) || "TBA",
+        generatedAt: text(row[2]) || text(row[3]) || "TBA",
+        status: text(row[4]) || text(row[5]) || "Belum dicatat",
+      }))
+      .sort((a, b) => b.generatedAt.localeCompare(a.generatedAt))[0] || null;
+    const hasMonthlyGcgReport = monthlyGcgReport.length > 0;
+
+    const transparencyScore = Math.round((percent(expenseWithProof.length, expenses.length) + percent(expenseWithDivision.length, expenses.length) + percent(hasMonthlyGcgReport ? 1 : 0, 1)) / 3);
     const accountabilityScore = Math.round((percent(approvedWithReviewer.length, approvedExpenses.length) + percent(taskWithOwner.length, tasks.length) + percent(governanceAuditLog.length > 0 ? 1 : 0, 1)) / 3);
     const responsibilityScore = percent(complianceRegister.length - overdueCompliance.length, complianceRegister.length);
     const independencyScore = Math.round((percent(vendorWithBenchmark.length, vendorRegister.length) + percent(expenseVendorRequired.length - expensesWithoutVendor.length, expenseVendorRequired.length)) / 2);
     const fairnessScore = percent(personalPaidExpenses.length - personalPaidNotInLedger.length, personalPaidExpenses.length);
 
     const scores = [
-      makeScore("transparency", "Transparency", transparencyScore, `${expenseWithProof.length}/${expenses.length} expense punya bukti atau amount 0; ${expenseWithDivision.length}/${expenses.length} punya division/COA.`),
+      makeScore("transparency", "Transparency", transparencyScore, `${expenseWithProof.length}/${expenses.length} expense punya bukti atau amount 0; ${expenseWithDivision.length}/${expenses.length} punya division/COA; Monthly_GCG_Report ${hasMonthlyGcgReport ? "tersedia" : "belum dicatat"}.`),
       makeScore("accountability", "Accountability", accountabilityScore, `${approvedWithReviewer.length}/${approvedExpenses.length} approved expense punya reviewer; ${governanceAuditLog.length} governance audit rows.`),
       makeScore("responsibility", "Responsibility", responsibilityScore, `${overdueCompliance.length} overdue dari ${complianceRegister.length} compliance item.`),
       makeScore("independency", "Independency", independencyScore, `${vendorWithBenchmark.length}/${vendorRegister.length} vendor punya benchmark + selected reason; ${expenseVendorRequired.length - expensesWithoutVendor.length}/${expenseVendorRequired.length} expense vendor-category punya vendor link.`),
@@ -236,6 +248,12 @@ export async function GET(req: NextRequest) {
         audit: {
           governanceAuditRows: governanceAuditLog.length,
         },
+        monthlyGcgReport: {
+          total: monthlyGcgReport.length,
+          latestPeriod: latestMonthlyGcg?.period || "TBA",
+          latestGeneratedAt: latestMonthlyGcg?.generatedAt || "TBA",
+          latestStatus: latestMonthlyGcg?.status || "Belum dicatat",
+        },
         event: {
           events: events.length,
           budgetRows: eventBudget.length,
@@ -252,6 +270,7 @@ export async function GET(req: NextRequest) {
         ...personalPaidNotInLedger.slice(0, 10).map((row) => ({ type: "PERSONAL_PAID_NOT_IN_LEDGER", severity: "medium", entityId: text(row[0]), description: text(row[5]) || "Personal paid belum cocok ke Shareholder_Ledger", amount: amount(row[6]), owner: text(row[2]) || "Belum dicatat" })),
         ...eventsOverBudgetWithoutNotes.slice(0, 10).map((row) => ({ type: "EVENT_OVER_BUDGET_NO_NOTES", severity: "high", entityId: text(row[0]), description: text(row[1]) || "Event actual > budget tanpa catatan closeout", amount: amount(row[13]) - amount(row[12]), owner: text(row[6]) || "Belum dicatat" })),
         ...eventBudgetOverActualWithoutNotes.slice(0, 10).map((row) => ({ type: "EVENT_BUDGET_ROW_OVER_ACTUAL_NO_NOTES", severity: "medium", entityId: text(row[1]) || text(row[0]), description: text(row[3]) || text(row[2]) || "Budget row actual > planned tanpa notes", amount: amount(row[5]) - amount(row[4]), owner: "Event PIC" })),
+        ...(!hasMonthlyGcgReport ? [{ type: "MONTHLY_GCG_REPORT_NOT_RECORDED", severity: "medium", entityId: "Monthly_GCG_Report", description: "Belum ada log laporan bulanan GCG/TARIF untuk pemegang saham", amount: 0, owner: "Direksi/Finance" }] : []),
       ],
       nextActions: [
         expenseNeedsProof.length ? "Lengkapi proof URL untuk expense berstatus Needs Proof/tanpa bukti." : "Pertahankan disiplin bukti expense.",
@@ -261,6 +280,7 @@ export async function GET(req: NextRequest) {
         eventBudgetOverActualWithoutNotes.length + eventsOverBudgetWithoutNotes.length ? "Lengkapi catatan closeout untuk event/budget row yang actual-nya melewati budget." : "Event budget tidak menunjukkan over-budget tanpa notes dari data terbaca.",
         expensesWithoutVendor.length ? "Hubungkan expense Bahan Baku/Packaging/Sewa Booth ke Vendor_Register atau isi vendor name." : "Expense kategori vendor sudah punya vendor link atau belum ada data.",
         personalPaidNotInLedger.length ? "Cocokkan expense Personal Paid approved ke Shareholder_Ledger." : "Personal-paid expense sudah cocok atau belum ada data personal-paid.",
+        hasMonthlyGcgReport ? `Review Monthly_GCG_Report terakhir: ${latestMonthlyGcg?.period || "TBA"}.` : "Generate dan catat Monthly GCG Report pertama setelah data expense/compliance/vendor siap.",
       ],
     };
 
