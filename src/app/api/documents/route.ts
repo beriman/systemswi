@@ -83,7 +83,7 @@ async function readContext(): Promise<SheetContext> {
     readRange("Inventory_Master!A1:O1000").catch(emptyOnAuthError),
     readRange("Budget_Categories!A1:D50").catch(emptyOnAuthError),
     readRange("Event_Budget!A1:H1000").catch(emptyOnAuthError),
-    readRange("Expense_Submissions!A1:R1000").catch(emptyOnAuthError),
+    readRange("Expense_Submissions!A1:V1000").catch(emptyOnAuthError),
     readRange("Shareholder_Ledger!A1:M1000").catch(emptyOnAuthError),
     readRange("Compliance_Register!A1:J1000").catch(emptyOnAuthError),
     readRange("Vendor_Register!A1:L1000").catch(emptyOnAuthError),
