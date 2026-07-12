@@ -68,13 +68,13 @@ function approvalBlockers(row: string[]): string[] {
   const vendorName = s(row, 19);
   const vendorRelatedParty = s(row, 20);
   const vendorBenchmarkNotes = s(row, 21);
-  const vendorRequiredCategories = new Set(["Bahan Baku", "Packaging", "Sewa Booth"]);
+  const vendorRequiredCategories = new Set(["Bahan Baku", "Packaging", "Venue", "Dokumentasi", "Sewa Booth"]);
 
   if (amount > 0 && !proofUrl) blockers.push("Bukti pembayaran/nota wajib diisi sebelum approve expense bernilai > 0.");
   if (!division) blockers.push("Division wajib diisi sebelum approve.");
   if (!coaCategory) blockers.push("COA Category wajib diisi sebelum approve.");
-  if (category === "Sewa Booth" && !relatedEvent) blockers.push("Expense event/sewa booth wajib dikaitkan ke related event/project sebelum approve.");
-  if (vendorRequiredCategories.has(category) && !vendorId && !vendorName) blockers.push("Kategori vendor (Bahan Baku/Packaging/Sewa Booth) wajib punya Vendor ID atau Vendor Name sebelum approve.");
+  if ((category === "Sewa Booth" || category === "Venue" || division === "Event") && !relatedEvent) blockers.push("Expense event/venue/sewa booth wajib dikaitkan ke related event/project sebelum approve.");
+  if (vendorRequiredCategories.has(category) && !vendorId && !vendorName) blockers.push("Kategori vendor (Bahan Baku/Packaging/Venue/Dokumentasi/Sewa Booth) wajib punya Vendor ID atau Vendor Name sebelum approve.");
   if (amount > 2_000_000 && vendorRequiredCategories.has(category) && !vendorBenchmarkNotes) blockers.push("Expense vendor > Rp2.000.000 wajib mencatat minimal 2 benchmark/alasan pemilihan sebelum approve.");
   if (vendorRelatedParty === "Yes" && !vendorBenchmarkNotes) blockers.push("Vendor related-party wajib punya catatan konflik kepentingan dan alasan objektif sebelum approve.");
 
@@ -141,8 +141,8 @@ export async function PUT(
           policy: {
             proofRequired: "Expense amount > 0 wajib punya proof URL.",
             divisionAndCoa: "Division dan COA Category wajib terisi sebelum approve.",
-            eventExpense: "Expense event/sewa booth wajib dikaitkan ke event/project.",
-            vendorThreshold: "Bahan Baku/Packaging/Sewa Booth wajib vendor; > Rp2.000.000 wajib benchmark notes.",
+            eventExpense: "Expense event/venue/sewa booth wajib dikaitkan ke event/project.",
+            vendorThreshold: "Bahan Baku/Packaging/Venue/Dokumentasi/Sewa Booth wajib vendor; > Rp2.000.000 wajib benchmark notes.",
             relatedParty: "Related-party vendor wajib catatan konflik kepentingan.",
           },
         }, { status: 422 });

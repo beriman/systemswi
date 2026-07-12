@@ -131,7 +131,7 @@ function getStatusEmoji(status: string) {
   return "🟡";
 }
 
-const CATEGORIES = ["Bahan Baku", "Iklan", "Sewa Booth", "Transport", "Packaging", "Lainnya"];
+const CATEGORIES = ["Bahan Baku", "Packaging", "Venue", "Dokumentasi", "Sewa Booth", "Iklan", "Transport", "Lainnya"];
 const DIVISIONS = ["Produksi", "Event", "Website", "Store", "Holding"];
 const PAYMENT_METHODS = ["Company Paid", "Cash", "Bank", "Personal Paid"];
 const RELATED_BRANDS = ["SWI Holding", "L'Arc~en~Scent", "Pixel Potion", "Nuscentza"];
@@ -433,7 +433,7 @@ export default function ExpensesPage() {
                       <option key={vendor.id} value={vendor.id}>{vendor.name} — {vendor.category}</option>
                     ))}
                   </select>
-                  <p className="text-xs text-muted-foreground mt-1">Wajib untuk Bahan Baku, Packaging, dan Sewa Booth jika vendor sudah tercatat.</p>
+                  <p className="text-xs text-muted-foreground mt-1">Wajib untuk Bahan Baku, Packaging, Venue, Dokumentasi, dan Sewa Booth jika vendor sudah tercatat.</p>
                   {selectedVendor && (
                     <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
                       Vendor terpilih: {selectedVendor.name} • Kategori {selectedVendor.category || "Belum dicatat"} • Related party: {selectedVendor.relatedParty || "Belum dicatat"}.

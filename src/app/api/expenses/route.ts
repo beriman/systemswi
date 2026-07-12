@@ -108,7 +108,7 @@ export async function GET(req: NextRequest) {
     const needsProof = expenses.filter((e) => e.status === "Needs Proof" || (e.amount > 0 && !e.proofUrl));
     const withoutDivision = expenses.filter((e) => !e.division);
     const personalPaid = expenses.filter((e) => e.paymentMethod === "Personal Paid" || e.shareholderDebtFlag === "Yes");
-    const vendorRequiredCategories = new Set(["Bahan Baku", "Packaging", "Sewa Booth"]);
+    const vendorRequiredCategories = new Set(["Bahan Baku", "Packaging", "Venue", "Dokumentasi", "Sewa Booth"]);
     const vendorRequired = expenses.filter((e) => vendorRequiredCategories.has(e.category));
     const withoutVendor = vendorRequired.filter((e) => !e.vendorId && !e.vendorName);
     const vendorRelatedParty = expenses.filter((e) => e.vendorRelatedParty === "Yes");
@@ -188,7 +188,7 @@ export async function POST(req: NextRequest) {
     const submissionId = `EXP-${Date.now()}`;
 
     const category = body.category || "Lainnya";
-    const validCategories = ["Bahan Baku", "Iklan", "Sewa Booth", "Transport", "Packaging", "Lainnya"];
+    const validCategories = ["Bahan Baku", "Packaging", "Venue", "Dokumentasi", "Sewa Booth", "Iklan", "Transport", "Lainnya"];
     const finalCategory = validCategories.includes(category) ? category : "Lainnya";
     const amount = n(body.amount);
     const proofUrl = body.proofUrl || "";

@@ -144,7 +144,7 @@ export async function GET(req: NextRequest) {
     const approvedExpenses = expenses.filter((row) => text(row[8]).toLowerCase() === "approved");
     const approvedWithReviewer = approvedExpenses.filter((row) => Boolean(text(row[9])));
     const personalPaidExpenses = expenses.filter((row) => text(row[14]).toLowerCase() === "personal paid" || isYes(text(row[17])));
-    const vendorRequiredCategories = new Set(["Bahan Baku", "Packaging", "Sewa Booth"]);
+    const vendorRequiredCategories = new Set(["Bahan Baku", "Packaging", "Venue", "Dokumentasi", "Sewa Booth"]);
     const expenseVendorRequired = expenses.filter((row) => vendorRequiredCategories.has(text(row[4])));
     const expensesWithoutVendor = expenseVendorRequired.filter((row) => !text(row[18]) && !text(row[19]));
     const expenseRelatedPartyVendor = expenses.filter((row) => isYes(text(row[20])));

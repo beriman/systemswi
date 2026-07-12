@@ -27,6 +27,7 @@ export async function GET() {
         thresholdLow: "<= Rp500.000: PIC divisi boleh submit; tetap tercatat",
         thresholdDirector: "Rp500.001–Rp2.000.000: Direktur approve",
         thresholdBenchmark: "> Rp2.000.000: Direktur approve + minimal 2 pembanding vendor",
+        vendorRequiredCategories: "Bahan Baku, Packaging, Venue, Dokumentasi, Sewa Booth wajib Vendor_Register/Vendor Name sebelum approval expense",
         relatedParty: "Vendor related party: Direktur approve + catatan konflik kepentingan",
       },
     });
