@@ -23,6 +23,11 @@ type Supplier = {
   status: string;
   lastPo: string;
   notes: string;
+  governanceVendorId?: string;
+  relatedParty?: string;
+  benchmarkComplete?: boolean;
+  riskFlags?: string[];
+  approvalRequirement?: string;
 };
 
 type PurchaseOrder = {
@@ -97,8 +102,7 @@ const statusLabel: Record<string, string> = {
   failed: "Failed",
 };
 
-function SupplierForm({ suppliers, onSave, onCancel }: {
-  suppliers: Supplier[];
+function SupplierForm({ onSave, onCancel }: {
   onSave: (data: Record<string, string>) => void;
   onCancel: () => void;
 }) {
@@ -334,7 +338,7 @@ function ReceiptForm({ purchaseOrders, onSubmit, onCancel }: {
 export default function ProcurementPage() {
   const [data, setData] = useState<ProcurementData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [activeTab, setActiveTab] = useState("suppliers");
 
@@ -363,6 +367,7 @@ export default function ProcurementPage() {
   }, []);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- initial data load is intentionally started on mount.
     loadProcurement();
   }, [loadProcurement]);
 
@@ -601,7 +606,6 @@ export default function ProcurementPage() {
                     <DialogDescription>Form supplier — data langsung ditulis ke sheet Supplier_Master</DialogDescription>
                   </DialogHeader>
                   <SupplierForm
-                    suppliers={data?.suppliers || []}
                     onSave={handleSaveSupplier}
                     onCancel={() => { setShowSupplierDialog(false); setEditingSupplier(null); }}
                   />
@@ -618,14 +622,15 @@ export default function ProcurementPage() {
                     <TableHead>Lead Time</TableHead>
                     <TableHead>Rating</TableHead>
                     <TableHead>Status</TableHead>
+                    <TableHead>Vendor GCG</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {loading ? (
-                    <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">Loading...</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">Loading...</TableCell></TableRow>
                   ) : !data?.suppliers.length ? (
-                    <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">Belum ada supplier. Tambah supplier pertama.</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">Belum ada supplier. Tambah supplier pertama.</TableCell></TableRow>
                   ) : (
                     data?.suppliers.map((supplier) => (
                       <TableRow key={supplier.id}>
@@ -638,6 +643,19 @@ export default function ProcurementPage() {
                           <Badge variant={statusBadgeVariant[supplier.status] || "secondary"}>
                             {statusLabel[supplier.status] || supplier.status}
                           </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex flex-col gap-1">
+                            <Badge variant={supplier.riskFlags?.length ? "warning" : "success"}>
+                              {supplier.governanceVendorId ? "Terdaftar" : "Belum Register"}
+                            </Badge>
+                            <span className="text-xs text-muted-foreground">
+                              Related: {supplier.relatedParty || "Belum dicatat"} • Benchmark: {supplier.benchmarkComplete ? "Lengkap" : "Belum lengkap"}
+                            </span>
+                            {supplier.riskFlags?.length ? (
+                              <span className="text-xs text-amber-700">{supplier.riskFlags.join(", ")}</span>
+                            ) : null}
+                          </div>
                         </TableCell>
                         <TableCell className="text-right">
                           <Button variant="ghost" size="sm" onClick={() => { setEditingSupplier(supplier); setShowSupplierDialog(true); }}>
@@ -835,6 +853,9 @@ export default function ProcurementPage() {
                       <CardContent className="space-y-1 text-sm">
                         <p><span className="text-muted-foreground">Kontak:</span> {supplier.contact} / {supplier.channel}</p>
                         <p><span className="text-muted-foreground">Lead Time:</span> {supplier.leadTimeDays} hari • Rating: {"★".repeat(supplier.rating || 0)}</p>
+                        <p><span className="text-muted-foreground">Vendor_Register:</span> {supplier.governanceVendorId || "Belum dicatat"} • Related party: {supplier.relatedParty || "Belum dicatat"}</p>
+                        <p><span className="text-muted-foreground">Benchmark:</span> {supplier.benchmarkComplete ? "Lengkap" : "Belum lengkap"} • Approval: {supplier.approvalRequirement || "Belum dicatat"}</p>
+                        {supplier.riskFlags?.length ? <p className="text-amber-700">TARIF flags: {supplier.riskFlags.join(", ")}</p> : null}
                         {supplier.notes && <p className="text-muted-foreground">{supplier.notes}</p>}
                       </CardContent>
                     </Card>

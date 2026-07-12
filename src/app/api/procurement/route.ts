@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { googleWorkspaceDegradedSource, googleWorkspaceWriteBlockedSource, isGoogleWorkspaceAuthError } from "@/lib/api/google-workspace-error";
 import { appendRows, readRange, updateRow, deleteRow } from "@/lib/sheets/sheets-real";
 import { appendSwiMemoryLog } from "@/lib/google/audit-log";
+import { parseVendorRegisterRows, type VendorRegisterEntry } from "@/lib/governance/vendor-register";
 
 export const runtime = "nodejs";
 
@@ -17,6 +18,11 @@ type Supplier = {
   lastPo: string;
   notes: string;
   rowNumber: number;
+  governanceVendorId?: string;
+  relatedParty?: string;
+  benchmarkComplete?: boolean;
+  riskFlags?: string[];
+  approvalRequirement?: string;
 };
 
 type PurchaseOrder = {
@@ -97,6 +103,33 @@ function parseSuppliers(rows: string[][]): Supplier[] {
     notes: text(row[9]),
     rowNumber: index + 2,
   })).filter((supplier) => supplier.id && supplier.name);
+}
+
+function enrichSuppliersWithVendorGovernance(suppliers: Supplier[], vendorRows: string[][]): Supplier[] {
+  const vendors = parseVendorRegisterRows(vendorRows) as VendorRegisterEntry[];
+  const byId = new Map(vendors.map((vendor) => [vendor.id.toLowerCase(), vendor]));
+  const byName = new Map(vendors.map((vendor) => [vendor.name.toLowerCase(), vendor]));
+
+  return suppliers.map((supplier) => {
+    const vendor = byId.get(supplier.id.toLowerCase()) || byName.get(supplier.name.toLowerCase());
+    if (!vendor) {
+      return {
+        ...supplier,
+        relatedParty: "Belum dicatat",
+        benchmarkComplete: false,
+        riskFlags: ["NOT_IN_VENDOR_REGISTER"],
+        approvalRequirement: "Daftarkan di Vendor_Register sebelum transaksi besar atau related-party.",
+      };
+    }
+    return {
+      ...supplier,
+      governanceVendorId: vendor.id,
+      relatedParty: vendor.relatedParty,
+      benchmarkComplete: Boolean(vendor.priceBenchmark1 && vendor.priceBenchmark2),
+      riskFlags: vendor.riskFlags,
+      approvalRequirement: vendor.approvalRequirement,
+    };
+  });
 }
 
 function parsePurchaseOrders(rows: string[][]): PurchaseOrder[] {
@@ -195,20 +228,27 @@ async function appendProcurementAudit(entry: { action: string; target: string; s
 
 export async function GET() {
   try {
-    const [supplierRows, poRows, receiptRows] = await Promise.all([
+    const [supplierRows, poRows, receiptRows, vendorRows] = await Promise.all([
       readRange("Supplier_Master!A1:J1000"),
       readRange("Purchase_Orders!A1:N1000"),
       readRange("Goods_Receipts!A1:M1000"),
+      readRange("Vendor_Register!A1:L1000").catch(() => []),
     ]);
-    const suppliers = parseSuppliers(supplierRows);
+    const suppliers = enrichSuppliersWithVendorGovernance(parseSuppliers(supplierRows), vendorRows);
     const purchaseOrders = parsePurchaseOrders(poRows);
     const receipts = parseReceipts(receiptRows);
+    const vendorExceptions = suppliers.filter((supplier) => (supplier.riskFlags || []).length > 0);
     return NextResponse.json({
-      source: "Google Sheets: Supplier_Master + Purchase_Orders + Goods_Receipts",
+      source: "Google Sheets: Supplier_Master + Purchase_Orders + Goods_Receipts + Vendor_Register",
       suppliers,
       purchaseOrders,
       receipts,
-      summary: summarize(purchaseOrders, receipts),
+      summary: {
+        ...summarize(purchaseOrders, receipts),
+        vendorRegisterLinked: suppliers.filter((supplier) => supplier.governanceVendorId).length,
+        vendorGovernanceExceptions: vendorExceptions.length,
+        relatedPartySuppliers: suppliers.filter((supplier) => (supplier.relatedParty || "").toLowerCase() === "yes").length,
+      },
     });
   } catch (error) {
     if (isGoogleWorkspaceAuthError(error)) {
