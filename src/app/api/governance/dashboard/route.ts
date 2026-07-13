@@ -4,7 +4,7 @@ import { readRange, readSheet } from "@/lib/sheets/sheets-real";
 
 export const runtime = "nodejs";
 
-const SOURCE = "Google Sheets: Expense_Submissions + Shareholder_Ledger + Compliance_Register + Vendor_Register + Governance_Audit_Log + Monthly_GCG_Report + Events + Event_Budget + Purchase_Orders";
+const SOURCE = "Google Sheets: Expense_Submissions + Shareholder_Ledger + Compliance_Register + Vendor_Register + Governance_Audit_Log + Monthly_GCG_Report + Events + Event_Budget + Event_Tenants + Event_Sponsors + Event_Media + Purchase_Orders";
 
 type SourceStatus = "live" | "degraded";
 type ScoreKey = "transparency" | "accountability" | "responsibility" | "independency" | "fairness";
@@ -51,6 +51,14 @@ function isClosed(status: string): boolean {
 
 function isYes(value: string): boolean {
   return ["yes", "ya", "true", "1"].includes(value.toLowerCase());
+}
+
+function isPaidStatus(value: string): boolean {
+  return ["paid", "lunas", "settled", "completed", "received"].includes(value.toLowerCase().trim());
+}
+
+function isCancelledStatus(value: string): boolean {
+  return ["cancelled", "canceled", "rejected", "void"].includes(value.toLowerCase().trim());
 }
 
 function isMissingCoa(value: string): boolean {
@@ -123,7 +131,7 @@ async function readRows(): Promise<{ rows: Record<string, string[][]>; sourceSta
     return [];
   };
 
-  const [expenses, shareholderLedger, complianceRegister, vendorRegister, governanceAuditLog, monthlyGcgReport, tasks, events, eventBudget, purchaseOrders] = await Promise.all([
+  const [expenses, shareholderLedger, complianceRegister, vendorRegister, governanceAuditLog, monthlyGcgReport, tasks, events, eventBudget, eventTenants, eventSponsors, eventMedia, purchaseOrders] = await Promise.all([
     readRange("Expense_Submissions!A1:V1000").catch(emptyOnAuthError),
     readSheet("ShareholderLedger").catch(emptyOnAuthError),
     readSheet("ComplianceRegister").catch(emptyOnAuthError),
@@ -133,12 +141,15 @@ async function readRows(): Promise<{ rows: Record<string, string[][]>; sourceSta
     readSheet("Tasks").catch(emptyOnAuthError),
     readRange("Events!A1:V1000").catch(emptyOnAuthError),
     readRange("Event_Budget!A1:H1000").catch(emptyOnAuthError),
+    readRange("Event_Tenants!A1:O1000").catch(emptyOnAuthError),
+    readRange("Event_Sponsors!A1:O1000").catch(emptyOnAuthError),
+    readRange("Event_Media!A1:K1000").catch(emptyOnAuthError),
     readRange("Purchase_Orders!A1:N1000").catch(emptyOnAuthError),
   ]);
 
   const degraded = googleAuthError ? googleWorkspaceDegradedSource(SOURCE, googleAuthError) : null;
   return {
-    rows: { expenses, shareholderLedger, complianceRegister, vendorRegister, governanceAuditLog, monthlyGcgReport, tasks, events, eventBudget, purchaseOrders },
+    rows: { expenses, shareholderLedger, complianceRegister, vendorRegister, governanceAuditLog, monthlyGcgReport, tasks, events, eventBudget, eventTenants, eventSponsors, eventMedia, purchaseOrders },
     sourceStatus: degraded ? "degraded" : "live",
     warning: degraded?.warning,
     details: degraded?.details,
@@ -157,6 +168,9 @@ export async function GET(req: NextRequest) {
     const tasks = rows.tasks.slice(1).filter((row) => text(row[0]));
     const events = rows.events.slice(1).filter((row) => text(row[0]));
     const eventBudget = rows.eventBudget.slice(1).filter((row) => text(row[0]));
+    const eventTenants = rows.eventTenants.slice(1).filter((row) => text(row[0]));
+    const eventSponsors = rows.eventSponsors.slice(1).filter((row) => text(row[0]));
+    const eventMedia = rows.eventMedia.slice(1).filter((row) => text(row[0]));
     const purchaseOrders = rows.purchaseOrders.slice(1).filter((row) => text(row[0]));
 
     const expenseWithProof = expenses.filter((row) => amount(row[6]) <= 0 || Boolean(text(row[7])));
@@ -224,6 +238,25 @@ export async function GET(req: NextRequest) {
     const eventBudgetOverActualWithoutNotes = eventBudgetOverActual.filter((row) => !text(row[6]));
     const eventsOverBudget = events.filter((row) => amount(row[13]) > amount(row[12]) && amount(row[12]) > 0);
     const eventsOverBudgetWithoutNotes = eventsOverBudget.filter((row) => !text(row[19]));
+    const tenantReceivableRows = eventTenants.filter((row) => {
+      if (isPaidStatus(text(row[10])) || isCancelledStatus(text(row[10]))) return false;
+      return Math.max(amount(row[9]) - amount(row[11]), 0) > 0;
+    });
+    const sponsorReceivableRows = eventSponsors.filter((row) => {
+      if (isPaidStatus(text(row[11])) || isCancelledStatus(text(row[11]))) return false;
+      return amount(row[7]) + amount(row[10]) > 0;
+    });
+    const tenantReceivableAmount = tenantReceivableRows.reduce((sum, row) => sum + Math.max(amount(row[9]) - amount(row[11]), 0), 0);
+    const sponsorReceivableAmount = sponsorReceivableRows.reduce((sum, row) => sum + amount(row[7]) + amount(row[10]), 0);
+    const mediaEventIds = new Set(eventMedia.map((row) => text(row[1])).filter(Boolean));
+    const todayIso = new Date().toISOString().slice(0, 10);
+    const closeoutCandidateEvents = events.filter((row) => {
+      const status = text(row[4]).toLowerCase();
+      const endDate = text(row[9]).slice(0, 10);
+      return ["completed", "complete", "closed", "done", "selesai"].includes(status)
+        || (Boolean(endDate) && endDate < todayIso && !["draft", "cancelled", "canceled"].includes(status));
+    });
+    const eventsMissingMedia = closeoutCandidateEvents.filter((row) => !mediaEventIds.has(text(row[0])));
     const openPurchaseOrders = purchaseOrders.filter((row) => ["draft", "ordered", "partial"].includes(text(row[10]).toLowerCase()));
     const overduePurchaseOrders = openPurchaseOrders.filter((row) => isOverdue(text(row[11])));
     const highValueOverduePurchaseOrders = overduePurchaseOrders.filter((row) => amount(row[9]) > 2000000);
@@ -343,6 +376,13 @@ export async function GET(req: NextRequest) {
           budgetRows: eventBudget.length,
           overBudgetRows: eventBudgetOverActual.length,
           overBudgetWithoutNotes: eventBudgetOverActualWithoutNotes.length + eventsOverBudgetWithoutNotes.length,
+          tenantReceivableCount: tenantReceivableRows.length,
+          tenantReceivableAmount,
+          sponsorReceivableCount: sponsorReceivableRows.length,
+          sponsorReceivableAmount,
+          mediaRows: eventMedia.length,
+          closeoutCandidateEvents: closeoutCandidateEvents.length,
+          missingMediaCount: eventsMissingMedia.length,
         },
       },
       exceptions: [
@@ -370,6 +410,9 @@ export async function GET(req: NextRequest) {
         ...shareholderDebtOver30.slice(0, 10).filter((item) => !shareholderDebtOver60.some((older) => text(older.row[0]) === text(item.row[0]))).map((item) => ({ type: "SHAREHOLDER_DEBT_AGING_OVER_30", severity: "medium", entityId: text(item.row[0]), description: `${item.description} — ${item.ageDays} hari belum diselesaikan`, amount: item.balance, owner: item.shareholder })),
         ...eventsOverBudgetWithoutNotes.slice(0, 10).map((row) => ({ type: "EVENT_OVER_BUDGET_NO_NOTES", severity: "high", entityId: text(row[0]), description: text(row[1]) || "Event actual > budget tanpa catatan closeout", amount: amount(row[13]) - amount(row[12]), owner: text(row[6]) || "Belum dicatat" })),
         ...eventBudgetOverActualWithoutNotes.slice(0, 10).map((row) => ({ type: "EVENT_BUDGET_ROW_OVER_ACTUAL_NO_NOTES", severity: "medium", entityId: text(row[1]) || text(row[0]), description: text(row[3]) || text(row[2]) || "Budget row actual > planned tanpa notes", amount: amount(row[5]) - amount(row[4]), owner: "Event PIC" })),
+        ...tenantReceivableRows.slice(0, 10).map((row) => ({ type: "EVENT_TENANT_RECEIVABLE", severity: Math.max(amount(row[9]) - amount(row[11]), 0) > 2000000 ? "high" : "medium", entityId: text(row[1]) || text(row[0]), description: `${text(row[2]) || "Tenant"} belum lunas`, amount: Math.max(amount(row[9]) - amount(row[11]), 0), owner: text(row[3]) || "Event PIC" })),
+        ...sponsorReceivableRows.slice(0, 10).map((row) => ({ type: "EVENT_SPONSOR_RECEIVABLE", severity: amount(row[7]) + amount(row[10]) > 2000000 ? "high" : "medium", entityId: text(row[1]) || text(row[0]), description: `${text(row[2]) || "Sponsor"} belum lunas/follow-up`, amount: amount(row[7]) + amount(row[10]), owner: text(row[3]) || "Event PIC" })),
+        ...eventsMissingMedia.slice(0, 10).map((row) => ({ type: "EVENT_CLOSEOUT_MEDIA_MISSING", severity: "medium", entityId: text(row[0]), description: `${text(row[1]) || "Event"} perlu dokumentasi Event_Media untuk closeout`, amount: 0, owner: text(row[6]) || "Event PIC" })),
         ...(!hasMonthlyGcgReport ? [{ type: "MONTHLY_GCG_REPORT_NOT_RECORDED", severity: "medium", entityId: "Monthly_GCG_Report", description: "Belum ada log laporan bulanan GCG/TARIF untuk pemegang saham", amount: 0, owner: "Direksi/Finance" }] : []),
       ],
       recentAuditTrail,
@@ -379,7 +422,7 @@ export async function GET(req: NextRequest) {
         overdueCompliance.length ? "Tindaklanjuti compliance overdue dan upload bukti setelah selesai." : dueSoonCompliance.length ? "Follow-up compliance due soon (H-7/H-3/H-1) dan siapkan proof URL sebelum status submitted/paid." : completedComplianceMissingProof.length ? "Lengkapi proof URL untuk compliance yang sudah marked submitted/paid/complete." : "Pantau compliance due soon dan jangan menandai submitted tanpa bukti.",
         vendorExceptions.length ? "Lengkapi benchmark vendor dan deklarasi related-party sebelum transaksi besar." : "Vendor register tidak menunjukkan exception dari data terbaca.",
         overduePurchaseOrders.length ? "Review PO/vendor payable yang melewati expected date; update status received/cancelled atau catat alasan keterlambatan." : "Tidak ada open PO melewati expected date dari data Purchase_Orders yang terbaca.",
-        eventBudgetOverActualWithoutNotes.length + eventsOverBudgetWithoutNotes.length ? "Lengkapi catatan closeout untuk event/budget row yang actual-nya melewati budget." : "Event budget tidak menunjukkan over-budget tanpa notes dari data terbaca.",
+        eventBudgetOverActualWithoutNotes.length + eventsOverBudgetWithoutNotes.length ? "Lengkapi catatan closeout untuk event/budget row yang actual-nya melewati budget." : tenantReceivableRows.length + sponsorReceivableRows.length ? "Follow-up receivable tenant/sponsor sebelum event closeout dinyatakan selesai." : eventsMissingMedia.length ? "Lengkapi Event_Media untuk event yang sudah selesai/berakhir agar closeout siap dibagikan." : "Event closeout tidak menunjukkan exception dari data terbaca.",
         expensesWithoutVendor.length ? "Hubungkan expense Bahan Baku/Packaging/Sewa Booth ke Vendor_Register atau isi vendor name." : "Expense kategori vendor sudah punya vendor link atau belum ada data.",
         personalPaidNotInLedger.length ? "Cocokkan approved Personal Paid expense ke Shareholder_Ledger." : "Approved personal-paid expense sudah cocok atau belum ada data personal-paid approved.",
         shareholderDebtOver60.length ? "Review hutang pemegang saham berumur >60 hari; putuskan reimburse, konversi modal, atau jadwal pembayaran." : shareholderDebtOver30.length ? "Review aging hutang pemegang saham >30 hari agar fairness pemegang saham tetap jelas." : shareholderDebtUnaged.length ? "Lengkapi tanggal di Shareholder_Ledger agar aging hutang pemegang saham bisa dihitung." : "Aging hutang pemegang saham tidak menunjukkan exception dari data terbaca.",

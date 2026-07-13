@@ -74,7 +74,19 @@ type DashboardPayload = {
     vendor?: { total: number; relatedParty: number; exceptions: number; benchmarkComplete: number; openPo?: number; overduePo?: number; overduePoValue?: number };
     audit?: { governanceAuditRows: number };
     monthlyGcgReport?: { total: number; latestPeriod: string; latestGeneratedAt: string; latestStatus: string };
-    event?: { events: number; budgetRows: number; overBudgetRows: number; overBudgetWithoutNotes: number };
+    event?: {
+      events: number;
+      budgetRows: number;
+      overBudgetRows: number;
+      overBudgetWithoutNotes: number;
+      tenantReceivableCount?: number;
+      tenantReceivableAmount?: number;
+      sponsorReceivableCount?: number;
+      sponsorReceivableAmount?: number;
+      mediaRows?: number;
+      closeoutCandidateEvents?: number;
+      missingMediaCount?: number;
+    };
   };
   exceptions?: GovernanceException[];
   recentAuditTrail?: AuditTrailItem[];
@@ -329,6 +341,10 @@ export default function GovernancePage() {
               <div className="flex justify-between"><span>Budget rows</span><b>{event?.budgetRows || 0}</b></div>
               <div className="flex justify-between"><span>Over-budget rows</span><b>{event?.overBudgetRows || 0}</b></div>
               <div className="flex justify-between text-red-600"><span>Over-budget no notes</span><b>{event?.overBudgetWithoutNotes || 0}</b></div>
+              <div className="flex justify-between"><span>Tenant receivable</span><b>{event?.tenantReceivableCount || 0} • {rupiah(event?.tenantReceivableAmount)}</b></div>
+              <div className="flex justify-between"><span>Sponsor receivable</span><b>{event?.sponsorReceivableCount || 0} • {rupiah(event?.sponsorReceivableAmount)}</b></div>
+              <div className="flex justify-between"><span>Media rows</span><b>{event?.mediaRows || 0}</b></div>
+              <div className="flex justify-between text-amber-600"><span>Closeout missing media</span><b>{event?.missingMediaCount || 0}/{event?.closeoutCandidateEvents || 0}</b></div>
             </CardContent>
           </Card>
         </div>
