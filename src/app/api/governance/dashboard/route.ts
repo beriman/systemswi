@@ -60,6 +60,14 @@ function isOverdue(dueDate: string): boolean {
   return Number.isFinite(due) && due < today;
 }
 
+function daysUntilDue(dueDate: string): number | null {
+  if (!dueDate) return null;
+  const due = new Date(`${dueDate}T00:00:00Z`).getTime();
+  const today = new Date(`${new Date().toISOString().slice(0, 10)}T00:00:00Z`).getTime();
+  if (!Number.isFinite(due)) return null;
+  return Math.ceil((due - today) / 86400000);
+}
+
 function csvCell(value: unknown): string {
   const textValue = String(value ?? "");
   return /[",\n]/.test(textValue) ? `"${textValue.replace(/"/g, '""')}"` : textValue;
@@ -157,9 +165,8 @@ export async function GET(req: NextRequest) {
     const dueSoonCompliance = openCompliance.filter((row) => {
       const due = text(row[4]);
       if (!due || isOverdue(due)) return false;
-      const dueTime = new Date(`${due}T00:00:00Z`).getTime();
-      const today = new Date(`${new Date().toISOString().slice(0, 10)}T00:00:00Z`).getTime();
-      return Number.isFinite(dueTime) && Math.ceil((dueTime - today) / 86400000) <= 7;
+      const days = daysUntilDue(due);
+      return days !== null && days <= 7;
     });
 
     const vendorWithBenchmark = vendorRegister.filter((row) => Boolean(text(row[6])) && Boolean(text(row[7])) && Boolean(text(row[8])));
@@ -291,6 +298,17 @@ export async function GET(req: NextRequest) {
         ...expenseNeedsProof.slice(0, 10).map((row) => ({ type: "EXPENSE_NEEDS_PROOF", severity: "high", entityId: text(row[0]), description: text(row[5]) || "Expense tanpa bukti", amount: amount(row[6]), owner: text(row[2]) || "Belum dicatat" })),
         ...expenseLargeWithoutApproval.slice(0, 10).map((row) => ({ type: "LARGE_EXPENSE_PENDING_APPROVAL", severity: "high", entityId: text(row[0]), description: text(row[5]) || "Expense besar belum closed approval", amount: amount(row[6]), owner: text(row[2]) || "Belum dicatat" })),
         ...overdueCompliance.slice(0, 10).map((row) => ({ type: "COMPLIANCE_OVERDUE", severity: "high", entityId: text(row[0]), description: text(row[2]) || "Compliance overdue", amount: 0, owner: text(row[6]) || "Belum dicatat" })),
+        ...dueSoonCompliance.slice(0, 10).map((row) => {
+          const days = daysUntilDue(text(row[4]));
+          return {
+            type: "COMPLIANCE_DUE_SOON",
+            severity: days !== null && days <= 3 ? "high" : "medium",
+            entityId: text(row[0]),
+            description: `${text(row[2]) || "Compliance due soon"} — due ${text(row[4]) || "TBA"}${days !== null ? ` (H-${days})` : ""}`,
+            amount: 0,
+            owner: text(row[6]) || "Belum dicatat",
+          };
+        }),
         ...completedComplianceMissingProof.slice(0, 10).map((row) => ({ type: "COMPLIANCE_COMPLETED_WITHOUT_PROOF", severity: "medium", entityId: text(row[0]), description: text(row[2]) || "Compliance selesai tanpa proof URL", amount: 0, owner: text(row[6]) || "Belum dicatat" })),
         ...vendorExceptions.slice(0, 10).map((row) => ({ type: "VENDOR_GOVERNANCE_EXCEPTION", severity: isYes(text(row[4])) ? "high" : "medium", entityId: text(row[0]), description: text(row[1]) || "Vendor perlu review benchmark/COI", amount: 0, owner: text(row[3]) || "Belum dicatat" })),
         ...expensesWithoutVendor.slice(0, 10).map((row) => ({ type: "EXPENSE_VENDOR_NOT_LINKED", severity: amount(row[6]) > 2000000 ? "high" : "medium", entityId: text(row[0]), description: text(row[5]) || "Expense kategori vendor belum dikaitkan ke Vendor_Register", amount: amount(row[6]), owner: text(row[2]) || "Belum dicatat" })),
@@ -303,7 +321,7 @@ export async function GET(req: NextRequest) {
       nextActions: [
         expenseNeedsProof.length ? "Lengkapi proof URL untuk expense berstatus Needs Proof/tanpa bukti." : "Pertahankan disiplin bukti expense.",
         expensePending.length ? "Review dan approve/reject expense pending; semua keputusan harus masuk Governance_Audit_Log." : "Tidak ada expense pending dari data yang terbaca.",
-        overdueCompliance.length ? "Tindaklanjuti compliance overdue dan upload bukti setelah selesai." : completedComplianceMissingProof.length ? "Lengkapi proof URL untuk compliance yang sudah marked submitted/paid/complete." : "Pantau compliance due soon dan jangan menandai submitted tanpa bukti.",
+        overdueCompliance.length ? "Tindaklanjuti compliance overdue dan upload bukti setelah selesai." : dueSoonCompliance.length ? "Follow-up compliance due soon (H-7/H-3/H-1) dan siapkan proof URL sebelum status submitted/paid." : completedComplianceMissingProof.length ? "Lengkapi proof URL untuk compliance yang sudah marked submitted/paid/complete." : "Pantau compliance due soon dan jangan menandai submitted tanpa bukti.",
         vendorExceptions.length ? "Lengkapi benchmark vendor dan deklarasi related-party sebelum transaksi besar." : "Vendor register tidak menunjukkan exception dari data terbaca.",
         eventBudgetOverActualWithoutNotes.length + eventsOverBudgetWithoutNotes.length ? "Lengkapi catatan closeout untuk event/budget row yang actual-nya melewati budget." : "Event budget tidak menunjukkan over-budget tanpa notes dari data terbaca.",
         expensesWithoutVendor.length ? "Hubungkan expense Bahan Baku/Packaging/Sewa Booth ke Vendor_Register atau isi vendor name." : "Expense kategori vendor sudah punya vendor link atau belum ada data.",
