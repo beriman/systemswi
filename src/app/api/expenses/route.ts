@@ -8,6 +8,7 @@ import {
   EXPENSE_SHEETS,
 } from "@/lib/expense/sheets";
 import { readSheet } from "@/lib/sheets/sheets-real";
+import { listVendorRegister } from "@/lib/governance/vendor-register";
 import { googleWorkspaceDegradedSource, isGoogleWorkspaceAuthError } from "@/lib/api/google-workspace-error";
 
 const EXPENSES_SOURCE = "Google Sheets: Expense_Submissions";
@@ -220,6 +221,20 @@ export async function POST(req: NextRequest) {
     const shareholderDebtFlag = paymentMethod === "Personal Paid" || body.shareholderDebtFlag === true || body.shareholderDebtFlag === "Yes" ? "Yes" : "No";
     const proofRequired = amount > 0 ? "Yes" : "No";
     const status = proofRequired === "Yes" && !proofUrl ? "Needs Proof" : "Pending";
+    const vendorId = String(body.vendorId || "").trim();
+    let vendorName = String(body.vendorName || "").trim();
+    let vendorRelatedParty = body.vendorRelatedParty === true || body.vendorRelatedParty === "Yes" ? "Yes" : "No";
+    if (vendorId) {
+      try {
+        const registeredVendor = (await listVendorRegister()).find((vendor) => vendor.id === vendorId);
+        if (registeredVendor) {
+          vendorName = vendorName || registeredVendor.name;
+          vendorRelatedParty = registeredVendor.relatedParty === "Yes" ? "Yes" : vendorRelatedParty;
+        }
+      } catch {
+        // Keep submission non-blocking; approval endpoint will verify Vendor_Register before approving.
+      }
+    }
 
     const row = [
       submissionId,
@@ -240,9 +255,9 @@ export async function POST(req: NextRequest) {
       body.relatedBrand || "",
       proofRequired,
       shareholderDebtFlag,
-      body.vendorId || "",
-      body.vendorName || "",
-      body.vendorRelatedParty === true || body.vendorRelatedParty === "Yes" ? "Yes" : "No",
+      vendorId,
+      vendorName,
+      vendorRelatedParty,
       body.vendorBenchmarkNotes || "",
     ];
 

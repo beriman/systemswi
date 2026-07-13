@@ -10,6 +10,7 @@ import {
 import { appendRows } from "@/lib/sheets/sheets-real";
 import { logGovernanceActionSafe } from "@/lib/governance/audit";
 import { appendShareholderLedgerEntryOnce } from "@/lib/shareholder/ledger";
+import { listVendorRegister } from "@/lib/governance/vendor-register";
 import { googleWorkspaceDegradedSource, isGoogleWorkspaceAuthError } from "@/lib/api/google-workspace-error";
 
 const EXPENSES_SOURCE = "Google Sheets: Expense_Submissions";
@@ -61,7 +62,7 @@ function parseExpense(row: string[]) {
   };
 }
 
-function approvalBlockers(row: string[]): string[] {
+async function approvalBlockers(row: string[]): Promise<string[]> {
   const blockers: string[] = [];
   const amount = n(row[6]);
   const category = s(row, 4);
@@ -82,6 +83,30 @@ function approvalBlockers(row: string[]): string[] {
   if (vendorRequiredCategories.has(category) && !vendorId && !vendorName) blockers.push("Kategori vendor (Bahan Baku/Packaging/Venue/Dokumentasi/Sewa Booth) wajib punya Vendor ID atau Vendor Name sebelum approve.");
   if (amount > 2_000_000 && vendorRequiredCategories.has(category) && !vendorBenchmarkNotes) blockers.push("Expense vendor > Rp2.000.000 wajib mencatat minimal 2 benchmark/alasan pemilihan sebelum approve.");
   if (vendorRelatedParty === "Yes" && !vendorBenchmarkNotes) blockers.push("Vendor related-party wajib punya catatan konflik kepentingan dan alasan objektif sebelum approve.");
+
+  if (vendorId) {
+    try {
+      const vendors = await listVendorRegister();
+      const vendor = vendors.find((entry) => entry.id === vendorId);
+      if (!vendor) {
+        blockers.push("Vendor ID tidak ditemukan di Vendor_Register; gunakan vendor terdaftar atau isi nama vendor manual sebelum approve.");
+      } else {
+        const registeredRelatedParty = vendor.relatedParty === "Yes";
+        const missingRegisteredBenchmarks = !vendor.priceBenchmark1 || !vendor.priceBenchmark2;
+        const missingRegisteredReason = !vendor.selectedReason;
+        if (amount > 2_000_000 && vendorRequiredCategories.has(category) && missingRegisteredBenchmarks && !vendorBenchmarkNotes) {
+          blockers.push("Vendor_Register untuk transaksi > Rp2.000.000 belum punya 2 benchmark; isi benchmark di Vendor_Register atau Benchmark / COI Notes expense.");
+        }
+        if (registeredRelatedParty && (!vendor.relationshipDetail || missingRegisteredReason) && !vendorBenchmarkNotes) {
+          blockers.push("Vendor_Register menandai related-party tetapi detail relasi/alasan objektif belum lengkap; lengkapi register atau Benchmark / COI Notes sebelum approve.");
+        }
+      }
+    } catch {
+      if (vendorRequiredCategories.has(category)) {
+        blockers.push("Vendor_Register belum bisa diverifikasi dari Google Sheets; approval kategori vendor ditahan agar tidak melewati kontrol conflict-of-interest.");
+      }
+    }
+  }
 
   return blockers;
 }
@@ -138,7 +163,7 @@ export async function PUT(
     const previousStatus = s(existing, 8) || "Pending";
 
     if (status === "Approved") {
-      const blockers = approvalBlockers(existing);
+      const blockers = await approvalBlockers(existing);
       if (blockers.length) {
         return NextResponse.json({
           error: "Expense belum memenuhi aturan GCG untuk approval.",
