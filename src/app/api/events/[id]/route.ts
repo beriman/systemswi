@@ -111,7 +111,7 @@ export async function GET(
       status: r[8] || "Belum dicatat",
       division: r[12] || "Belum dicatat",
       paymentMethod: r[14] || "Belum dicatat",
-      shareholderDebtFlag: String(r[17] || "").toLowerCase() === "true",
+      shareholderDebtFlag: ["yes", "ya", "true", "1"].includes(String(r[17] || "").toLowerCase().trim()),
     }));
 
     const plannedTotal = eventBudget.reduce((sum, item) => sum + item.plannedAmount, 0) || event.budget;
