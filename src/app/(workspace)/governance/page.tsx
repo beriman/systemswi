@@ -60,7 +60,16 @@ type DashboardPayload = {
       personalPaidAmount: number;
       personalPaidNotInLedgerCount: number;
     };
-    shareholder?: { ledgerRows: number; outstandingDebt: number };
+    shareholder?: {
+      ledgerRows: number;
+      outstandingDebt: number;
+      outstandingRows?: number;
+      over30DaysCount?: number;
+      over30DaysAmount?: number;
+      over60DaysCount?: number;
+      over60DaysAmount?: number;
+      unagedCount?: number;
+    };
     compliance?: { total: number; open: number; overdue: number; dueSoon: number; completedWithoutProof: number };
     vendor?: { total: number; relatedParty: number; exceptions: number; benchmarkComplete: number; openPo?: number; overduePo?: number; overduePoValue?: number };
     audit?: { governanceAuditRows: number };
@@ -220,7 +229,7 @@ export default function GovernancePage() {
           {loading && Array.from({ length: 5 }).map((_, index) => <Card key={index}><CardHeader><Skeleton className="h-4 w-24" /></CardHeader><CardContent><Skeleton className="h-12" /></CardContent></Card>)}
         </div>
 
-        <div className="grid gap-4 lg:grid-cols-4">
+        <div className="grid gap-4 lg:grid-cols-5">
           <Card>
             <CardHeader>
               <CardTitle>Responsibility & Compliance</CardTitle>
@@ -259,6 +268,19 @@ export default function GovernancePage() {
               <div className="flex justify-between"><span>Without division/COA</span><b>{expenses?.withoutDivisionCount || 0}</b></div>
               <div className="flex justify-between text-red-600"><span>Approved missing division/COA</span><b>{expenses?.approvedWithoutDivisionOrCoaCount || 0}</b></div>
               <div className="flex justify-between"><span>Personal paid not in ledger</span><b>{expenses?.personalPaidNotInLedgerCount || 0}</b></div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle>Shareholder Debt Aging</CardTitle>
+              <CardDescription>Fairness: umur hutang pemegang saham dari Shareholder_Ledger.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2 text-sm">
+              <div className="flex justify-between"><span>Outstanding rows</span><b>{shareholder?.outstandingRows || 0}</b></div>
+              <div className="flex justify-between"><span>Total outstanding</span><b>{rupiah(shareholder?.outstandingDebt)}</b></div>
+              <div className="flex justify-between text-amber-600"><span>&gt;30 hari</span><b>{shareholder?.over30DaysCount || 0} • {rupiah(shareholder?.over30DaysAmount)}</b></div>
+              <div className="flex justify-between text-red-600"><span>&gt;60 hari</span><b>{shareholder?.over60DaysCount || 0} • {rupiah(shareholder?.over60DaysAmount)}</b></div>
+              <div className="flex justify-between"><span>Tanggal belum tercatat</span><b>{shareholder?.unagedCount || 0}</b></div>
             </CardContent>
           </Card>
           <Card>

@@ -73,6 +73,14 @@ function daysUntilDue(dueDate: string): number | null {
   return Math.ceil((due - today) / 86400000);
 }
 
+function daysSince(dateValue: string): number | null {
+  if (!dateValue) return null;
+  const date = new Date(`${dateValue.slice(0, 10)}T00:00:00Z`).getTime();
+  const today = new Date(`${new Date().toISOString().slice(0, 10)}T00:00:00Z`).getTime();
+  if (!Number.isFinite(date)) return null;
+  return Math.max(0, Math.floor((today - date) / 86400000));
+}
+
 function csvCell(value: unknown): string {
   const textValue = String(value ?? "");
   return /[",\n]/.test(textValue) ? `"${textValue.replace(/"/g, '""')}"` : textValue;
@@ -189,6 +197,22 @@ export async function GET(req: NextRequest) {
       if (["rejected", "cancelled"].includes(status)) return sum;
       return sum + amount(row[6]) - amount(row[7]);
     }, 0);
+    const shareholderOutstandingRows = shareholderLedger
+      .map((row) => {
+        const balance = amount(row[6]) - amount(row[7]);
+        const ageDays = daysSince(text(row[1]));
+        return {
+          row,
+          balance,
+          ageDays,
+          shareholder: text(row[2]) || "Belum dicatat",
+          description: text(row[5]) || text(row[3]) || "Hutang pemegang saham",
+        };
+      })
+      .filter((item) => item.balance > 0 && !["rejected", "cancelled"].includes(text(item.row[9]).toLowerCase()));
+    const shareholderDebtOver30 = shareholderOutstandingRows.filter((item) => item.ageDays !== null && item.ageDays > 30);
+    const shareholderDebtOver60 = shareholderOutstandingRows.filter((item) => item.ageDays !== null && item.ageDays > 60);
+    const shareholderDebtUnaged = shareholderOutstandingRows.filter((item) => item.ageDays === null);
     const shareholderLedgerSourceKeys = new Set(shareholderLedger.map((row) => text(row[12]) + " " + text(row[5])));
     const personalPaidNotInLedger = approvedPersonalPaidExpenses.filter((expense) => {
       const id = text(expense[0]);
@@ -282,6 +306,12 @@ export async function GET(req: NextRequest) {
         shareholder: {
           ledgerRows: shareholderLedger.length,
           outstandingDebt: shareholderDebtOutstanding,
+          outstandingRows: shareholderOutstandingRows.length,
+          over30DaysCount: shareholderDebtOver30.length,
+          over30DaysAmount: shareholderDebtOver30.reduce((sum, item) => sum + item.balance, 0),
+          over60DaysCount: shareholderDebtOver60.length,
+          over60DaysAmount: shareholderDebtOver60.reduce((sum, item) => sum + item.balance, 0),
+          unagedCount: shareholderDebtUnaged.length,
         },
         compliance: {
           total: complianceRegister.length,
@@ -336,6 +366,8 @@ export async function GET(req: NextRequest) {
         ...overduePurchaseOrders.slice(0, 10).map((row) => ({ type: "VENDOR_PO_OVERDUE", severity: highValueOverduePurchaseOrders.some((po) => text(po[0]) === text(row[0])) ? "high" : "medium", entityId: text(row[0]), description: `${text(row[3]) || "Vendor"} — ${text(row[5]) || "PO open melewati expected date"} due ${text(row[11]) || "TBA"}`, amount: amount(row[9]), owner: text(row[3]) || "Belum dicatat" })),
         ...expensesWithoutVendor.slice(0, 10).map((row) => ({ type: "EXPENSE_VENDOR_NOT_LINKED", severity: amount(row[6]) > 2000000 ? "high" : "medium", entityId: text(row[0]), description: text(row[5]) || "Expense kategori vendor belum dikaitkan ke Vendor_Register", amount: amount(row[6]), owner: text(row[2]) || "Belum dicatat" })),
         ...personalPaidNotInLedger.slice(0, 10).map((row) => ({ type: "PERSONAL_PAID_NOT_IN_LEDGER", severity: "medium", entityId: text(row[0]), description: text(row[5]) || "Personal paid belum cocok ke Shareholder_Ledger", amount: amount(row[6]), owner: text(row[2]) || "Belum dicatat" })),
+        ...shareholderDebtOver60.slice(0, 10).map((item) => ({ type: "SHAREHOLDER_DEBT_AGING_OVER_60", severity: "high", entityId: text(item.row[0]), description: `${item.description} — ${item.ageDays} hari belum diselesaikan`, amount: item.balance, owner: item.shareholder })),
+        ...shareholderDebtOver30.slice(0, 10).filter((item) => !shareholderDebtOver60.some((older) => text(older.row[0]) === text(item.row[0]))).map((item) => ({ type: "SHAREHOLDER_DEBT_AGING_OVER_30", severity: "medium", entityId: text(item.row[0]), description: `${item.description} — ${item.ageDays} hari belum diselesaikan`, amount: item.balance, owner: item.shareholder })),
         ...eventsOverBudgetWithoutNotes.slice(0, 10).map((row) => ({ type: "EVENT_OVER_BUDGET_NO_NOTES", severity: "high", entityId: text(row[0]), description: text(row[1]) || "Event actual > budget tanpa catatan closeout", amount: amount(row[13]) - amount(row[12]), owner: text(row[6]) || "Belum dicatat" })),
         ...eventBudgetOverActualWithoutNotes.slice(0, 10).map((row) => ({ type: "EVENT_BUDGET_ROW_OVER_ACTUAL_NO_NOTES", severity: "medium", entityId: text(row[1]) || text(row[0]), description: text(row[3]) || text(row[2]) || "Budget row actual > planned tanpa notes", amount: amount(row[5]) - amount(row[4]), owner: "Event PIC" })),
         ...(!hasMonthlyGcgReport ? [{ type: "MONTHLY_GCG_REPORT_NOT_RECORDED", severity: "medium", entityId: "Monthly_GCG_Report", description: "Belum ada log laporan bulanan GCG/TARIF untuk pemegang saham", amount: 0, owner: "Direksi/Finance" }] : []),
@@ -350,6 +382,7 @@ export async function GET(req: NextRequest) {
         eventBudgetOverActualWithoutNotes.length + eventsOverBudgetWithoutNotes.length ? "Lengkapi catatan closeout untuk event/budget row yang actual-nya melewati budget." : "Event budget tidak menunjukkan over-budget tanpa notes dari data terbaca.",
         expensesWithoutVendor.length ? "Hubungkan expense Bahan Baku/Packaging/Sewa Booth ke Vendor_Register atau isi vendor name." : "Expense kategori vendor sudah punya vendor link atau belum ada data.",
         personalPaidNotInLedger.length ? "Cocokkan approved Personal Paid expense ke Shareholder_Ledger." : "Approved personal-paid expense sudah cocok atau belum ada data personal-paid approved.",
+        shareholderDebtOver60.length ? "Review hutang pemegang saham berumur >60 hari; putuskan reimburse, konversi modal, atau jadwal pembayaran." : shareholderDebtOver30.length ? "Review aging hutang pemegang saham >30 hari agar fairness pemegang saham tetap jelas." : shareholderDebtUnaged.length ? "Lengkapi tanggal di Shareholder_Ledger agar aging hutang pemegang saham bisa dihitung." : "Aging hutang pemegang saham tidak menunjukkan exception dari data terbaca.",
         hasMonthlyGcgReport ? `Review Monthly_GCG_Report terakhir: ${latestMonthlyGcg?.period || "TBA"}.` : "Generate dan catat Monthly GCG Report pertama setelah data expense/compliance/vendor siap.",
       ],
     };
