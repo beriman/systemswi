@@ -90,6 +90,23 @@ interface CloseoutExpense {
   shareholderDebtFlag: boolean;
 }
 
+interface CloseoutGovernanceAudit {
+  logId: string;
+  timestamp: string;
+  actor: string;
+  role: string;
+  action: string;
+  entityType: string;
+  entityId: string;
+  amount: number;
+  division: string;
+  before: string;
+  after: string;
+  reason: string;
+  proofUrl: string;
+  sourceModule: string;
+}
+
 interface CloseoutSummary {
   plannedBudget: number;
   actualExpense: number;
@@ -109,6 +126,8 @@ interface CloseoutSummary {
   personalPaidExpenses: number;
   documentationStatus: string;
   lessonsLearned: string;
+  governanceAuditCount: number;
+  governanceAuditTrail: CloseoutGovernanceAudit[];
   expenseByCategory: { category: string; amount: number }[];
   expenses: CloseoutExpense[];
 }
@@ -1024,11 +1043,53 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
                     <div className="flex justify-between"><span>Expense tanpa proof URL</span><Badge className={closeout.expensesWithoutProof ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"}>{closeout.expensesWithoutProof}</Badge></div>
                     <div className="flex justify-between"><span>Status Needs Proof</span><Badge className={closeout.expensesNeedsProof ? "bg-amber-100 text-amber-700" : "bg-green-100 text-green-700"}>{closeout.expensesNeedsProof}</Badge></div>
                     <div className="flex justify-between"><span>Personal Paid / Shareholder Debt</span><Badge className={closeout.personalPaidExpenses ? "bg-amber-100 text-amber-700" : "bg-green-100 text-green-700"}>{closeout.personalPaidExpenses}</Badge></div>
+                    <div className="flex justify-between"><span>Governance audit trail</span><Badge className={closeout.governanceAuditCount ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}>{closeout.governanceAuditCount || 0}</Badge></div>
                     <div className="flex justify-between"><span>Dokumentasi media</span><span>{closeout.documentationStatus || "Belum dicatat"}</span></div>
                     <div className="border-t pt-3"><span className="text-muted-foreground">Lessons learned:</span><p>{closeout.lessonsLearned || "Belum dicatat"}</p></div>
                   </CardContent>
                 </Card>
               </div>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Governance Audit Trail Event</CardTitle>
+                  <CardDescription>Approve/reject expense terkait event dan aksi GCG event dari Governance_Audit_Log.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {closeout.governanceAuditTrail?.length ? (
+                    <div className="rounded-md border overflow-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Waktu</TableHead>
+                            <TableHead>Actor</TableHead>
+                            <TableHead>Action</TableHead>
+                            <TableHead>Entity</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead>Notes</TableHead>
+                            <TableHead className="text-right">Amount</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {closeout.governanceAuditTrail.slice(0, 10).map((item) => (
+                            <TableRow key={item.logId || `${item.timestamp}-${item.entityId}`}>
+                              <TableCell>{item.timestamp ? new Date(item.timestamp).toLocaleString("id-ID") : "TBA"}</TableCell>
+                              <TableCell>{item.actor || "Belum dicatat"}</TableCell>
+                              <TableCell>{item.action || "TBA"}</TableCell>
+                              <TableCell>{item.entityType || "TBA"}:{item.entityId || "TBA"}</TableCell>
+                              <TableCell>{item.before || ""}{item.before || item.after ? " → " : ""}{item.after || ""}</TableCell>
+                              <TableCell>{item.reason || "Belum dicatat"}</TableCell>
+                              <TableCell className="text-right">{formatCurrency(item.amount)}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">Belum ada Governance_Audit_Log yang terkait langsung dengan event/expense event ini.</p>
+                  )}
+                </CardContent>
+              </Card>
 
               <Card>
                 <CardHeader><CardTitle>Expense Detail untuk Closeout</CardTitle></CardHeader>

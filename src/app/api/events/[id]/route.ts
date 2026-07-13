@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { readEventSheet, EVENT_SHEETS } from "@/lib/event/sheets";
 import { readExpenseSheet, EXPENSE_SHEETS } from "@/lib/expense/sheets";
+import { readSheet } from "@/lib/sheets/sheets-real";
 
 function parseAmount(value: unknown): number {
   if (typeof value === "number") return Number.isFinite(value) ? value : 0;
@@ -30,13 +31,14 @@ export async function GET(
     const { id } = await params;
 
     // Fetch all related data in parallel
-    const [events, budget, tenants, sponsors, timeline, expenses] = await Promise.all([
+    const [events, budget, tenants, sponsors, timeline, expenses, governanceAuditLog] = await Promise.all([
       readEventSheet(EVENT_SHEETS.Events).catch(() => []),
       readEventSheet(EVENT_SHEETS.Budget).catch(() => []),
       readEventSheet(EVENT_SHEETS.Tenants).catch(() => []),
       readEventSheet(EVENT_SHEETS.Sponsors).catch(() => []),
       readEventSheet(EVENT_SHEETS.Timeline).catch(() => []),
       readExpenseSheet(EXPENSE_SHEETS.Submissions).catch(() => []),
+      readSheet("GovernanceAuditLog").catch(() => []),
     ]);
 
     // Find the event
@@ -114,6 +116,38 @@ export async function GET(
       shareholderDebtFlag: ["yes", "ya", "true", "1"].includes(String(r[17] || "").toLowerCase().trim()),
     }));
 
+    const eventExpenseIds = new Set(eventExpenses.map((item) => item.id).filter(Boolean));
+    const governanceAuditTrail = governanceAuditLog.slice(1)
+      .filter((r) => {
+        const entityType = String(r[5] || "").toLowerCase().trim();
+        const entityId = String(r[6] || "").trim();
+        const reason = String(r[11] || "").toLowerCase();
+        const sourceModule = String(r[13] || "").toLowerCase();
+        const eventName = String(event.name || "").toLowerCase();
+        return entityId === id
+          || entityId === event.name
+          || eventExpenseIds.has(entityId)
+          || (entityType === "event" && reason.includes(id.toLowerCase()))
+          || (sourceModule.includes("/events") && (reason.includes(id.toLowerCase()) || (eventName && reason.includes(eventName))));
+      })
+      .map((r) => ({
+        logId: r[0] || "",
+        timestamp: r[1] || "",
+        actor: r[2] || "Belum dicatat",
+        role: r[3] || "TBA",
+        action: r[4] || "TBA",
+        entityType: r[5] || "TBA",
+        entityId: r[6] || "TBA",
+        amount: parseAmount(r[7]),
+        division: r[8] || "Belum dicatat",
+        before: r[9] || "",
+        after: r[10] || "",
+        reason: r[11] || "Belum dicatat",
+        proofUrl: r[12] || "",
+        sourceModule: r[13] || "TBA",
+      }))
+      .sort((a, b) => String(b.timestamp || "").localeCompare(String(a.timestamp || "")));
+
     const plannedTotal = eventBudget.reduce((sum, item) => sum + item.plannedAmount, 0) || event.budget;
     const budgetActualTotal = eventBudget.reduce((sum, item) => sum + item.actualAmount, 0) || event.actualCost;
     const approvedExpenseTotal = eventExpenses
@@ -167,6 +201,8 @@ export async function GET(
       personalPaidExpenses: eventExpenses.filter((item) => item.paymentMethod === "Personal Paid" || item.shareholderDebtFlag).length,
       documentationStatus: "Belum dicatat",
       lessonsLearned: event.notes || "Belum dicatat",
+      governanceAuditCount: governanceAuditTrail.length,
+      governanceAuditTrail,
       expenseByCategory,
       expenses: eventExpenses,
     };
