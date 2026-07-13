@@ -276,6 +276,41 @@ function complianceAlerts(checkRows: string[][], batchRows: string[][], qcRows: 
   return [...checkAlerts, ...batchAlerts, ...qcAlerts];
 }
 
+function complianceRegisterAlerts(rows: string[][]): AlertItem[] {
+  return rows.slice(1).filter((row) => row.some(Boolean)).flatMap((row) => {
+    const complianceId = text(row[0]);
+    const area = text(row[1]) || "Compliance";
+    const obligation = text(row[2]) || complianceId || "Kewajiban compliance";
+    const period = text(row[3]);
+    const dueDate = text(row[4]);
+    const status = text(row[5]).toLowerCase() || "not started";
+    const owner = text(row[6]) || "Compliance/Finance";
+    const proofUrl = text(row[7]);
+    const riskLevel = text(row[8]).toLowerCase();
+    const notes = text(row[9]);
+    const closed = ["submitted", "paid", "complete", "completed", "done", "closed"].includes(status);
+    const days = daysUntil(dueDate);
+
+    if (!complianceId || closed || days === null || days > 7) return [];
+
+    const overdue = days < 0 || status === "overdue";
+    const severity: Severity = overdue || riskLevel === "high" ? "critical" : days <= 3 ? "high" : "medium";
+    const timing = overdue ? `${Math.abs(days)} hari overdue` : `H-${days}`;
+
+    return [{
+      id: `compliance-register-${complianceId}`,
+      category: "compliance" as const,
+      severity,
+      title: `${overdue ? "Compliance overdue" : "Compliance due soon"}: ${obligation}`,
+      detail: `${area}${period ? ` ${period}` : ""}; due ${dueDate || "TBA"} (${timing}); status ${status}. Proof: ${proofUrl ? "ada" : "Belum dicatat"}. ${notes || "Tindak lanjut dan upload bukti sebelum marked submitted/paid."}`,
+      owner,
+      dueDate: dueDate || undefined,
+      source: "Compliance_Register",
+      actionUrl: "/compliance",
+    }];
+  });
+}
+
 function sortAlerts(alerts: AlertItem[]) {
   const weight: Record<Severity, number> = { critical: 4, high: 3, medium: 2, low: 1 };
   return [...alerts].sort((a, b) => weight[b.severity] - weight[a.severity] || (b.amount || 0) - (a.amount || 0));
@@ -293,6 +328,7 @@ export async function GET() {
       poRows,
       receiptRows,
       complianceRows,
+      complianceRegisterRows,
       batchRows,
       qcRows,
     ] = await Promise.all([
@@ -305,6 +341,7 @@ export async function GET() {
       readRange("Purchase_Orders!A1:N1000").catch(() => []),
       readRange("Goods_Receipts!A1:M1000").catch(() => []),
       readRange("Compliance_Checks!A1:L1000").catch(() => []),
+      readRange("Compliance_Register!A1:J1000").catch(() => []),
       readRange("Product_Batches!A1:M1000").catch(() => []),
       readRange("QC_Checklist!A1:I1000").catch(() => []),
     ]);
@@ -317,6 +354,7 @@ export async function GET() {
       ...eventBudgetAlerts(budgetRows),
       ...shareholderAlerts(shareholderRows),
       ...procurementAlerts(poRows, receiptRows),
+      ...complianceRegisterAlerts(complianceRegisterRows),
       ...complianceAlerts(complianceRows, batchRows, qcRows),
     ]);
 
@@ -331,7 +369,7 @@ export async function GET() {
     }, {});
 
     return NextResponse.json({
-      source: "Google Sheets: Inventory_Master, Event_* sheets, PemegangSaham, Purchase_Orders, Goods_Receipts, Compliance_Checks, Product_Batches, QC_Checklist",
+      source: "Google Sheets: Inventory_Master, Event_* sheets, PemegangSaham, Purchase_Orders, Goods_Receipts, Compliance_Register, Compliance_Checks, Product_Batches, QC_Checklist",
       generatedAt: new Date().toISOString(),
       summary: {
         total: alerts.length,
