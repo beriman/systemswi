@@ -125,6 +125,8 @@ interface CloseoutSummary {
   expensesNeedsProof: number;
   personalPaidExpenses: number;
   documentationStatus: string;
+  mediaCount: number;
+  mediaProofUrls: string[];
   lessonsLearned: string;
   governanceAuditCount: number;
   governanceAuditTrail: CloseoutGovernanceAudit[];
@@ -1045,6 +1047,18 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
                     <div className="flex justify-between"><span>Personal Paid / Shareholder Debt</span><Badge className={closeout.personalPaidExpenses ? "bg-amber-100 text-amber-700" : "bg-green-100 text-green-700"}>{closeout.personalPaidExpenses}</Badge></div>
                     <div className="flex justify-between"><span>Governance audit trail</span><Badge className={closeout.governanceAuditCount ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}>{closeout.governanceAuditCount || 0}</Badge></div>
                     <div className="flex justify-between"><span>Dokumentasi media</span><span>{closeout.documentationStatus || "Belum dicatat"}</span></div>
+                    {closeout.mediaProofUrls?.length > 0 && (
+                      <div className="border-t pt-3">
+                        <span className="text-muted-foreground">Proof media:</span>
+                        <div className="mt-1 space-y-1">
+                          {closeout.mediaProofUrls.map((url, index) => (
+                            <a key={`${url}-${index}`} href={url} target="_blank" rel="noopener noreferrer" className="block truncate text-primary hover:underline">
+                              Media {index + 1}: {url}
+                            </a>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                     <div className="border-t pt-3"><span className="text-muted-foreground">Lessons learned:</span><p>{closeout.lessonsLearned || "Belum dicatat"}</p></div>
                   </CardContent>
                 </Card>

@@ -31,12 +31,13 @@ export async function GET(
     const { id } = await params;
 
     // Fetch all related data in parallel
-    const [events, budget, tenants, sponsors, timeline, expenses, governanceAuditLog] = await Promise.all([
+    const [events, budget, tenants, sponsors, timeline, media, expenses, governanceAuditLog] = await Promise.all([
       readEventSheet(EVENT_SHEETS.Events).catch(() => []),
       readEventSheet(EVENT_SHEETS.Budget).catch(() => []),
       readEventSheet(EVENT_SHEETS.Tenants).catch(() => []),
       readEventSheet(EVENT_SHEETS.Sponsors).catch(() => []),
       readEventSheet(EVENT_SHEETS.Timeline).catch(() => []),
+      readEventSheet(EVENT_SHEETS.Media).catch(() => []),
       readExpenseSheet(EXPENSE_SHEETS.Submissions).catch(() => []),
       readSheet("GovernanceAuditLog").catch(() => []),
     ]);
@@ -100,6 +101,17 @@ export async function GET(
     const eventTimeline = timeline.slice(1).filter((r) => r[1] === id).map((r) => ({
       id: r[0], phase: r[2], milestone: r[3], dueDate: r[4],
       completed: r[5] === "true", completedDate: r[6], notes: r[7] || "", created: r[8] || "",
+    }));
+
+    const eventMedia = media.slice(1).filter((r) => r[1] === id).map((r) => ({
+      id: r[0] || "",
+      type: r[2] || "other",
+      title: r[3] || "",
+      url: r[4] || "",
+      caption: r[5] || "",
+      source: r[6] || "manual",
+      featured: r[7] || "false",
+      created: r[9] || "",
     }));
 
     const eventExpenses = expenses.slice(1).filter((r) => r[3] === id || r[3] === event.name).map((r) => ({
@@ -199,7 +211,9 @@ export async function GET(
       expensesWithoutProof,
       expensesNeedsProof,
       personalPaidExpenses: eventExpenses.filter((item) => item.paymentMethod === "Personal Paid" || item.shareholderDebtFlag).length,
-      documentationStatus: "Belum dicatat",
+      documentationStatus: eventMedia.length > 0 ? `${eventMedia.length} media tercatat` : "Belum dicatat",
+      mediaCount: eventMedia.length,
+      mediaProofUrls: eventMedia.filter((item) => item.url).slice(0, 5).map((item) => item.url),
       lessonsLearned: event.notes || "Belum dicatat",
       governanceAuditCount: governanceAuditTrail.length,
       governanceAuditTrail,
@@ -213,6 +227,7 @@ export async function GET(
       tenants: eventTenants,
       sponsors: eventSponsors,
       timeline: eventTimeline,
+      media: eventMedia,
       closeout,
     });
   } catch (error) {
