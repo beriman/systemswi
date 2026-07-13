@@ -54,6 +54,7 @@ type DashboardPayload = {
       needsProofCount: number;
       needsProofAmount: number;
       withoutDivisionCount: number;
+      approvedWithoutDivisionOrCoaCount: number;
       largeWithoutApprovalCount: number;
       personalPaidCount: number;
       personalPaidAmount: number;
@@ -254,6 +255,7 @@ export default function GovernancePage() {
               <div className="flex justify-between"><span>Governance audit rows</span><b>{audit?.governanceAuditRows || 0}</b></div>
               <div className="flex justify-between"><span>Large pending approval</span><b>{expenses?.largeWithoutApprovalCount || 0}</b></div>
               <div className="flex justify-between"><span>Without division/COA</span><b>{expenses?.withoutDivisionCount || 0}</b></div>
+              <div className="flex justify-between text-red-600"><span>Approved missing division/COA</span><b>{expenses?.approvedWithoutDivisionOrCoaCount || 0}</b></div>
               <div className="flex justify-between"><span>Personal paid not in ledger</span><b>{expenses?.personalPaidNotInLedgerCount || 0}</b></div>
             </CardContent>
           </Card>
