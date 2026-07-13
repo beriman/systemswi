@@ -153,6 +153,9 @@ export async function GET(req: NextRequest) {
     const approvedWithoutDivisionOrCoa = approvedExpenses.filter((row) => !text(row[12]) || !text(row[13] || row[4]));
     const approvedWithReviewer = approvedExpenses.filter((row) => Boolean(text(row[9])));
     const personalPaidExpenses = expenses.filter((row) => text(row[14]).toLowerCase() === "personal paid" || isYes(text(row[17])));
+    // Shareholder_Ledger is created only after human approval. Pending/Needs Proof personal-paid
+    // submissions remain expense workflow items and should not be flagged as missing ledger yet.
+    const approvedPersonalPaidExpenses = personalPaidExpenses.filter((row) => text(row[8]).toLowerCase() === "approved");
     const vendorRequiredCategories = new Set(["Bahan Baku", "Packaging", "Venue", "Dokumentasi", "Sewa Booth"]);
     const expenseVendorRequired = expenses.filter((row) => vendorRequiredCategories.has(text(row[4])));
     const expensesWithoutVendor = expenseVendorRequired.filter((row) => !text(row[18]) && !text(row[19]));
@@ -180,7 +183,7 @@ export async function GET(req: NextRequest) {
       return sum + amount(row[6]) - amount(row[7]);
     }, 0);
     const shareholderLedgerSourceKeys = new Set(shareholderLedger.map((row) => text(row[12]) + " " + text(row[5])));
-    const personalPaidNotInLedger = personalPaidExpenses.filter((expense) => {
+    const personalPaidNotInLedger = approvedPersonalPaidExpenses.filter((expense) => {
       const id = text(expense[0]);
       if (!id) return false;
       return !Array.from(shareholderLedgerSourceKeys).some((value) => value.includes(id));
@@ -226,14 +229,14 @@ export async function GET(req: NextRequest) {
     const complianceProofScore = percent(completedCompliance.length - completedComplianceMissingProof.length, completedCompliance.length);
     const responsibilityScore = Math.round((complianceOnTimeScore + complianceProofScore) / 2);
     const independencyScore = Math.round((percent(vendorWithBenchmark.length, vendorRegister.length) + percent(expenseVendorRequired.length - expensesWithoutVendor.length, expenseVendorRequired.length)) / 2);
-    const fairnessScore = percent(personalPaidExpenses.length - personalPaidNotInLedger.length, personalPaidExpenses.length);
+    const fairnessScore = percent(approvedPersonalPaidExpenses.length - personalPaidNotInLedger.length, approvedPersonalPaidExpenses.length);
 
     const scores = [
       makeScore("transparency", "Transparency", transparencyScore, `${expenseWithProof.length}/${expenses.length} expense punya bukti atau amount 0; ${expenseWithDivision.length}/${expenses.length} punya division/COA; Monthly_GCG_Report ${hasMonthlyGcgReport ? "tersedia" : "belum dicatat"}.`),
       makeScore("accountability", "Accountability", accountabilityScore, `${approvedWithReviewer.length}/${approvedExpenses.length} approved expense punya reviewer; ${governanceAuditLog.length} governance audit rows.`),
       makeScore("responsibility", "Responsibility", responsibilityScore, `${overdueCompliance.length} overdue dari ${complianceRegister.length} compliance item; ${completedComplianceMissingProof.length}/${completedCompliance.length} completed compliance belum punya proof URL.`),
       makeScore("independency", "Independency", independencyScore, `${vendorWithBenchmark.length}/${vendorRegister.length} vendor punya benchmark + selected reason; ${expenseVendorRequired.length - expensesWithoutVendor.length}/${expenseVendorRequired.length} expense vendor-category punya vendor link.`),
-      makeScore("fairness", "Fairness", fairnessScore, `${personalPaidNotInLedger.length}/${personalPaidExpenses.length} personal-paid expense belum terlacak ke ledger.`),
+      makeScore("fairness", "Fairness", fairnessScore, `${personalPaidNotInLedger.length}/${approvedPersonalPaidExpenses.length} approved personal-paid expense belum terlacak ke ledger.`),
     ];
 
     const overallScore = Math.round(scores.reduce((sum, score) => sum + score.score, 0) / scores.length);
@@ -328,7 +331,7 @@ export async function GET(req: NextRequest) {
         vendorExceptions.length ? "Lengkapi benchmark vendor dan deklarasi related-party sebelum transaksi besar." : "Vendor register tidak menunjukkan exception dari data terbaca.",
         eventBudgetOverActualWithoutNotes.length + eventsOverBudgetWithoutNotes.length ? "Lengkapi catatan closeout untuk event/budget row yang actual-nya melewati budget." : "Event budget tidak menunjukkan over-budget tanpa notes dari data terbaca.",
         expensesWithoutVendor.length ? "Hubungkan expense Bahan Baku/Packaging/Sewa Booth ke Vendor_Register atau isi vendor name." : "Expense kategori vendor sudah punya vendor link atau belum ada data.",
-        personalPaidNotInLedger.length ? "Cocokkan expense Personal Paid approved ke Shareholder_Ledger." : "Personal-paid expense sudah cocok atau belum ada data personal-paid.",
+        personalPaidNotInLedger.length ? "Cocokkan approved Personal Paid expense ke Shareholder_Ledger." : "Approved personal-paid expense sudah cocok atau belum ada data personal-paid approved.",
         hasMonthlyGcgReport ? `Review Monthly_GCG_Report terakhir: ${latestMonthlyGcg?.period || "TBA"}.` : "Generate dan catat Monthly GCG Report pertama setelah data expense/compliance/vendor siap.",
       ],
     };
