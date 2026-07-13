@@ -33,6 +33,9 @@ type SheetContext = {
   vendorExceptionCount?: number;
   vendorRelatedPartyCount?: number;
   governanceAuditRows?: number;
+  eventMediaRows?: number;
+  closeoutCandidateEvents?: number;
+  eventMissingMediaCount?: number;
 };
 
 const text = (value: unknown) => String(value ?? "").trim();
@@ -85,6 +88,7 @@ async function readContext(): Promise<SheetContext> {
     complianceRegister,
     vendorRegister,
     governanceAuditLog,
+    eventMedia,
   ] = await Promise.all([
     readRange("Laporan_Bulanan!A1:P16").catch(emptyOnAuthError),
     readEventSheet(EVENT_SHEETS.Tenants).catch(emptyOnAuthError),
@@ -98,6 +102,7 @@ async function readContext(): Promise<SheetContext> {
     readRange("Compliance_Register!A1:J1000").catch(emptyOnAuthError),
     readRange("Vendor_Register!A1:L1000").catch(emptyOnAuthError),
     readRange("Governance_Audit_Log!A1:N1000").catch(emptyOnAuthError),
+    readRange("Event_Media!A1:K1000").catch(emptyOnAuthError),
   ]);
 
   const unpaidTenants = tenants.slice(1).filter((row) => {
@@ -215,6 +220,18 @@ async function readContext(): Promise<SheetContext> {
   const vendorRelatedParty = vendorRows.filter((row) => isRelated(text(row[4])));
   const vendorException = vendorRows.filter((row) => isRelated(text(row[4])) || !text(row[6]) || !text(row[7]) || !text(row[8]));
 
+  const mediaEventIds = new Set(eventMedia.slice(1).map((row) => text(row[1])).filter(Boolean));
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const closeoutCandidateRows = events.slice(1).filter((row) => {
+    const eventId = text(row[0]);
+    if (!eventId) return false;
+    const status = text(row[4]).toLowerCase();
+    const endDate = text(row[9]).slice(0, 10);
+    return ["completed", "complete", "closed", "done", "selesai"].includes(status)
+      || (Boolean(endDate) && endDate < todayIso && !["draft", "cancelled", "canceled"].includes(status));
+  });
+  const eventMissingMediaCount = closeoutCandidateRows.filter((row) => !mediaEventIds.has(text(row[0]))).length;
+
   const degraded = googleAuthError
     ? googleWorkspaceDegradedSource("Google Sheets context for Document Generator", googleAuthError)
     : null;
@@ -244,6 +261,9 @@ async function readContext(): Promise<SheetContext> {
     vendorExceptionCount: vendorException.length,
     vendorRelatedPartyCount: vendorRelatedParty.length,
     governanceAuditRows: Math.max(governanceAuditLog.length - 1, 0),
+    eventMediaRows: Math.max(eventMedia.length - 1, 0),
+    closeoutCandidateEvents: closeoutCandidateRows.length,
+    eventMissingMediaCount,
     notes: [
       `Finance source: Laporan_Bulanan (${Math.max(finance.length - 1, 0)} data rows).`,
       `Commercial source: Event_Tenants ${Math.max(tenants.length - 1, 0)} rows; ${unpaidTenants} tenant belum lunas.`,
@@ -251,6 +271,7 @@ async function readContext(): Promise<SheetContext> {
       `Inventory source: Inventory_Master ${Math.max(inventory.length - 1, 0)} rows; ${lowStock} item low/critical.`,
       `Budget source: ${eventBudgetSummary.length} event budgets, total budget ${totalBudget.toLocaleString("id-ID")}.`,
       `GCG source: ${expenseRows.length} expenses, ${Math.max(governanceAuditLog.length - 1, 0)} governance audit rows, ${complianceOpen.length} open compliance items.`,
+      `Event closeout source: Event_Media ${Math.max(eventMedia.length - 1, 0)} rows; ${eventMissingMediaCount}/${closeoutCandidateRows.length} closeout candidate events belum punya media.`,
       ...(degraded ? [degraded.warning] : []),
     ],
   };
@@ -306,6 +327,9 @@ export async function POST(req: NextRequest) {
       vendorExceptionCount: context.vendorExceptionCount,
       vendorRelatedPartyCount: context.vendorRelatedPartyCount,
       governanceAuditRows: context.governanceAuditRows,
+      eventMediaRows: context.eventMediaRows,
+      closeoutCandidateEvents: context.closeoutCandidateEvents,
+      eventMissingMediaCount: context.eventMissingMediaCount,
     };
     const content = appendContext(generateDocumentContent(rawType, data, text(body.letterNumber), rabContext), context);
     const template = getTemplateByType(rawType);

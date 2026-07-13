@@ -45,6 +45,9 @@ export type RabContext = {
   vendorExceptionCount?: number;
   vendorRelatedPartyCount?: number;
   governanceAuditRows?: number;
+  eventMediaRows?: number;
+  closeoutCandidateEvents?: number;
+  eventMissingMediaCount?: number;
 };
 
 // Generate document content based on type and data
@@ -256,7 +259,6 @@ function generateRAB(data: Record<string, string>, letterNumber: string = "", da
     ];
 
     let grandTotal = 0;
-    let itemNo = 0;
 
     if (Object.keys(budgetByCategory).length > 0) {
         // Use real budget data from Sheets
@@ -286,7 +288,6 @@ function generateRAB(data: Record<string, string>, letterNumber: string = "", da
         // Fallback: use user-provided data or defaults
         for (const group of defaultCategories) {
             for (const item of group.items) {
-                itemNo++;
                 budgetItems.push({ category: group.cat, item, qty: 0, unitPrice: 0, total: 0 });
             }
         }
@@ -395,7 +396,11 @@ ${eventTable}
 - Payable yang belum tercatat di Sheets: **TBA** — jangan diisi manual tanpa source.
 
 ## 3. Dokumentasi Media
-${data.documentation_url || "TBA — tambahkan Drive/Instagram/media link setelah diverifikasi."}
+- Media rows tercatat di Event_Media: **${context?.eventMediaRows || 0}**.
+- Event selesai/closeout candidate tanpa media: **${context?.eventMissingMediaCount || 0}** dari **${context?.closeoutCandidateEvents || 0}** event kandidat.
+- Link dokumentasi manual: ${data.documentation_url || "TBA — tambahkan Drive/Instagram/media link setelah diverifikasi."}
+
+Jika media rows masih 0/TBA, closeout belum boleh dianggap lengkap untuk pemegang saham.
 
 ## 4. Lessons Learned
 ${data.lessons_learned || "TBA — isi setelah post-event review bersama PIC."}
