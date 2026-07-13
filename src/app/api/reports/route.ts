@@ -29,6 +29,9 @@ type ReportContext = {
   paidInCapital: number;
   outstandingCapital: number;
   eventCount: number;
+  eventBudgetRows: number;
+  eventOverBudgetRows: number;
+  eventOverBudgetWithoutNotes: number;
   tenantOutstanding: number;
   sponsorPipelineValue: number;
   lowStockCount: number;
@@ -122,6 +125,7 @@ async function readContext(): Promise<ReportContext> {
     pemegangSaham,
     laporanBulanan,
     events,
+    eventBudget,
     tenants,
     sponsors,
     inventory,
@@ -139,6 +143,7 @@ async function readContext(): Promise<ReportContext> {
     readSheet("PemegangSaham").catch(emptyOnAuthError),
     readSheet("LaporanBulanan").catch(emptyOnAuthError),
     readEventSheet(EVENT_SHEETS.Events).catch(emptyOnAuthError),
+    readRange("Event_Budget!A1:H1000").catch(emptyOnAuthError),
     readEventSheet(EVENT_SHEETS.Tenants).catch(emptyOnAuthError),
     readEventSheet(EVENT_SHEETS.Sponsors).catch(emptyOnAuthError),
     readRange("Inventory_Master!A1:O1000").catch(emptyOnAuthError),
@@ -173,6 +178,13 @@ async function readContext(): Promise<ReportContext> {
     if (["paid", "cancelled", "rejected"].includes(status)) return sum;
     return sum + amount(row[7]);
   }, 0);
+
+  const eventRows = events.slice(1).filter((row) => text(row[0]));
+  const eventBudgetRows = eventBudget.slice(1).filter((row) => text(row[0]));
+  const eventBudgetOverActual = eventBudgetRows.filter((row) => amount(row[5]) > amount(row[4]) && amount(row[4]) > 0);
+  const eventBudgetOverActualWithoutNotes = eventBudgetOverActual.filter((row) => !text(row[6]));
+  const eventsOverBudget = eventRows.filter((row) => amount(row[13]) > amount(row[12]) && amount(row[12]) > 0);
+  const eventsOverBudgetWithoutNotes = eventsOverBudget.filter((row) => !text(row[19]));
 
   const lowStockCount = inventory.slice(1).filter((row) => {
     const qty = amount(row[5]);
@@ -239,7 +251,10 @@ async function readContext(): Promise<ReportContext> {
     bankBalance,
     paidInCapital,
     outstandingCapital,
-    eventCount: Math.max(events.length - 1, 0),
+    eventCount: eventRows.length,
+    eventBudgetRows: eventBudgetRows.length,
+    eventOverBudgetRows: eventBudgetOverActual.length + eventsOverBudget.length,
+    eventOverBudgetWithoutNotes: eventBudgetOverActualWithoutNotes.length + eventsOverBudgetWithoutNotes.length,
     tenantOutstanding,
     sponsorPipelineValue,
     lowStockCount,
@@ -270,7 +285,7 @@ function generateReport(type: ReportType, period: string, context: ReportContext
     ? `\n## Quarterly Investor Update\n### Progress Kuartal\n- Finance: saldo bank dan modal disetor disajikan terpisah agar investor tidak salah membaca kas operasional sebagai modal.\n- Event/Fragrantions: tenant outstanding dan sponsor pipeline masih diklasifikasi sebagai piutang/pipeline sampai status paid.\n- Operasional: low-stock, open PO, dan compliance/QC review menjadi indikator risiko eksekusi kuartal ini.\n\n### Investor Readiness Checklist\n- [ ] Direksi mengonfirmasi angka modal disetor dan sisa kewajiban.\n- [ ] Finance mengonfirmasi saldo bank terhadap rekening koran.\n- [ ] PIC Event mengonfirmasi tenant/sponsor paid vs outstanding.\n- [ ] Operasional mengonfirmasi status inventory, PO, dan QC.\n- [ ] Legal/finance review sebelum dibagikan ke pihak eksternal.\n` : "";
 
   const monthlyGcgSection = type === "monthly_gcg"
-    ? `\n## Monthly GCG / TARIF Summary\n### Transparency\n- Expense pending: **${context.expensePendingCount}** item / **${rupiah(context.expensePendingAmount)}**.\n- Expense needs proof / tanpa bukti lengkap: **${context.expenseNeedsProofCount}** item.\n- Expense tanpa division: **${context.expenseWithoutDivisionCount}** item.\n\n### Accountability\n- Governance audit trail tercatat: **${context.governanceAuditRows}** baris.\n- Approval/reject manusia harus tercatat di Governance_Audit_Log; jika 0, treat sebagai gap audit, bukan berarti aman.\n\n### Responsibility\n- Compliance open: **${context.complianceOpenCount}** item.\n- Compliance overdue: **${context.complianceOverdueCount}** item.\n\n### Independency\n- Vendor exception/benchmark/COI perlu review: **${context.vendorExceptionCount}** vendor.\n- Related-party vendor tercatat: **${context.vendorRelatedPartyCount}** vendor.\n\n### Fairness & Etika Keuangan\n- Hutang pemegang saham outstanding: **${rupiah(context.shareholderDebtOutstanding)}**.\n- Personal-paid expense terdeteksi: **${rupiah(context.personalPaidExpenseAmount)}**.\n- Angka personal-paid harus direkonsiliasi ke Shareholder_Ledger setelah approved; jangan dianggap lunas tanpa proof/payment record.\n\n### TARIF Exceptions untuk Follow-up\n- [ ] Review expense pending dan needs-proof.\n- [ ] Lengkapi division/COA untuk semua expense material.\n- [ ] Cocokkan personal-paid expense dengan Shareholder_Ledger.\n- [ ] Follow-up compliance overdue/due soon.\n- [ ] Lengkapi benchmark vendor dan deklarasi conflict-of-interest.\n` : "";
+    ? `\n## Monthly GCG / TARIF Summary\n### Transparency\n- Expense pending: **${context.expensePendingCount}** item / **${rupiah(context.expensePendingAmount)}**.\n- Expense needs proof / tanpa bukti lengkap: **${context.expenseNeedsProofCount}** item.\n- Expense tanpa division: **${context.expenseWithoutDivisionCount}** item.\n\n### Accountability\n- Governance audit trail tercatat: **${context.governanceAuditRows}** baris.\n- Approval/reject manusia harus tercatat di Governance_Audit_Log; jika 0, treat sebagai gap audit, bukan berarti aman.\n\n### Responsibility\n- Compliance open: **${context.complianceOpenCount}** item.\n- Compliance overdue: **${context.complianceOverdueCount}** item.\n\n### Independency\n- Vendor exception/benchmark/COI perlu review: **${context.vendorExceptionCount}** vendor.\n- Related-party vendor tercatat: **${context.vendorRelatedPartyCount}** vendor.\n\n### Fairness & Etika Keuangan\n- Hutang pemegang saham outstanding: **${rupiah(context.shareholderDebtOutstanding)}**.\n- Personal-paid expense terdeteksi: **${rupiah(context.personalPaidExpenseAmount)}**.\n- Angka personal-paid harus direkonsiliasi ke Shareholder_Ledger setelah approved; jangan dianggap lunas tanpa proof/payment record.\n\n### Event Closeout Control\n- Event tercatat: **${context.eventCount}**; baris Event_Budget: **${context.eventBudgetRows}**.\n- Event/budget row over-budget: **${context.eventOverBudgetRows}**.\n- Over-budget tanpa catatan closeout/notes: **${context.eventOverBudgetWithoutNotes}**.\n- Angka event memakai Event_Budget + Events; receivable/payable tetap perlu validasi invoice/proof sebelum final.\n\n### TARIF Exceptions untuk Follow-up\n- [ ] Review expense pending dan needs-proof.\n- [ ] Lengkapi division/COA untuk semua expense material.\n- [ ] Cocokkan personal-paid expense dengan Shareholder_Ledger.\n- [ ] Follow-up compliance overdue/due soon.\n- [ ] Lengkapi benchmark vendor dan deklarasi conflict-of-interest.\n- [ ] Lengkapi closeout notes untuk event/budget row yang over-budget.\n` : "";
 
   const investorSection = type === "quarterly_investor" || type === "annual_report"
     ? `\n## Investor / Governance Notes\n- Modal disetor: **${rupiah(context.paidInCapital)}**.\n- Sisa kewajiban modal: **${rupiah(context.outstandingCapital)}**.\n- Angka proyeksi/yield tetap draft dan perlu review direksi/konsultan sebelum dibagikan eksternal.\n`
