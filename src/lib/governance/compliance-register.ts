@@ -1,7 +1,7 @@
 // Compliance Register — LKPM, BPJS, tax, legal, BPOM/Halal governance obligations
 // Schema: Compliance ID | Area | Obligation | Period | Due Date | Status | Owner | Source Proof | Risk Level | Notes
 
-import { appendRows, getAuth, readSheet, SPREADSHEET_ID } from "@/lib/sheets/sheets-real";
+import { appendRows, getAuth, readSheet, SPREADSHEET_ID, updateRow } from "@/lib/sheets/sheets-real";
 import { google } from "googleapis";
 
 export const COMPLIANCE_REGISTER_SHEET = "Compliance_Register";
@@ -180,6 +180,43 @@ export async function appendComplianceRegisterEntry(entry: Partial<NewCompliance
   return parseComplianceRegisterRows([COMPLIANCE_REGISTER_HEADERS, row])[0];
 }
 
+export async function updateComplianceRegisterEntry(
+  id: string,
+  patch: Partial<NewComplianceRegisterEntry>,
+): Promise<{ before: ComplianceRegisterEntry; after: ComplianceRegisterEntry }> {
+  await ensureComplianceRegisterSheet();
+  const rows = await readSheet("ComplianceRegister");
+  const rowIndex = rows.findIndex((row, index) => index > 0 && text(row[0]) === id);
+  if (rowIndex === -1) throw new Error(`Compliance item not found: ${id}`);
+
+  const existingRow = rows[rowIndex];
+  const before = parseComplianceRegisterRows([COMPLIANCE_REGISTER_HEADERS, existingRow])[0];
+  const nextStatus = text(patch.status) || before.status || "Not Started";
+  const nextProof = patch.sourceProof !== undefined ? text(patch.sourceProof) : before.sourceProof;
+  const completedStatuses = new Set(["submitted", "paid", "complete", "completed"]);
+
+  if (completedStatuses.has(nextStatus.toLowerCase()) && !nextProof) {
+    throw new Error("Source Proof wajib diisi sebelum compliance ditandai Submitted/Paid/Complete.");
+  }
+
+  const row = [
+    before.id,
+    patch.area !== undefined ? text(patch.area) || "TBA" : before.area,
+    patch.obligation !== undefined ? text(patch.obligation) || "Belum dicatat" : before.obligation,
+    patch.period !== undefined ? text(patch.period) || "TBA" : before.period,
+    patch.dueDate !== undefined ? text(patch.dueDate) : before.dueDate,
+    nextStatus,
+    patch.owner !== undefined ? text(patch.owner) || "Belum dicatat" : before.owner,
+    nextProof,
+    patch.riskLevel !== undefined ? text(patch.riskLevel) || "Medium" : before.riskLevel,
+    patch.notes !== undefined ? text(patch.notes) : before.notes,
+  ];
+
+  await updateRow("ComplianceRegister", rowIndex + 1, row);
+  const after = parseComplianceRegisterRows([COMPLIANCE_REGISTER_HEADERS, row])[0];
+  return { before, after };
+}
+
 export async function seedKnownComplianceRegisterItems(): Promise<{ seeded: number; skipped: number; entries: ComplianceRegisterEntry[] }> {
   await ensureComplianceRegisterSheet();
   const existing = parseComplianceRegisterRows(await readSheet("ComplianceRegister"));
@@ -212,6 +249,6 @@ export function summarizeComplianceRegister(entries: ComplianceRegisterEntry[]) 
     overdue: entries.filter((entry) => entry.riskBadge === "red").length,
     dueSoon: entries.filter((entry) => entry.riskBadge === "yellow").length,
     completed: entries.filter((entry) => entry.riskBadge === "green").length,
-    missingProof: entries.filter((entry) => !entry.sourceProof && ["Submitted", "Paid"].includes(entry.status)).length,
+    missingProof: entries.filter((entry) => !entry.sourceProof && ["submitted", "paid", "complete", "completed"].includes(entry.status.toLowerCase())).length,
   };
 }

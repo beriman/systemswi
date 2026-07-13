@@ -7,6 +7,7 @@ import {
   listComplianceRegister,
   seedKnownComplianceRegisterItems,
   summarizeComplianceRegister,
+  updateComplianceRegisterEntry,
 } from "@/lib/governance/compliance-register";
 import { googleWorkspaceDegradedSource, isGoogleWorkspaceAuthError } from "@/lib/api/google-workspace-error";
 import { logGovernanceActionSafe } from "@/lib/governance/audit";
@@ -33,6 +34,10 @@ export async function GET() {
     }
     return NextResponse.json({ error: "Failed to fetch compliance register", details: String(error) }, { status: 500 });
   }
+}
+
+function text(value: unknown): string {
+  return String(value ?? "").trim();
 }
 
 export async function POST(req: NextRequest) {
@@ -106,5 +111,63 @@ export async function POST(req: NextRequest) {
       }, { status: 503 });
     }
     return NextResponse.json({ error: "Failed to update compliance register", details: String(error) }, { status: 500 });
+  }
+}
+
+export async function PUT(req: NextRequest) {
+  try {
+    const body = await req.json();
+    const id = text(body.id || body.complianceId);
+    if (!id) return NextResponse.json({ error: "id/complianceId wajib diisi" }, { status: 400 });
+
+    const result = await updateComplianceRegisterEntry(id, {
+      area: body.area,
+      obligation: body.obligation,
+      period: body.period,
+      dueDate: body.dueDate,
+      status: body.status,
+      owner: body.owner,
+      sourceProof: body.sourceProof,
+      riskLevel: body.riskLevel,
+      notes: body.notes,
+    });
+
+    await logGovernanceActionSafe({
+      actor: text(body.actor) || "Beriman Juliano",
+      role: text(body.role) || "Direktur",
+      action: "UPDATE_COMPLIANCE_ITEM",
+      entityType: "Compliance",
+      entityId: id,
+      amount: 0,
+      division: "Holding",
+      before: `${result.before.status} | due ${result.before.dueDate || "TBA"}`,
+      after: `${result.after.status} | due ${result.after.dueDate || "TBA"}`,
+      reason: text(body.reason || body.notes) || `Update compliance ${result.after.obligation}`,
+      proofUrl: result.after.sourceProof,
+      sourceModule: "/api/governance/compliance-register",
+    });
+
+    return NextResponse.json({
+      success: true,
+      source: SOURCE,
+      sourceStatus: "live",
+      before: result.before,
+      entry: result.after,
+      audit: "Governance_Audit_Log",
+    });
+  } catch (error) {
+    if (isGoogleWorkspaceAuthError(error)) {
+      return NextResponse.json({
+        sourceStatus: "blocked",
+        source: SOURCE,
+        error: "Google Workspace OAuth perlu re-auth sebelum bisa update compliance register",
+        details: String(error),
+      }, { status: 503 });
+    }
+    const message = String(error);
+    if (message.includes("Source Proof wajib") || message.includes("not found")) {
+      return NextResponse.json({ error: message }, { status: message.includes("not found") ? 404 : 422 });
+    }
+    return NextResponse.json({ error: "Failed to update compliance register", details: message }, { status: 500 });
   }
 }
