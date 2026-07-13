@@ -107,7 +107,10 @@ export async function GET(req: NextRequest) {
     const rejected = expenses.filter((e) => e.status === "Rejected");
     const needsProof = expenses.filter((e) => e.status === "Needs Proof" || (e.amount > 0 && !e.proofUrl));
     const withoutDivision = expenses.filter((e) => !e.division);
+    const approvedWithoutDivisionOrCoa = approved.filter((e) => !e.division || !e.coaCategory);
     const personalPaid = expenses.filter((e) => e.paymentMethod === "Personal Paid" || e.shareholderDebtFlag === "Yes");
+    const approvedPersonalPaid = personalPaid.filter((e) => e.status === "Approved");
+    let personalPaidNotInLedger = approvedPersonalPaid;
     const vendorRequiredCategories = new Set(["Bahan Baku", "Packaging", "Venue", "Dokumentasi", "Sewa Booth"]);
     const vendorRequired = expenses.filter((e) => vendorRequiredCategories.has(e.category));
     const withoutVendor = vendorRequired.filter((e) => !e.vendorId && !e.vendorName);
@@ -141,6 +144,19 @@ export async function GET(req: NextRequest) {
       // Budget sheet may not be available, continue without it
     }
 
+    try {
+      const ledgerRows = await readSheet("ShareholderLedger");
+      const ledgerSourceKeys = new Set<string>(
+        ledgerRows.slice(1).map((row) => `${s(row, 12)} ${s(row, 5)}`)
+      );
+      personalPaidNotInLedger = approvedPersonalPaid.filter((expense) => {
+        if (!expense.id) return false;
+        return !Array.from(ledgerSourceKeys).some((value) => value.includes(expense.id));
+      });
+    } catch {
+      // Shareholder_Ledger may not exist or may be unavailable; keep approved Personal Paid as reconciliation candidates.
+    }
+
     return NextResponse.json({
       source: EXPENSES_SOURCE,
       sourceStatus: "live",
@@ -158,8 +174,11 @@ export async function GET(req: NextRequest) {
         needsProofCount: needsProof.length,
         needsProofAmount: needsProof.reduce((sum, e) => sum + e.amount, 0),
         withoutDivisionCount: withoutDivision.length,
+        approvedWithoutDivisionOrCoaCount: approvedWithoutDivisionOrCoa.length,
         personalPaidCount: personalPaid.length,
         personalPaidAmount: personalPaid.reduce((sum, e) => sum + e.amount, 0),
+        personalPaidNotInLedgerCount: personalPaidNotInLedger.length,
+        personalPaidNotInLedgerAmount: personalPaidNotInLedger.reduce((sum, e) => sum + e.amount, 0),
         vendorRequiredCount: vendorRequired.length,
         withoutVendorCount: withoutVendor.length,
         vendorRelatedPartyCount: vendorRelatedParty.length,
@@ -171,7 +190,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({
         ...googleWorkspaceDegradedSource(EXPENSES_SOURCE, error),
         expenses: [],
-        stats: { total: 0, pendingCount: 0, pendingAmount: 0, approvedCount: 0, approvedAmount: 0, approvedThisMonthCount: 0, approvedThisMonthAmount: 0, rejectedCount: 0, rejectedAmount: 0, needsProofCount: 0, needsProofAmount: 0, withoutDivisionCount: 0, personalPaidCount: 0, personalPaidAmount: 0, vendorRequiredCount: 0, withoutVendorCount: 0, vendorRelatedPartyCount: 0 },
+        stats: { total: 0, pendingCount: 0, pendingAmount: 0, approvedCount: 0, approvedAmount: 0, approvedThisMonthCount: 0, approvedThisMonthAmount: 0, rejectedCount: 0, rejectedAmount: 0, needsProofCount: 0, needsProofAmount: 0, withoutDivisionCount: 0, approvedWithoutDivisionOrCoaCount: 0, personalPaidCount: 0, personalPaidAmount: 0, personalPaidNotInLedgerCount: 0, personalPaidNotInLedgerAmount: 0, vendorRequiredCount: 0, withoutVendorCount: 0, vendorRelatedPartyCount: 0 },
         budgetVsActual: {},
       });
     }

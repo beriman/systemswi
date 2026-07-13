@@ -48,8 +48,11 @@ interface ExpenseStats {
   needsProofCount?: number;
   needsProofAmount?: number;
   withoutDivisionCount?: number;
+  approvedWithoutDivisionOrCoaCount?: number;
   personalPaidCount?: number;
   personalPaidAmount?: number;
+  personalPaidNotInLedgerCount?: number;
+  personalPaidNotInLedgerAmount?: number;
   vendorRequiredCount?: number;
   withoutVendorCount?: number;
   vendorRelatedPartyCount?: number;
@@ -582,8 +585,8 @@ export default function ExpensesPage() {
             <CardContent>
               <div className="grid gap-3 md:grid-cols-4 text-sm">
                 <div><div className="font-semibold">Needs Proof</div><div>{stats?.needsProofCount || 0} item — {formatCurrency(stats?.needsProofAmount || 0)}</div></div>
-                <div><div className="font-semibold">Tanpa Division</div><div>{stats?.withoutDivisionCount || 0} item</div></div>
-                <div><div className="font-semibold">Personal Paid</div><div>{stats?.personalPaidCount || 0} item — {formatCurrency(stats?.personalPaidAmount || 0)}</div></div>
+                <div><div className="font-semibold">Tanpa Division/COA</div><div>{stats?.withoutDivisionCount || 0} tanpa division; {stats?.approvedWithoutDivisionOrCoaCount || 0} approved belum lengkap</div></div>
+                <div><div className="font-semibold">Personal Paid → Ledger</div><div>{stats?.personalPaidNotInLedgerCount || 0} approved belum cocok — {formatCurrency(stats?.personalPaidNotInLedgerAmount || 0)}</div></div>
                 <div><div className="font-semibold">Vendor/COI</div><div>{stats?.withoutVendorCount || 0}/{stats?.vendorRequiredCount || 0} butuh vendor link; {stats?.vendorRelatedPartyCount || 0} related-party</div></div>
               </div>
             </CardContent>
