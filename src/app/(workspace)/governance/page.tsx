@@ -102,6 +102,8 @@ export default function GovernancePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [isExportingPdf, setIsExportingPdf] = useState(false);
+  const [isRecordingMonthlyGcg, setIsRecordingMonthlyGcg] = useState(false);
+  const [monthlyGcgMessage, setMonthlyGcgMessage] = useState("");
 
   const load = async (showPending = true) => {
     if (showPending) {
@@ -156,6 +158,36 @@ export default function GovernancePage() {
     }
   };
 
+  const handleRecordMonthlyGcg = async () => {
+    setIsRecordingMonthlyGcg(true);
+    setError("");
+    setMonthlyGcgMessage("");
+    try {
+      const period = new Date().toLocaleDateString("id-ID", { month: "long", year: "numeric" });
+      const response = await fetch("/api/reports", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "record_monthly_gcg",
+          period,
+          actor: "systemswi governance dashboard",
+          role: "Governance Reporter",
+          notes: "Snapshot Monthly GCG/TARIF dicatat dari tombol /governance; angka tetap dari Google Sheets dan perlu review manusia sebelum distribusi.",
+        }),
+      });
+      const payload = await response.json();
+      if (!response.ok || payload.success === false) {
+        throw new Error(payload?.warning || payload?.error || "Gagal mencatat Monthly_GCG_Report");
+      }
+      setMonthlyGcgMessage(`Monthly_GCG_Report tercatat: ${payload.reportLog?.id || "ID TBA"} (${payload.reportLog?.period || period}).`);
+      await load(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsRecordingMonthlyGcg(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
@@ -165,6 +197,9 @@ export default function GovernancePage() {
         </div>
         <div className="flex flex-wrap gap-2">
           <Button onClick={() => load()} disabled={loading} variant="outline">Refresh</Button>
+          <Button onClick={handleRecordMonthlyGcg} disabled={loading || isRecordingMonthlyGcg || data?.sourceStatus === "degraded"} variant="outline">
+            {isRecordingMonthlyGcg ? "Mencatat GCG..." : "Catat Monthly GCG"}
+          </Button>
           <Button asChild variant="outline">
             <a href="/api/governance/dashboard?format=csv">Export CSV</a>
           </Button>
@@ -177,6 +212,7 @@ export default function GovernancePage() {
       <RoleGate feature="dashboard">
         <div id="governance-dashboard-print" className="space-y-6 bg-background p-1">
         {error && <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>}
+        {monthlyGcgMessage && <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">✅ {monthlyGcgMessage}</div>}
         {data?.sourceStatus === "degraded" && <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">⚠️ {data.warning || "Google Sheets source degraded. Angka ditampilkan sebagai 0/TBA sampai auth pulih."}</div>}
 
         <div className="grid gap-4 md:grid-cols-5">
