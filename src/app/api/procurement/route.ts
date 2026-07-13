@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { googleWorkspaceDegradedSource, googleWorkspaceWriteBlockedSource, isGoogleWorkspaceAuthError } from "@/lib/api/google-workspace-error";
 import { appendRows, readRange, updateRow, deleteRow } from "@/lib/sheets/sheets-real";
 import { appendSwiMemoryLog } from "@/lib/google/audit-log";
+import { logGovernanceActionSafe } from "@/lib/governance/audit";
 import { parseVendorRegisterRows, type VendorRegisterEntry } from "@/lib/governance/vendor-register";
 
 export const runtime = "nodejs";
@@ -226,6 +227,34 @@ async function appendProcurementAudit(entry: { action: string; target: string; s
   }
 }
 
+async function appendProcurementGovernanceAudit(entry: {
+  actor?: string;
+  role?: string;
+  action: string;
+  entityType: "Supplier" | "Purchase Order" | "Goods Receipt";
+  entityId: string;
+  amount?: number;
+  before?: string;
+  after?: string;
+  reason: string;
+  proofUrl?: string;
+}) {
+  await logGovernanceActionSafe({
+    actor: text(entry.actor) || "System",
+    role: text(entry.role) || "Procurement Operator",
+    action: entry.action,
+    entityType: entry.entityType,
+    entityId: entry.entityId,
+    amount: entry.amount || 0,
+    division: "Procurement",
+    before: entry.before || "",
+    after: entry.after || "",
+    reason: entry.reason,
+    proofUrl: entry.proofUrl || "",
+    sourceModule: "/api/procurement",
+  });
+}
+
 export async function GET() {
   try {
     const [supplierRows, poRows, receiptRows, vendorRows] = await Promise.all([
@@ -314,7 +343,19 @@ export async function POST(request: NextRequest) {
         target: `Purchase_Orders:${poId}`,
         summary: `Created PO ${poId} for supplier ${supplier.name}; item ${itemName}; qty ${quantity} ${text(body.unit) || "unit"}; total ${total}; expected ${text(body.expectedDate) || "TBA"}`,
       });
-      return NextResponse.json({ success: true, action, po: { id: poId, supplierName: supplier.name, total }, auditStatus, syncedSheets: ["Purchase_Orders"] }, { status: 201 });
+      await appendProcurementGovernanceAudit({
+        actor: text(body.actor) || text(body.pic),
+        role: text(body.role),
+        action: "CREATE_PURCHASE_ORDER",
+        entityType: "Purchase Order",
+        entityId: poId,
+        amount: total,
+        before: "",
+        after: text(body.status) || "ordered",
+        reason: `Created PO for ${supplier.name}; item ${itemName}; qty ${quantity} ${text(body.unit) || "unit"}; expected ${text(body.expectedDate) || "TBA"}.`,
+        proofUrl: text(body.proofUrl),
+      });
+      return NextResponse.json({ success: true, action, po: { id: poId, supplierName: supplier.name, total }, auditStatus, governanceAudit: "Governance_Audit_Log", syncedSheets: ["Purchase_Orders"] }, { status: 201 });
     }
 
     if (action === "receive") {
@@ -412,6 +453,18 @@ export async function POST(request: NextRequest) {
         target: `Goods_Receipts:${receiptId}`,
         summary: `Received ${quantity} ${po.unit} for PO ${po.id}; QC ${qcStatus}; inventoryUpdated=${qcStatus === "passed" && Boolean(inv)}; movementRef ${movementRef}`,
       });
+      await appendProcurementGovernanceAudit({
+        actor: text(body.actor) || text(body.pic),
+        role: text(body.role),
+        action: "RECEIVE_PURCHASE_ORDER",
+        entityType: "Goods Receipt",
+        entityId: receiptId,
+        amount: quantity * (po.unitCost || 0),
+        before: po.status,
+        after: newStatus,
+        reason: `Received ${quantity} ${po.unit} for PO ${po.id}; QC ${qcStatus}; inventoryUpdated=${qcStatus === "passed" && Boolean(inv)}; movementRef ${movementRef}.`,
+        proofUrl: text(body.proofUrl),
+      });
 
       return NextResponse.json({
         success: true,
@@ -420,6 +473,7 @@ export async function POST(request: NextRequest) {
         inventoryUpdated: qcStatus === "passed" && Boolean(inv),
         poStatus: newStatus,
         auditStatus,
+        governanceAudit: "Governance_Audit_Log",
         syncedSheets: ["Goods_Receipts", "Purchase_Orders", ...(qcStatus === "passed" && inv ? ["Inventory_Master", "Inventory_Movements"] : [])],
       }, { status: 201 });
     }
