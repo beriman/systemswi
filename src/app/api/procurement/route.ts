@@ -218,6 +218,23 @@ function makeReceiptId(existing: Receipt[]) {
   return `GR-${today}-${String(sameDay).padStart(3, "0")}`;
 }
 
+function classifyPoApproval(total: number, supplier: Supplier) {
+  const flags: string[] = [];
+  if (total > 500000) flags.push("DIRECTOR_APPROVAL_REQUIRED");
+  if (total > 2000000) flags.push("TWO_BENCHMARKS_REQUIRED");
+  if ((supplier.relatedParty || "").toLowerCase() === "yes") flags.push("RELATED_PARTY_VENDOR");
+  if (!supplier.governanceVendorId) flags.push("VENDOR_REGISTER_MISSING");
+  if (total > 2000000 && !supplier.benchmarkComplete) flags.push("BENCHMARK_INCOMPLETE_FOR_HIGH_VALUE_PO");
+
+  return {
+    approvalRequired: flags.length > 0,
+    flags,
+    requirement: flags.length
+      ? "Human review required before ordering: Direktur approve untuk > Rp500.000; > Rp2.000.000 wajib 2 benchmark; related-party wajib deklarasi konflik kepentingan."
+      : "Normal procurement approval",
+  };
+}
+
 async function appendProcurementAudit(entry: { action: string; target: string; summary: string }) {
   try {
     await appendSwiMemoryLog(entry);
@@ -298,12 +315,14 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const action = text(body.action);
 
-    const [supplierRows, poRows, receiptRows] = await Promise.all([
+    const [supplierRows, poRows, receiptRows, vendorRows] = await Promise.all([
       readRange("Supplier_Master!A1:J1000"),
       readRange("Purchase_Orders!A1:N1000"),
       readRange("Goods_Receipts!A1:M1000"),
+      readRange("Vendor_Register!A1:L1000").catch(() => []),
     ]);
     const suppliers = parseSuppliers(supplierRows);
+    const governedSuppliers = enrichSuppliersWithVendorGovernance(suppliers, vendorRows);
     const purchaseOrders = parsePurchaseOrders(poRows);
     const receipts = parseReceipts(receiptRows);
 
@@ -315,12 +334,16 @@ export async function POST(request: NextRequest) {
       const unitCost = numberValue(body.unitCost);
       if (!supplierId) return NextResponse.json({ error: "supplierId wajib diisi" }, { status: 400 });
       if (!itemId || !itemName) return NextResponse.json({ error: "itemId dan itemName wajib diisi" }, { status: 400 });
-      const supplier = suppliers.find((item) => item.id.toLowerCase() === supplierId.toLowerCase());
+      const supplier = governedSuppliers.find((item) => item.id.toLowerCase() === supplierId.toLowerCase());
       if (!supplier) return NextResponse.json({ error: "supplierId tidak ditemukan" }, { status: 404 });
       if (quantity <= 0) return NextResponse.json({ error: "quantity wajib lebih dari 0" }, { status: 400 });
       const poId = text(body.poId) || makePoId(purchaseOrders);
       const date = text(body.date) || new Date().toISOString().slice(0, 10);
       const total = quantity * unitCost;
+      const governance = classifyPoApproval(total, supplier);
+      const requestedStatus = text(body.status) || "ordered";
+      const approvalConfirmed = ["yes", "true", "1", "approved"].includes(text(body.approvalConfirmed || body.directorApproved).toLowerCase());
+      const status = governance.approvalRequired && !approvalConfirmed && requestedStatus !== "cancelled" ? "draft" : requestedStatus;
       const row = [
         poId,
         date,
@@ -332,16 +355,20 @@ export async function POST(request: NextRequest) {
         text(body.unit) || "unit",
         unitCost,
         total,
-        text(body.status) || "ordered",
+        status,
         text(body.expectedDate) || "TBA",
         text(body.proofUrl),
-        text(body.notes),
+        [
+          text(body.notes),
+          governance.flags.length ? `GCG flags: ${governance.flags.join(", ")}` : "",
+          governance.approvalRequired && !approvalConfirmed ? "Status forced draft until human approval is confirmed." : "",
+        ].filter(Boolean).join(" | "),
       ];
       await appendRows("PurchaseOrders", [row]);
       const auditStatus = await appendProcurementAudit({
         action: "Procurement PO Created",
         target: `Purchase_Orders:${poId}`,
-        summary: `Created PO ${poId} for supplier ${supplier.name}; item ${itemName}; qty ${quantity} ${text(body.unit) || "unit"}; total ${total}; expected ${text(body.expectedDate) || "TBA"}`,
+        summary: `Created PO ${poId} for supplier ${supplier.name}; item ${itemName}; qty ${quantity} ${text(body.unit) || "unit"}; total ${total}; status ${status}; expected ${text(body.expectedDate) || "TBA"}; governance ${governance.flags.join(", ") || "normal"}`,
       });
       await appendProcurementGovernanceAudit({
         actor: text(body.actor) || text(body.pic),
@@ -351,11 +378,23 @@ export async function POST(request: NextRequest) {
         entityId: poId,
         amount: total,
         before: "",
-        after: text(body.status) || "ordered",
-        reason: `Created PO for ${supplier.name}; item ${itemName}; qty ${quantity} ${text(body.unit) || "unit"}; expected ${text(body.expectedDate) || "TBA"}.`,
+        after: status,
+        reason: `Created PO for ${supplier.name}; item ${itemName}; qty ${quantity} ${text(body.unit) || "unit"}; expected ${text(body.expectedDate) || "TBA"}. ${governance.requirement} Flags: ${governance.flags.join(", ") || "none"}.`,
         proofUrl: text(body.proofUrl),
       });
-      return NextResponse.json({ success: true, action, po: { id: poId, supplierName: supplier.name, total }, auditStatus, governanceAudit: "Governance_Audit_Log", syncedSheets: ["Purchase_Orders"] }, { status: 201 });
+      return NextResponse.json({
+        success: true,
+        action,
+        po: { id: poId, supplierName: supplier.name, total, status },
+        governance: {
+          ...governance,
+          vendorRegisterId: supplier.governanceVendorId || "Belum dicatat",
+          statusForcedToDraft: status === "draft" && requestedStatus !== "draft",
+        },
+        auditStatus,
+        governanceAudit: "Governance_Audit_Log",
+        syncedSheets: ["Purchase_Orders"],
+      }, { status: 201 });
     }
 
     if (action === "receive") {
