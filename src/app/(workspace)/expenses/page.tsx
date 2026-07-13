@@ -104,6 +104,17 @@ interface VendorOption {
 interface VendorApiResponse {
   vendors?: VendorOption[];
 }
+
+interface CoaOption {
+  code: string;
+  name: string;
+  category: string;
+  label: string;
+}
+
+interface CoaApiResponse {
+  entries?: CoaOption[];
+}
 function formatCurrency(amount: number): string {
   if (!amount && amount !== 0) return "Rp 0";
   return new Intl.NumberFormat("id-ID", {
@@ -160,6 +171,7 @@ export default function ExpensesPage() {
   // Events list for dropdown
   const [events, setEvents] = useState<{ id: string; name: string }[]>([]);
   const [vendors, setVendors] = useState<VendorOption[]>([]);
+  const [coaOptions, setCoaOptions] = useState<CoaOption[]>([]);
   const [selectedVendorId, setSelectedVendorId] = useState("");
 
   const selectedVendor = vendors.find((vendor) => vendor.id === selectedVendorId);
@@ -168,6 +180,7 @@ export default function ExpensesPage() {
     fetchExpenses();
     fetchEvents();
     fetchVendors();
+    fetchCoaOptions();
   }, []);
 
   async function fetchExpenses() {
@@ -208,6 +221,17 @@ export default function ExpensesPage() {
       setVendors(json.vendors || []);
     } catch {
       // Vendor register may not be available; manual vendor fields still work
+    }
+  }
+
+  async function fetchCoaOptions() {
+    try {
+      const res = await fetch("/api/finance/coa");
+      if (!res.ok) return;
+      const json: CoaApiResponse = await res.json();
+      setCoaOptions(json.entries || []);
+    } catch {
+      // COA sheet may not be available; manual COA input fallback remains available
     }
   }
 
@@ -401,8 +425,15 @@ export default function ExpensesPage() {
                   </select>
                 </div>
                 <div>
-                  <Label htmlFor="coaCategory">COA Category</Label>
-                  <Input id="coaCategory" name="coaCategory" placeholder="Ikut kategori / COA" />
+                  <Label htmlFor="coaCategory">COA Category *</Label>
+                  <select id="coaCategory" name="coaCategory" className="w-full border rounded-md px-3 py-2 text-sm" required>
+                    <option value="">-- Pilih COA dari Sheet --</option>
+                    {coaOptions.map((coa) => (
+                      <option key={`${coa.code}-${coa.name}-${coa.category}`} value={coa.label}>{coa.label}</option>
+                    ))}
+                    <option value="TBA - COA belum tersedia">TBA - COA belum tersedia</option>
+                  </select>
+                  <p className="text-xs text-muted-foreground mt-1">Pilihan berasal dari sheet COA. Jika belum ada, pilih TBA agar approval tetap menandai kebutuhan klasifikasi nyata.</p>
                 </div>
                 <div>
                   <Label htmlFor="paymentMethod">Payment Method</Label>

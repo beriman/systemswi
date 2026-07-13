@@ -53,6 +53,11 @@ function isYes(value: string): boolean {
   return ["yes", "ya", "true", "1"].includes(value.toLowerCase());
 }
 
+function isMissingCoa(value: string): boolean {
+  const normalized = value.toLowerCase();
+  return !value || normalized.includes("tba") || normalized.includes("belum dicatat") || normalized.includes("belum tersedia");
+}
+
 function isOverdue(dueDate: string): boolean {
   if (!dueDate) return false;
   const due = new Date(`${dueDate}T00:00:00Z`).getTime();
@@ -145,12 +150,12 @@ export async function GET(req: NextRequest) {
     const eventBudget = rows.eventBudget.slice(1).filter((row) => text(row[0]));
 
     const expenseWithProof = expenses.filter((row) => amount(row[6]) <= 0 || Boolean(text(row[7])));
-    const expenseWithDivision = expenses.filter((row) => Boolean(text(row[12])) && Boolean(text(row[13] || row[4])));
+    const expenseWithDivision = expenses.filter((row) => Boolean(text(row[12])) && !isMissingCoa(text(row[13] || row[4])));
     const expensePending = expenses.filter((row) => text(row[8]).toLowerCase() === "pending");
     const expenseNeedsProof = expenses.filter((row) => text(row[8]).toLowerCase() === "needs proof" || (amount(row[6]) > 0 && !text(row[7])));
     const expenseLargeWithoutApproval = expenses.filter((row) => amount(row[6]) > 500000 && !isClosed(text(row[8])));
     const approvedExpenses = expenses.filter((row) => text(row[8]).toLowerCase() === "approved");
-    const approvedWithoutDivisionOrCoa = approvedExpenses.filter((row) => !text(row[12]) || !text(row[13] || row[4]));
+    const approvedWithoutDivisionOrCoa = approvedExpenses.filter((row) => !text(row[12]) || isMissingCoa(text(row[13] || row[4])));
     const approvedWithReviewer = approvedExpenses.filter((row) => Boolean(text(row[9])));
     const personalPaidExpenses = expenses.filter((row) => text(row[14]).toLowerCase() === "personal paid" || isYes(text(row[17])));
     // Shareholder_Ledger is created only after human approval. Pending/Needs Proof personal-paid

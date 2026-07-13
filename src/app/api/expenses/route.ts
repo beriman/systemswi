@@ -27,6 +27,11 @@ function today() {
   return new Date().toISOString().slice(0, 10);
 }
 
+function isMissingCoa(value: string): boolean {
+  const normalized = value.toLowerCase();
+  return !value || normalized.includes("tba") || normalized.includes("belum dicatat") || normalized.includes("belum tersedia");
+}
+
 interface ExpenseSubmission {
   id: string;
   date: string;
@@ -107,7 +112,7 @@ export async function GET(req: NextRequest) {
     const rejected = expenses.filter((e) => e.status === "Rejected");
     const needsProof = expenses.filter((e) => e.status === "Needs Proof" || (e.amount > 0 && !e.proofUrl));
     const withoutDivision = expenses.filter((e) => !e.division);
-    const approvedWithoutDivisionOrCoa = approved.filter((e) => !e.division || !e.coaCategory);
+    const approvedWithoutDivisionOrCoa = approved.filter((e) => !e.division || isMissingCoa(e.coaCategory));
     const personalPaid = expenses.filter((e) => e.paymentMethod === "Personal Paid" || e.shareholderDebtFlag === "Yes");
     const approvedPersonalPaid = personalPaid.filter((e) => e.status === "Approved");
     let personalPaidNotInLedger = approvedPersonalPaid;
@@ -230,7 +235,7 @@ export async function POST(req: NextRequest) {
       "",
       body.notes || "",
       body.division || "",
-      body.coaCategory || finalCategory,
+      body.coaCategory || "",
       paymentMethod,
       body.relatedBrand || "",
       proofRequired,
