@@ -4,7 +4,7 @@ import { readRange, readSheet } from "@/lib/sheets/sheets-real";
 
 export const runtime = "nodejs";
 
-const SOURCE = "Google Sheets: Expense_Submissions + Shareholder_Ledger + Compliance_Register + Vendor_Register + Governance_Audit_Log + Monthly_GCG_Report + Events + Event_Budget";
+const SOURCE = "Google Sheets: Expense_Submissions + Shareholder_Ledger + Compliance_Register + Vendor_Register + Governance_Audit_Log + Monthly_GCG_Report + Events + Event_Budget + Purchase_Orders";
 
 type SourceStatus = "live" | "degraded";
 type ScoreKey = "transparency" | "accountability" | "responsibility" | "independency" | "fairness";
@@ -115,7 +115,7 @@ async function readRows(): Promise<{ rows: Record<string, string[][]>; sourceSta
     return [];
   };
 
-  const [expenses, shareholderLedger, complianceRegister, vendorRegister, governanceAuditLog, monthlyGcgReport, tasks, events, eventBudget] = await Promise.all([
+  const [expenses, shareholderLedger, complianceRegister, vendorRegister, governanceAuditLog, monthlyGcgReport, tasks, events, eventBudget, purchaseOrders] = await Promise.all([
     readRange("Expense_Submissions!A1:V1000").catch(emptyOnAuthError),
     readSheet("ShareholderLedger").catch(emptyOnAuthError),
     readSheet("ComplianceRegister").catch(emptyOnAuthError),
@@ -125,11 +125,12 @@ async function readRows(): Promise<{ rows: Record<string, string[][]>; sourceSta
     readSheet("Tasks").catch(emptyOnAuthError),
     readRange("Events!A1:V1000").catch(emptyOnAuthError),
     readRange("Event_Budget!A1:H1000").catch(emptyOnAuthError),
+    readRange("Purchase_Orders!A1:N1000").catch(emptyOnAuthError),
   ]);
 
   const degraded = googleAuthError ? googleWorkspaceDegradedSource(SOURCE, googleAuthError) : null;
   return {
-    rows: { expenses, shareholderLedger, complianceRegister, vendorRegister, governanceAuditLog, monthlyGcgReport, tasks, events, eventBudget },
+    rows: { expenses, shareholderLedger, complianceRegister, vendorRegister, governanceAuditLog, monthlyGcgReport, tasks, events, eventBudget, purchaseOrders },
     sourceStatus: degraded ? "degraded" : "live",
     warning: degraded?.warning,
     details: degraded?.details,
@@ -148,6 +149,7 @@ export async function GET(req: NextRequest) {
     const tasks = rows.tasks.slice(1).filter((row) => text(row[0]));
     const events = rows.events.slice(1).filter((row) => text(row[0]));
     const eventBudget = rows.eventBudget.slice(1).filter((row) => text(row[0]));
+    const purchaseOrders = rows.purchaseOrders.slice(1).filter((row) => text(row[0]));
 
     const expenseWithProof = expenses.filter((row) => amount(row[6]) <= 0 || Boolean(text(row[7])));
     const expenseWithDivision = expenses.filter((row) => Boolean(text(row[12])) && !isMissingCoa(text(row[13] || row[4])));
@@ -198,6 +200,9 @@ export async function GET(req: NextRequest) {
     const eventBudgetOverActualWithoutNotes = eventBudgetOverActual.filter((row) => !text(row[6]));
     const eventsOverBudget = events.filter((row) => amount(row[13]) > amount(row[12]) && amount(row[12]) > 0);
     const eventsOverBudgetWithoutNotes = eventsOverBudget.filter((row) => !text(row[19]));
+    const openPurchaseOrders = purchaseOrders.filter((row) => ["draft", "ordered", "partial"].includes(text(row[10]).toLowerCase()));
+    const overduePurchaseOrders = openPurchaseOrders.filter((row) => isOverdue(text(row[11])));
+    const highValueOverduePurchaseOrders = overduePurchaseOrders.filter((row) => amount(row[9]) > 2000000);
 
     const latestMonthlyGcg = monthlyGcgReport
       .map((row) => ({
@@ -234,14 +239,17 @@ export async function GET(req: NextRequest) {
     const complianceProofScore = percent(completedCompliance.length - completedComplianceMissingProof.length, completedCompliance.length);
     const responsibilityScore = Math.round((complianceOnTimeScore + complianceProofScore) / 2);
     const independencyScore = Math.round((percent(vendorWithBenchmark.length, vendorRegister.length) + percent(expenseVendorRequired.length - expensesWithoutVendor.length, expenseVendorRequired.length)) / 2);
-    const fairnessScore = percent(approvedPersonalPaidExpenses.length - personalPaidNotInLedger.length, approvedPersonalPaidExpenses.length);
+    const fairnessScore = Math.round((
+      percent(approvedPersonalPaidExpenses.length - personalPaidNotInLedger.length, approvedPersonalPaidExpenses.length)
+      + percent(openPurchaseOrders.length - overduePurchaseOrders.length, openPurchaseOrders.length)
+    ) / 2);
 
     const scores = [
       makeScore("transparency", "Transparency", transparencyScore, `${expenseWithProof.length}/${expenses.length} expense punya bukti atau amount 0; ${expenseWithDivision.length}/${expenses.length} punya division/COA; Monthly_GCG_Report ${hasMonthlyGcgReport ? "tersedia" : "belum dicatat"}.`),
       makeScore("accountability", "Accountability", accountabilityScore, `${approvedWithReviewer.length}/${approvedExpenses.length} approved expense punya reviewer; ${governanceAuditLog.length} governance audit rows.`),
       makeScore("responsibility", "Responsibility", responsibilityScore, `${overdueCompliance.length} overdue dari ${complianceRegister.length} compliance item; ${completedComplianceMissingProof.length}/${completedCompliance.length} completed compliance belum punya proof URL.`),
       makeScore("independency", "Independency", independencyScore, `${vendorWithBenchmark.length}/${vendorRegister.length} vendor punya benchmark + selected reason; ${expenseVendorRequired.length - expensesWithoutVendor.length}/${expenseVendorRequired.length} expense vendor-category punya vendor link.`),
-      makeScore("fairness", "Fairness", fairnessScore, `${personalPaidNotInLedger.length}/${approvedPersonalPaidExpenses.length} approved personal-paid expense belum terlacak ke ledger.`),
+      makeScore("fairness", "Fairness", fairnessScore, `${personalPaidNotInLedger.length}/${approvedPersonalPaidExpenses.length} approved personal-paid expense belum terlacak ke ledger; ${overduePurchaseOrders.length}/${openPurchaseOrders.length} open PO melewati expected date.`),
     ];
 
     const overallScore = Math.round(scores.reduce((sum, score) => sum + score.score, 0) / scores.length);
@@ -287,6 +295,9 @@ export async function GET(req: NextRequest) {
           relatedParty: relatedPartyVendors.length,
           exceptions: vendorExceptions.length,
           benchmarkComplete: vendorWithBenchmark.length,
+          openPo: openPurchaseOrders.length,
+          overduePo: overduePurchaseOrders.length,
+          overduePoValue: overduePurchaseOrders.reduce((sum, row) => sum + amount(row[9]), 0),
         },
         audit: {
           governanceAuditRows: governanceAuditLog.length,
@@ -322,6 +333,7 @@ export async function GET(req: NextRequest) {
         }),
         ...completedComplianceMissingProof.slice(0, 10).map((row) => ({ type: "COMPLIANCE_COMPLETED_WITHOUT_PROOF", severity: "medium", entityId: text(row[0]), description: text(row[2]) || "Compliance selesai tanpa proof URL", amount: 0, owner: text(row[6]) || "Belum dicatat" })),
         ...vendorExceptions.slice(0, 10).map((row) => ({ type: "VENDOR_GOVERNANCE_EXCEPTION", severity: isYes(text(row[4])) ? "high" : "medium", entityId: text(row[0]), description: text(row[1]) || "Vendor perlu review benchmark/COI", amount: 0, owner: text(row[3]) || "Belum dicatat" })),
+        ...overduePurchaseOrders.slice(0, 10).map((row) => ({ type: "VENDOR_PO_OVERDUE", severity: highValueOverduePurchaseOrders.some((po) => text(po[0]) === text(row[0])) ? "high" : "medium", entityId: text(row[0]), description: `${text(row[3]) || "Vendor"} — ${text(row[5]) || "PO open melewati expected date"} due ${text(row[11]) || "TBA"}`, amount: amount(row[9]), owner: text(row[3]) || "Belum dicatat" })),
         ...expensesWithoutVendor.slice(0, 10).map((row) => ({ type: "EXPENSE_VENDOR_NOT_LINKED", severity: amount(row[6]) > 2000000 ? "high" : "medium", entityId: text(row[0]), description: text(row[5]) || "Expense kategori vendor belum dikaitkan ke Vendor_Register", amount: amount(row[6]), owner: text(row[2]) || "Belum dicatat" })),
         ...personalPaidNotInLedger.slice(0, 10).map((row) => ({ type: "PERSONAL_PAID_NOT_IN_LEDGER", severity: "medium", entityId: text(row[0]), description: text(row[5]) || "Personal paid belum cocok ke Shareholder_Ledger", amount: amount(row[6]), owner: text(row[2]) || "Belum dicatat" })),
         ...eventsOverBudgetWithoutNotes.slice(0, 10).map((row) => ({ type: "EVENT_OVER_BUDGET_NO_NOTES", severity: "high", entityId: text(row[0]), description: text(row[1]) || "Event actual > budget tanpa catatan closeout", amount: amount(row[13]) - amount(row[12]), owner: text(row[6]) || "Belum dicatat" })),
@@ -334,6 +346,7 @@ export async function GET(req: NextRequest) {
         approvedWithoutDivisionOrCoa.length ? "Perbaiki approved expense yang belum punya division/COA; acceptance GCG melarang approved expense tanpa klasifikasi." : expensePending.length ? "Review dan approve/reject expense pending; semua keputusan harus masuk Governance_Audit_Log." : "Tidak ada expense pending dari data yang terbaca.",
         overdueCompliance.length ? "Tindaklanjuti compliance overdue dan upload bukti setelah selesai." : dueSoonCompliance.length ? "Follow-up compliance due soon (H-7/H-3/H-1) dan siapkan proof URL sebelum status submitted/paid." : completedComplianceMissingProof.length ? "Lengkapi proof URL untuk compliance yang sudah marked submitted/paid/complete." : "Pantau compliance due soon dan jangan menandai submitted tanpa bukti.",
         vendorExceptions.length ? "Lengkapi benchmark vendor dan deklarasi related-party sebelum transaksi besar." : "Vendor register tidak menunjukkan exception dari data terbaca.",
+        overduePurchaseOrders.length ? "Review PO/vendor payable yang melewati expected date; update status received/cancelled atau catat alasan keterlambatan." : "Tidak ada open PO melewati expected date dari data Purchase_Orders yang terbaca.",
         eventBudgetOverActualWithoutNotes.length + eventsOverBudgetWithoutNotes.length ? "Lengkapi catatan closeout untuk event/budget row yang actual-nya melewati budget." : "Event budget tidak menunjukkan over-budget tanpa notes dari data terbaca.",
         expensesWithoutVendor.length ? "Hubungkan expense Bahan Baku/Packaging/Sewa Booth ke Vendor_Register atau isi vendor name." : "Expense kategori vendor sudah punya vendor link atau belum ada data.",
         personalPaidNotInLedger.length ? "Cocokkan approved Personal Paid expense ke Shareholder_Ledger." : "Approved personal-paid expense sudah cocok atau belum ada data personal-paid approved.",
