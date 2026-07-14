@@ -125,29 +125,29 @@ function toGovernanceCsv(payload: {
 }
 
 async function readRows(): Promise<{ rows: Record<string, string[][]>; sourceStatus: SourceStatus; warning?: string; details?: string }> {
-  let googleAuthError: unknown = null;
-  const emptyOnAuthError = (error: unknown): string[][] => {
-    if (isGoogleWorkspaceAuthError(error)) googleAuthError ||= error;
+  let googleReadError: unknown = null;
+  const emptyOnReadError = (error: unknown): string[][] => {
+    googleReadError ||= error;
     return [];
   };
 
   const [expenses, shareholderLedger, complianceRegister, vendorRegister, governanceAuditLog, monthlyGcgReport, tasks, events, eventBudget, eventTenants, eventSponsors, eventMedia, purchaseOrders] = await Promise.all([
-    readRange("Expense_Submissions!A1:V1000").catch(emptyOnAuthError),
-    readSheet("ShareholderLedger").catch(emptyOnAuthError),
-    readSheet("ComplianceRegister").catch(emptyOnAuthError),
-    readSheet("VendorRegister").catch(emptyOnAuthError),
-    readSheet("GovernanceAuditLog").catch(emptyOnAuthError),
-    readSheet("MonthlyGcgReport").catch(emptyOnAuthError),
-    readSheet("Tasks").catch(emptyOnAuthError),
-    readRange("Events!A1:V1000").catch(emptyOnAuthError),
-    readRange("Event_Budget!A1:H1000").catch(emptyOnAuthError),
-    readRange("Event_Tenants!A1:O1000").catch(emptyOnAuthError),
-    readRange("Event_Sponsors!A1:O1000").catch(emptyOnAuthError),
-    readRange("Event_Media!A1:K1000").catch(emptyOnAuthError),
-    readRange("Purchase_Orders!A1:N1000").catch(emptyOnAuthError),
+    readRange("Expense_Submissions!A1:V1000").catch(emptyOnReadError),
+    readSheet("ShareholderLedger").catch(emptyOnReadError),
+    readSheet("ComplianceRegister").catch(emptyOnReadError),
+    readSheet("VendorRegister").catch(emptyOnReadError),
+    readSheet("GovernanceAuditLog").catch(emptyOnReadError),
+    readSheet("MonthlyGcgReport").catch(emptyOnReadError),
+    readSheet("Tasks").catch(emptyOnReadError),
+    readRange("Events!A1:V1000").catch(emptyOnReadError),
+    readRange("Event_Budget!A1:H1000").catch(emptyOnReadError),
+    readRange("Event_Tenants!A1:O1000").catch(emptyOnReadError),
+    readRange("Event_Sponsors!A1:O1000").catch(emptyOnReadError),
+    readRange("Event_Media!A1:K1000").catch(emptyOnReadError),
+    readRange("Purchase_Orders!A1:N1000").catch(emptyOnReadError),
   ]);
 
-  const degraded = googleAuthError ? googleWorkspaceDegradedSource(SOURCE, googleAuthError) : null;
+  const degraded = googleReadError ? googleWorkspaceDegradedSource(SOURCE, googleReadError) : null;
   return {
     rows: { expenses, shareholderLedger, complianceRegister, vendorRegister, governanceAuditLog, monthlyGcgReport, tasks, events, eventBudget, eventTenants, eventSponsors, eventMedia, purchaseOrders },
     sourceStatus: degraded ? "degraded" : "live",
@@ -159,6 +159,52 @@ async function readRows(): Promise<{ rows: Record<string, string[][]>; sourceSta
 export async function GET(req: NextRequest) {
   try {
     const { rows, sourceStatus, warning, details } = await readRows();
+
+    if (sourceStatus === "degraded") {
+      const generatedAt = new Date().toISOString();
+      const scores = [
+        makeScore("transparency", "Transparency", 0, "Google Sheets source degraded; score ditahan agar tidak membaca data kosong sebagai kondisi aman."),
+        makeScore("accountability", "Accountability", 0, "Google Sheets source degraded; audit/approval rows tidak bisa diverifikasi."),
+        makeScore("responsibility", "Responsibility", 0, "Google Sheets source degraded; compliance overdue/due soon tidak bisa diverifikasi."),
+        makeScore("independency", "Independency", 0, "Google Sheets source degraded; Vendor_Register/benchmark tidak bisa diverifikasi."),
+        makeScore("fairness", "Fairness", 0, "Google Sheets source degraded; Shareholder_Ledger dan personal-paid matching tidak bisa diverifikasi."),
+      ];
+      const payload = {
+        source: SOURCE,
+        sourceStatus,
+        warning,
+        details,
+        generatedAt,
+        overallScore: 0,
+        scores,
+        summary: {},
+        exceptions: [{
+          type: "GOOGLE_WORKSPACE_SOURCE_DEGRADED",
+          severity: "high",
+          entityId: "Google Sheets",
+          description: warning || "Google Sheets source degraded; dashboard GCG tidak menghitung skor dari data kosong/TBA.",
+          amount: 0,
+          owner: "Direksi/Finance",
+        }],
+        recentAuditTrail: [],
+        nextActions: [
+          "Re-auth/repair Google Workspace credentials agar governance dashboard bisa membaca Sheets source of truth.",
+          "Jangan gunakan skor GCG untuk keputusan sampai sourceStatus kembali live.",
+        ],
+      };
+
+      if (req.nextUrl.searchParams.get("format") === "csv") {
+        return new NextResponse(toGovernanceCsv(payload), {
+          headers: {
+            "Content-Type": "text/csv; charset=utf-8",
+            "Content-Disposition": `attachment; filename="governance-dashboard-${new Date().toISOString().slice(0, 10)}.csv"`,
+          },
+        });
+      }
+
+      return NextResponse.json(payload);
+    }
+
     const expenses = rows.expenses.slice(1).filter((row) => text(row[0]));
     const shareholderLedger = rows.shareholderLedger.slice(1).filter((row) => text(row[0]));
     const complianceRegister = rows.complianceRegister.slice(1).filter((row) => text(row[0]));
