@@ -36,6 +36,16 @@ type SheetContext = {
   eventMediaRows?: number;
   closeoutCandidateEvents?: number;
   eventMissingMediaCount?: number;
+  eventCloseoutSummary?: Array<{
+    id: string;
+    name: string;
+    tenantExpected: number;
+    tenantPaid: number;
+    sponsorExpected: number;
+    sponsorPaid: number;
+    receivable: number;
+    mediaRows: number;
+  }>;
 };
 
 const text = (value: unknown) => String(value ?? "").trim();
@@ -221,6 +231,11 @@ async function readContext(): Promise<SheetContext> {
   const vendorException = vendorRows.filter((row) => isRelated(text(row[4])) || !text(row[6]) || !text(row[7]) || !text(row[8]));
 
   const mediaEventIds = new Set(eventMedia.slice(1).map((row) => text(row[1])).filter(Boolean));
+  const mediaRowsByEvent = eventMedia.slice(1).reduce<Record<string, number>>((acc, row) => {
+    const eventId = text(row[1]);
+    if (eventId) acc[eventId] = (acc[eventId] || 0) + 1;
+    return acc;
+  }, {});
   const todayIso = new Date().toISOString().slice(0, 10);
   const closeoutCandidateRows = events.slice(1).filter((row) => {
     const eventId = text(row[0]);
@@ -231,6 +246,29 @@ async function readContext(): Promise<SheetContext> {
       || (Boolean(endDate) && endDate < todayIso && !["draft", "cancelled", "canceled"].includes(status));
   });
   const eventMissingMediaCount = closeoutCandidateRows.filter((row) => !mediaEventIds.has(text(row[0]))).length;
+  const eventCloseoutSummary = events.slice(1).filter((row) => text(row[0])).map((row) => {
+    const eventId = text(row[0]);
+    const eventName = text(row[1]) || eventId;
+    const tenantRowsForEvent = tenants.slice(1).filter((tenant) => text(tenant[1]) === eventId || text(tenant[1]) === eventName);
+    const sponsorRowsForEvent = sponsors.slice(1).filter((sponsor) => text(sponsor[1]) === eventId || text(sponsor[1]) === eventName);
+    const tenantExpected = tenantRowsForEvent.reduce((sum, tenant) => sum + amount(tenant[9]), 0);
+    const tenantPaid = tenantRowsForEvent.reduce((sum, tenant) => sum + amount(tenant[11]), 0);
+    const sponsorExpected = sponsorRowsForEvent.reduce((sum, sponsor) => sum + amount(sponsor[7]) + amount(sponsor[10]), 0);
+    const sponsorPaid = sponsorRowsForEvent.reduce((sum, sponsor) => {
+      const status = text(sponsor[11]).toLowerCase();
+      return sum + (["paid", "lunas", "settled", "received"].includes(status) ? amount(sponsor[7]) + amount(sponsor[10]) : 0);
+    }, 0);
+    return {
+      id: eventId,
+      name: eventName,
+      tenantExpected,
+      tenantPaid,
+      sponsorExpected,
+      sponsorPaid,
+      receivable: Math.max(tenantExpected - tenantPaid, 0) + Math.max(sponsorExpected - sponsorPaid, 0),
+      mediaRows: mediaRowsByEvent[eventId] || 0,
+    };
+  });
 
   const degraded = googleAuthError
     ? googleWorkspaceDegradedSource("Google Sheets context for Document Generator", googleAuthError)
@@ -264,6 +302,7 @@ async function readContext(): Promise<SheetContext> {
     eventMediaRows: Math.max(eventMedia.length - 1, 0),
     closeoutCandidateEvents: closeoutCandidateRows.length,
     eventMissingMediaCount,
+    eventCloseoutSummary,
     notes: [
       `Finance source: Laporan_Bulanan (${Math.max(finance.length - 1, 0)} data rows).`,
       `Commercial source: Event_Tenants ${Math.max(tenants.length - 1, 0)} rows; ${unpaidTenants} tenant belum lunas.`,
@@ -330,6 +369,7 @@ export async function POST(req: NextRequest) {
       eventMediaRows: context.eventMediaRows,
       closeoutCandidateEvents: context.closeoutCandidateEvents,
       eventMissingMediaCount: context.eventMissingMediaCount,
+      eventCloseoutSummary: context.eventCloseoutSummary,
     };
     const content = appendContext(generateDocumentContent(rawType, data, text(body.letterNumber), rabContext), context);
     const template = getTemplateByType(rawType);

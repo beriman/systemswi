@@ -48,6 +48,16 @@ export type RabContext = {
   eventMediaRows?: number;
   closeoutCandidateEvents?: number;
   eventMissingMediaCount?: number;
+  eventCloseoutSummary?: Array<{
+    id: string;
+    name: string;
+    tenantExpected: number;
+    tenantPaid: number;
+    sponsorExpected: number;
+    sponsorPaid: number;
+    receivable: number;
+    mediaRows: number;
+  }>;
 };
 
 // Generate document content based on type and data
@@ -366,9 +376,22 @@ function generateEventCloseoutReport(data: Record<string, string>, letterNumber:
     const selectedEvent = normalize(data.event);
     const eventRows = (context?.eventBudgetSummary || []).filter((event) => !selectedEvent || normalize(event.name).includes(selectedEvent) || selectedEvent.includes(normalize(event.name)));
     const rows = eventRows.length ? eventRows : (context?.eventBudgetSummary || []);
+    const eventCommercial = (context?.eventCloseoutSummary || []).find((event) => {
+        const name = normalize(event.name);
+        const id = normalize(event.id);
+        return selectedEvent && (name.includes(selectedEvent) || selectedEvent.includes(name) || id === selectedEvent);
+    });
     const budget = rows.reduce((sum, event) => sum + event.budget, 0);
     const actual = rows.reduce((sum, event) => sum + event.actual, 0);
     const remaining = budget - actual;
+    const tenantExpected = eventCommercial?.tenantExpected ?? 0;
+    const tenantPaid = eventCommercial?.tenantPaid ?? 0;
+    const sponsorExpected = eventCommercial?.sponsorExpected ?? 0;
+    const sponsorPaid = eventCommercial?.sponsorPaid ?? 0;
+    const revenuePaid = tenantPaid + sponsorPaid;
+    const revenueExpected = tenantExpected + sponsorExpected;
+    const receivable = eventCommercial?.receivable ?? (context?.tenantOutstanding || 0) + (context?.sponsorPipelineValue || 0);
+    const mediaRows = eventCommercial?.mediaRows ?? context?.eventMediaRows ?? 0;
     const eventTable = rows.length
         ? `| Event | Budget | Actual | Remaining | Status |\n|---|---:|---:|---:|---|\n${rows.map((event) => `| ${event.name || "TBA"} | ${rupiah(event.budget)} | ${rupiah(event.actual)} | ${rupiah(event.remaining)} | ${event.status || "TBA"} |`).join("\n")}`
         : "Belum ada data Event_Budget yang cocok. Isi TBA/0 sampai Sheets dilengkapi.";
@@ -391,12 +414,14 @@ ${eventTable}
 - Remaining / variance: **${rupiah(remaining)}**
 
 ## 2. Revenue, Receivable, Payable
-- Tenant outstanding dari Event_Tenants: **${rupiah(context?.tenantOutstanding || 0)}**
-- Sponsor pipeline/outstanding dari Event_Sponsors: **${rupiah(context?.sponsorPipelineValue || 0)}**
+- Tenant revenue paid / expected: **${rupiah(tenantPaid)} / ${rupiah(tenantExpected)}**
+- Sponsor revenue paid / expected: **${rupiah(sponsorPaid)} / ${rupiah(sponsorExpected)}**
+- Total revenue paid / expected: **${rupiah(revenuePaid)} / ${rupiah(revenueExpected)}**
+- Receivable event: **${rupiah(receivable)}**${eventCommercial ? "" : " (fallback global tenant/sponsor outstanding; pilih event yang cocok untuk angka per-event)"}
 - Payable yang belum tercatat di Sheets: **TBA** — jangan diisi manual tanpa source.
 
 ## 3. Dokumentasi Media
-- Media rows tercatat di Event_Media: **${context?.eventMediaRows || 0}**.
+- Media rows tercatat di Event_Media: **${mediaRows}**.
 - Event selesai/closeout candidate tanpa media: **${context?.eventMissingMediaCount || 0}** dari **${context?.closeoutCandidateEvents || 0}** event kandidat.
 - Link dokumentasi manual: ${data.documentation_url || "TBA — tambahkan Drive/Instagram/media link setelah diverifikasi."}
 
