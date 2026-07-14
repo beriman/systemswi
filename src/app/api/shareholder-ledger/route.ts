@@ -7,6 +7,7 @@ import {
   listShareholderLedger,
 } from "@/lib/shareholder/ledger";
 import { googleWorkspaceDegradedSource, isGoogleWorkspaceAuthError } from "@/lib/api/google-workspace-error";
+import { logGovernanceActionSafe } from "@/lib/governance/audit";
 
 const SOURCE = "Google Sheets: Shareholder_Ledger";
 
@@ -69,7 +70,22 @@ export async function POST(req: NextRequest) {
       notes: body.notes || "Manual shareholder ledger entry from /api/shareholder-ledger",
     });
 
-    return NextResponse.json({ success: true, source: SOURCE, sourceStatus: "live", entry }, { status: 201 });
+    await logGovernanceActionSafe({
+      actor: body.actor || body.approvedBy || "systemswi",
+      role: body.role || "Finance/Governance",
+      action: credit > 0 ? "RECORD_SHAREHOLDER_LEDGER_CREDIT" : "RECORD_SHAREHOLDER_LEDGER_DEBIT",
+      entityType: "Shareholder Ledger",
+      entityId: entry.id,
+      amount: debit || credit,
+      division: entry.division,
+      before: "Not recorded",
+      after: entry.approvalStatus || "Draft",
+      reason: entry.description || entry.notes,
+      proofUrl: entry.proofUrl,
+      sourceModule: "/api/shareholder-ledger",
+    });
+
+    return NextResponse.json({ success: true, source: SOURCE, sourceStatus: "live", entry, audit: "Governance_Audit_Log" }, { status: 201 });
   } catch (error) {
     if (isGoogleWorkspaceAuthError(error)) {
       return NextResponse.json({
