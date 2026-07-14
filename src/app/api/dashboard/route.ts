@@ -241,7 +241,7 @@ function summarizeGovernance(
     governanceAuditRows: auditTrail.length,
     monthlyGcgReportCount: monthlyReports.length,
     latestMonthlyGcgReport: latestMonthlyReport,
-    exceptionCount: needsProofExpenses.length + overdueCompliance.length + vendorExceptions.length,
+    exceptionCount: needsProofExpenses.length + overdueCompliance.length + vendorExceptions.length + (monthlyReports.length ? 0 : 1),
   };
 }
 

@@ -403,10 +403,15 @@ export default function DashboardPage() {
                         <div><div className="text-xl font-bold">{formatNumber(data?.governanceSummary?.governanceAuditRows || 0)}</div><div className="text-xs text-muted-foreground">Audit rows</div></div>
                       </div>
                       <div className="text-xs text-muted-foreground">Hutang SH: {formatCurrency(data?.governanceSummary?.shareholderDebtOutstanding || 0)}</div>
+                      <div className="text-xs text-muted-foreground">
+                        Monthly GCG: {data?.governanceSummary?.latestMonthlyGcgReport?.period || "Belum dicatat"}
+                        {data?.governanceSummary?.latestMonthlyGcgReport?.status ? ` • ${data.governanceSummary.latestMonthlyGcgReport.status}` : ""}
+                      </div>
                       <div className="flex flex-wrap gap-1 text-xs">
                         {(data?.governanceSummary?.needsProofCount || 0) > 0 && <span className="rounded-full bg-red-100 text-red-800 px-2 py-0.5">Proof: {data.governanceSummary.needsProofCount}</span>}
                         {(data?.governanceSummary?.complianceOverdueCount || 0) > 0 && <span className="rounded-full bg-amber-100 text-amber-800 px-2 py-0.5">Compliance: {data.governanceSummary.complianceOverdueCount}</span>}
                         {(data?.governanceSummary?.vendorExceptionCount || 0) > 0 && <span className="rounded-full bg-slate-200 text-slate-800 px-2 py-0.5">Vendor: {data.governanceSummary.vendorExceptionCount}</span>}
+                        {(data?.governanceSummary?.monthlyGcgReportCount || 0) === 0 && <span className="rounded-full bg-indigo-100 text-indigo-800 px-2 py-0.5">Monthly GCG belum dicatat</span>}
                       </div>
                       <Link href="/governance" className="text-xs font-medium text-slate-700 hover:underline">Buka Governance →</Link>
                     </>
