@@ -225,7 +225,7 @@ export async function PUT(
       const isPersonalPaid = s(existing, 14) === "Personal Paid" || s(existing, 17) === "Yes";
       if (isPersonalPaid) {
         try {
-          await appendShareholderLedgerEntryOnce(`expense:${id}`, {
+          const ledgerResult = await appendShareholderLedgerEntryOnce(`expense:${id}`, {
             date: s(existing, 1) || now,
             shareholder: s(existing, 2) || "Beriman Juliano",
             type: "Hutang Pemegang Saham",
@@ -238,8 +238,25 @@ export async function PUT(
             proofUrl: s(existing, 7),
             notes: `Auto-created from approved personal-paid expense:${id}. ${notes || s(existing, 11) || ""}`,
           });
+
+          if (ledgerResult.created && ledgerResult.entry) {
+            await logGovernanceActionSafe({
+              actor: reviewedBy || "Beriman Juliano",
+              role: "Direktur",
+              action: "AUTO_CREATE_SHAREHOLDER_LEDGER_FROM_EXPENSE",
+              entityType: "Shareholder Ledger",
+              entityId: ledgerResult.entry.id,
+              amount: n(existing[6]),
+              division: s(existing, 12) || "Belum dicatat",
+              before: "Not recorded",
+              after: "Approved",
+              reason: `Auto-created from approved personal-paid expense:${id}`,
+              proofUrl: s(existing, 7),
+              sourceModule: "/expenses",
+            });
+          }
         } catch {
-          // Shareholder ledger append is best-effort; don't fail the approval
+          // Shareholder ledger append is best-effort; dashboard flags any approved personal-paid expense not matched to ledger
         }
       }
 
