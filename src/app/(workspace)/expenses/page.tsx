@@ -157,7 +157,7 @@ export default function ExpensesPage() {
   const [budgetVsActual, setBudgetVsActual] = useState<Record<string, { budget: number; actual: number }>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<"dashboard" | "submissions" | "pending" | "all">("dashboard");
+  const [tab, setTab] = useState<"dashboard" | "submissions" | "pending" | "needsProof" | "all">("dashboard");
   const [showForm, setShowForm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [formMessage, setFormMessage] = useState<string | null>(null);
@@ -344,6 +344,7 @@ export default function ExpensesPage() {
   });
 
   const pendingExpenses = expenses.filter((e) => (e.status || "Pending") === "Pending");
+  const needsProofExpenses = expenses.filter((e) => (e.status || "").toLowerCase() === "needs proof" || (e.amount > 0 && !e.proofUrl));
 
   return (
     <div className="space-y-6">
@@ -541,6 +542,7 @@ export default function ExpensesPage() {
           { key: "dashboard", label: "📊 Dashboard" },
           { key: "submissions", label: "📝 My Submissions" },
           { key: "pending", label: "⏳ Pending Approvals" },
+          { key: "needsProof", label: "📎 Needs Proof" },
           { key: "all", label: "📋 All Expenses" },
         ].map((t) => (
           <button
@@ -852,6 +854,62 @@ export default function ExpensesPage() {
             )}
           </CardContent>
         </Card>
+      ) : tab === "needsProof" ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>📎 Needs Proof</CardTitle>
+            <CardDescription>
+              {needsProofExpenses.length} expense perlu bukti sebelum approval — Total: {formatCurrency(needsProofExpenses.reduce((s, e) => s + e.amount, 0))}. Angka kosong berarti bukti belum dicatat, bukan diasumsikan lengkap.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {needsProofExpenses.length > 0 ? (
+              <div className="rounded-md border overflow-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>ID</TableHead>
+                      <TableHead>Date</TableHead>
+                      <TableHead>Submitter</TableHead>
+                      <TableHead>Event</TableHead>
+                      <TableHead>Category</TableHead>
+                      <TableHead>Description</TableHead>
+                      <TableHead className="text-right">Amount</TableHead>
+                      <TableHead>Division / COA</TableHead>
+                      <TableHead>Status</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {needsProofExpenses.map((exp) => (
+                      <TableRow key={exp.id}>
+                        <TableCell className="text-xs font-mono">{exp.id}</TableCell>
+                        <TableCell className="text-xs">{formatDate(exp.date)}</TableCell>
+                        <TableCell>{exp.submitterName || "Belum dicatat"}</TableCell>
+                        <TableCell>{exp.relatedEvent || "TBA"}</TableCell>
+                        <TableCell>{exp.category || "TBA"}</TableCell>
+                        <TableCell className="max-w-[220px] truncate">{exp.description || "Belum dicatat"}</TableCell>
+                        <TableCell className="text-right font-bold">{formatCurrency(exp.amount)}</TableCell>
+                        <TableCell className="text-xs">
+                          <div>{exp.division || "Belum dicatat"}</div>
+                          <div className="text-muted-foreground">{exp.coaCategory || "COA TBA"}</div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge className="bg-amber-100 text-amber-700">
+                            📎 Needs Proof
+                          </Badge>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            ) : (
+              <div className="py-8 text-center text-muted-foreground">
+                ✅ Tidak ada expense tanpa bukti dari data Expense_Submissions yang terbaca.
+              </div>
+            )}
+          </CardContent>
+        </Card>
       ) : tab === "all" ? (
         <Card>
           <CardHeader>
@@ -870,6 +928,7 @@ export default function ExpensesPage() {
                 >
                   <option value="">Semua Status</option>
                   <option value="Pending">🟡 Pending</option>
+                  <option value="Needs Proof">📎 Needs Proof</option>
                   <option value="Approved">✅ Approved</option>
                   <option value="Rejected">❌ Rejected</option>
                 </select>
