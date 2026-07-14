@@ -31,21 +31,31 @@ export interface ComplianceReport {
   timestamp: string;
   bpom: BPOMEntry[];
   halal: HalalCertEntry[];
+  register: ComplianceRegisterReminder[];
   totalAlerts: number;
   expired: number;
   expiringSoon: number;
   valid: number;
 }
 
+export interface ComplianceRegisterReminder {
+  id: string;
+  area: string;
+  obligation: string;
+  period: string;
+  dueDate: string;
+  status: string;
+  owner: string;
+  sourceProof: string;
+  riskLevel: string;
+  notes: string;
+  daysUntilDue: number;
+  reminderStage: "overdue" | "H-1" | "H-3" | "H-7";
+}
+
 // ── Helpers ────────────────────────────────────────────────────────
 
 const text = (v: unknown) => String(v ?? "").trim();
-const num = (v: unknown) => {
-  if (typeof v === "number") return Number.isFinite(v) ? v : 0;
-  if (typeof v !== "string") return 0;
-  const p = Number(v.replace(/[^\d.-]/g, ""));
-  return Number.isFinite(p) ? p : 0;
-};
 
 function parseDate(dateStr: string): Date | null {
   if (!dateStr) return null;
@@ -74,6 +84,14 @@ function certStatus(daysUntilExpiry: number): "valid" | "expiring_soon" | "expir
   if (daysUntilExpiry <= 0) return "expired";
   if (daysUntilExpiry <= 30) return "expiring_soon";
   return "valid";
+}
+
+function registerReminderStage(days: number): ComplianceRegisterReminder["reminderStage"] | null {
+  if (days < 0) return "overdue";
+  if (days <= 1) return "H-1";
+  if (days <= 3) return "H-3";
+  if (days <= 7) return "H-7";
+  return null;
 }
 
 // ── Read BPOM from Compliance_Checks or Product_Batches ────────────
@@ -143,10 +161,53 @@ async function readHalalEntries(): Promise<HalalCertEntry[]> {
   return entries;
 }
 
+// ── Read GCG Compliance_Register for LKPM/BPJSKS/BPJSKT/Tax/Legal reminders ──
+
+async function readComplianceRegisterReminders(): Promise<ComplianceRegisterReminder[]> {
+  const rows = await readRange("Compliance_Register!A1:J1000").catch(() => [] as string[][]);
+  const reminders: ComplianceRegisterReminder[] = [];
+  const closedStatuses = new Set(["submitted", "paid", "complete", "completed", "done", "closed"]);
+
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    if (!row.some((cell) => text(cell))) continue;
+
+    const id = text(row[0]);
+    const dueDate = text(row[4]);
+    const status = text(row[5]) || "Not Started";
+    if (!id || !dueDate || closedStatuses.has(status.toLowerCase())) continue;
+
+    const days = daysUntil(dueDate);
+    const stage = registerReminderStage(days);
+    if (!stage) continue;
+
+    reminders.push({
+      id,
+      area: text(row[1]) || "Compliance",
+      obligation: text(row[2]) || "Kewajiban compliance",
+      period: text(row[3]) || "TBA",
+      dueDate,
+      status,
+      owner: text(row[6]) || "Compliance/Finance",
+      sourceProof: text(row[7]),
+      riskLevel: text(row[8]) || "TBA",
+      notes: text(row[9]),
+      daysUntilDue: days,
+      reminderStage: stage,
+    });
+  }
+
+  return reminders.sort((a, b) => a.daysUntilDue - b.daysUntilDue);
+}
+
 // ── Run Compliance Check ───────────────────────────────────────────
 
 export async function runComplianceCheck(): Promise<ComplianceReport> {
-  const [bpom, halal] = await Promise.all([readBPOMEntries(), readHalalEntries()]);
+  const [bpom, halal, register] = await Promise.all([
+    readBPOMEntries(),
+    readHalalEntries(),
+    readComplianceRegisterReminders(),
+  ]);
 
   const expired = [...bpom.filter((b) => b.status === "expired"), ...halal.filter((h) => h.status === "expired")].length;
   const expiringSoon = [...bpom.filter((b) => b.status === "expiring_soon"), ...halal.filter((h) => h.status === "expiring_soon")].length;
@@ -156,7 +217,8 @@ export async function runComplianceCheck(): Promise<ComplianceReport> {
     timestamp: new Date().toISOString(),
     bpom,
     halal,
-    totalAlerts: expired + expiringSoon,
+    register,
+    totalAlerts: expired + expiringSoon + register.length,
     expired,
     expiringSoon,
     valid,
@@ -190,7 +252,18 @@ export function formatComplianceForTelegram(report: ComplianceReport): string {
     text += `\n`;
   }
 
-  text += `📊 Valid: ${report.valid} | Expiring: ${report.expiringSoon} | Expired: ${report.expired}\n`;
-  text += `\n⚠️ <i>Agent hanya track — manusia harus perpanjarkan sertifikat</i>`;
+  if (report.register.length > 0) {
+    text += `📋 <b>${report.register.length} GCG COMPLIANCE REGISTER REMINDER:</b>\n`;
+    for (const item of report.register.slice(0, 8)) {
+      const timing = item.reminderStage === "overdue"
+        ? `${Math.abs(item.daysUntilDue)} hari overdue`
+        : item.reminderStage;
+      text += `   • ${item.area} — ${item.obligation} (${item.period}) due ${item.dueDate} / ${timing}; owner ${item.owner}; proof ${item.sourceProof ? "ada" : "Belum dicatat"}\n`;
+    }
+    text += `\n`;
+  }
+
+  text += `📊 Valid: ${report.valid} | Expiring: ${report.expiringSoon} | Expired: ${report.expired} | Register reminders: ${report.register.length}\n`;
+  text += `\n⚠️ <i>Agent hanya track — manusia harus perpanjangkan sertifikat/menyelesaikan kewajiban GCG; tidak ada status/proof fiktif.</i>`;
   return text;
 }
