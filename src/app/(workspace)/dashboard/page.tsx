@@ -297,7 +297,7 @@ export default function DashboardPage() {
             </div>
 
             {/* Extended Operational Cards */}
-            <div className="grid gap-4 lg:grid-cols-4">
+            <div className="grid gap-4 lg:grid-cols-5">
               <Card className="border-cyan-100 bg-cyan-50/50">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-base">📦 Inventory</CardTitle>
@@ -385,6 +385,30 @@ export default function DashboardPage() {
                         )}
                       </div>
                       <Link href="/events" className="text-xs font-medium text-rose-700 hover:underline">Buka Events →</Link>
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card className="border-slate-200 bg-slate-50/70">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base">⚖️ Governance TARIF</CardTitle>
+                  <CardDescription>Etika keuangan & audit GCG</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  {loading ? <Skeleton className="h-20 w-full" /> : (
+                    <>
+                      <div className="grid grid-cols-2 gap-2 text-center">
+                        <div><div className="text-xl font-bold text-red-600">{formatNumber(data?.governanceSummary?.exceptionCount || 0)}</div><div className="text-xs text-muted-foreground">Exceptions</div></div>
+                        <div><div className="text-xl font-bold">{formatNumber(data?.governanceSummary?.governanceAuditRows || 0)}</div><div className="text-xs text-muted-foreground">Audit rows</div></div>
+                      </div>
+                      <div className="text-xs text-muted-foreground">Hutang SH: {formatCurrency(data?.governanceSummary?.shareholderDebtOutstanding || 0)}</div>
+                      <div className="flex flex-wrap gap-1 text-xs">
+                        {(data?.governanceSummary?.needsProofCount || 0) > 0 && <span className="rounded-full bg-red-100 text-red-800 px-2 py-0.5">Proof: {data.governanceSummary.needsProofCount}</span>}
+                        {(data?.governanceSummary?.complianceOverdueCount || 0) > 0 && <span className="rounded-full bg-amber-100 text-amber-800 px-2 py-0.5">Compliance: {data.governanceSummary.complianceOverdueCount}</span>}
+                        {(data?.governanceSummary?.vendorExceptionCount || 0) > 0 && <span className="rounded-full bg-slate-200 text-slate-800 px-2 py-0.5">Vendor: {data.governanceSummary.vendorExceptionCount}</span>}
+                      </div>
+                      <Link href="/governance" className="text-xs font-medium text-slate-700 hover:underline">Buka Governance →</Link>
                     </>
                   )}
                 </CardContent>

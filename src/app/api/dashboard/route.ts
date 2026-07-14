@@ -190,6 +190,61 @@ function summarizeMedia(mediaRows: string[][]) {
   return { totalMedia, featured, byType, bySource };
 }
 
+function summarizeGovernance(
+  expenseRows: string[][],
+  shareholderRows: string[][],
+  complianceRegisterRows: string[][],
+  vendorRows: string[][],
+  auditRows: string[][],
+  monthlyGcgRows: string[][],
+) {
+  const expenses = expenseRows.slice(1).filter((row) => cell(row, 0));
+  const shareholderLedger = shareholderRows.slice(1).filter((row) => cell(row, 0));
+  const complianceRegister = complianceRegisterRows.slice(1).filter((row) => cell(row, 0));
+  const vendors = vendorRows.slice(1).filter((row) => cell(row, 0));
+  const auditTrail = auditRows.slice(1).filter((row) => cell(row, 0));
+  const monthlyReports = monthlyGcgRows.slice(1).filter((row) => cell(row, 0));
+
+  const completedComplianceStatuses = new Set(["submitted", "paid", "complete", "completed"]);
+  const openCompliance = complianceRegister.filter((row) => !completedComplianceStatuses.has(cell(row, 5).toLowerCase()));
+  const today = new Date(`${new Date().toISOString().slice(0, 10)}T00:00:00Z`).getTime();
+  const overdueCompliance = openCompliance.filter((row) => {
+    const status = cell(row, 5).toLowerCase();
+    const due = cell(row, 4);
+    if (status === "overdue") return true;
+    if (!due) return false;
+    const dueTime = new Date(`${due.slice(0, 10)}T00:00:00Z`).getTime();
+    return Number.isFinite(dueTime) && dueTime < today;
+  });
+
+  const pendingExpenses = expenses.filter((row) => cell(row, 8).toLowerCase() === "pending");
+  const needsProofExpenses = expenses.filter((row) => cell(row, 8).toLowerCase() === "needs proof" || (parseNumber(row[6]) > 0 && !cell(row, 7)));
+  const approvedPersonalPaid = expenses.filter((row) => cell(row, 8).toLowerCase() === "approved" && (cell(row, 14).toLowerCase() === "personal paid" || ["yes", "true", "1"].includes(cell(row, 17).toLowerCase())));
+  const shareholderDebtOutstanding = shareholderLedger.reduce((sum, row) => {
+    if (["rejected", "cancelled"].includes(cell(row, 9).toLowerCase())) return sum;
+    return sum + parseNumber(row[6]) - parseNumber(row[7]);
+  }, 0);
+  const vendorExceptions = vendors.filter((row) => ["yes", "ya", "true", "1"].includes(cell(row, 4).toLowerCase()) || !cell(row, 6) || !cell(row, 7) || !cell(row, 8));
+  const latestMonthlyReport = monthlyReports
+    .map((row) => ({ id: cell(row, 0), period: cell(row, 1) || "TBA", generatedAt: cell(row, 2) || "TBA", status: cell(row, 4) || "Belum dicatat" }))
+    .sort((a, b) => b.generatedAt.localeCompare(a.generatedAt))[0] || null;
+
+  return {
+    pendingExpenseCount: pendingExpenses.length,
+    pendingExpenseAmount: pendingExpenses.reduce((sum, row) => sum + parseNumber(row[6]), 0),
+    needsProofCount: needsProofExpenses.length,
+    approvedPersonalPaidCount: approvedPersonalPaid.length,
+    shareholderDebtOutstanding,
+    complianceOpenCount: openCompliance.length,
+    complianceOverdueCount: overdueCompliance.length,
+    vendorExceptionCount: vendorExceptions.length,
+    governanceAuditRows: auditTrail.length,
+    monthlyGcgReportCount: monthlyReports.length,
+    latestMonthlyGcgReport: latestMonthlyReport,
+    exceptionCount: needsProofExpenses.length + overdueCompliance.length + vendorExceptions.length,
+  };
+}
+
 export async function GET() {
   try {
     let googleAuthError: unknown = null;
@@ -220,6 +275,12 @@ export async function GET() {
       tenantRows,
       sponsorRows,
       mediaRows,
+      expenseRows,
+      shareholderLedgerRows,
+      complianceRegisterRows,
+      vendorRegisterRows,
+      governanceAuditRows,
+      monthlyGcgRows,
     ] = await Promise.all([
       readSheet("RekeningKoran").catch(emptyOnAuthError([])),
       readSheet("RekapRekening").catch(emptyOnAuthError([])),
@@ -244,6 +305,12 @@ export async function GET() {
       readEventSheet(EVENT_SHEETS.Tenants).catch(emptyOnAuthError([])),
       readEventSheet(EVENT_SHEETS.Sponsors).catch(emptyOnAuthError([])),
       readEventSheet(EVENT_SHEETS.Media).catch(emptyOnAuthError([])),
+      readSheet("ExpenseSubmissions").catch(emptyOnAuthError([])),
+      readSheet("ShareholderLedger").catch(emptyOnAuthError([])),
+      readSheet("ComplianceRegister").catch(emptyOnAuthError([])),
+      readSheet("VendorRegister").catch(emptyOnAuthError([])),
+      readSheet("GovernanceAuditLog").catch(emptyOnAuthError([])),
+      readSheet("MonthlyGcgReport").catch(emptyOnAuthError([])),
     ]);
 
     // ── Parse bank balances from RekeningKoran ──
@@ -417,10 +484,11 @@ export async function GET() {
     const complianceSummary = summarizeCompliance(complianceRows, qcRows);
     const commercialSummary = summarizeCommercial(tenantRows, sponsorRows);
     const mediaSummary = summarizeMedia(mediaRows);
+    const governanceSummary = summarizeGovernance(expenseRows, shareholderLedgerRows, complianceRegisterRows, vendorRegisterRows, governanceAuditRows, monthlyGcgRows);
 
     return NextResponse.json({
-      source: "Google Sheets: finance + events + production + inventory + procurement + compliance + commercial",
-      ...(googleAuthError ? googleWorkspaceDegradedSource("Google Sheets: finance + events + production + inventory + procurement + compliance + commercial", googleAuthError) : { sourceStatus: "live" as const }),
+      source: "Google Sheets: finance + events + production + inventory + procurement + compliance + commercial + governance",
+      ...(googleAuthError ? googleWorkspaceDegradedSource("Google Sheets: finance + events + production + inventory + procurement + compliance + commercial + governance", googleAuthError) : { sourceStatus: "live" as const }),
       bankAccounts,
       totalSaldoAkhir,
       totalSaldoAwal,
@@ -446,6 +514,7 @@ export async function GET() {
       complianceSummary,
       commercialSummary,
       mediaSummary,
+      governanceSummary,
       executiveSnapshot: {
         cash: totalSaldoAkhir,
         cashAwal: totalSaldoAwal,
@@ -464,6 +533,9 @@ export async function GET() {
         compliancePassRate: complianceSummary.totalChecks > 0 ? Math.round((complianceSummary.passed / complianceSummary.totalChecks) * 100) : 0,
         commercialRevenue: commercialSummary.commercialRevenue,
         outstandingCommercial: commercialSummary.outstandingTenants + commercialSummary.outstandingSponsors,
+        governanceExceptions: governanceSummary.exceptionCount,
+        governanceAuditRows: governanceSummary.governanceAuditRows,
+        shareholderDebtOutstanding: governanceSummary.shareholderDebtOutstanding,
       },
     });
   } catch (error) {
