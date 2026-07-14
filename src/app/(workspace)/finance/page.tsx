@@ -183,9 +183,16 @@ interface ShareholderLedgerData {
   stats: {
     totalEntries: number;
     outstandingDebt: number;
+    outstandingRows?: number;
+    over30DaysCount?: number;
+    over30DaysAmount?: number;
+    over60DaysCount?: number;
+    over60DaysAmount?: number;
+    unagedCount?: number;
     personalPaidCount: number;
     personalPaidAmount: number;
   };
+  nextActions?: string[];
 }
 
 function formatCurrency(amount: number): string {
@@ -782,6 +789,22 @@ export default function FinancePage() {
                         <div className="text-xs text-muted-foreground">Total ledger rows</div>
                         <div className="text-lg font-bold">{shareholderLedger.stats.totalEntries}</div>
                       </div>
+                      <div className="rounded-lg border bg-background p-3">
+                        <div className="text-xs text-muted-foreground">Outstanding rows</div>
+                        <div className="text-lg font-bold">{shareholderLedger.stats.outstandingRows || 0}</div>
+                      </div>
+                      <div className="rounded-lg border bg-background p-3">
+                        <div className="text-xs text-muted-foreground">Aging &gt;30 hari</div>
+                        <div className="text-lg font-bold text-amber-700">{shareholderLedger.stats.over30DaysCount || 0} • {formatCurrency(shareholderLedger.stats.over30DaysAmount || 0)}</div>
+                      </div>
+                      <div className="rounded-lg border bg-background p-3">
+                        <div className="text-xs text-muted-foreground">Aging &gt;60 hari</div>
+                        <div className="text-lg font-bold text-red-700">{shareholderLedger.stats.over60DaysCount || 0} • {formatCurrency(shareholderLedger.stats.over60DaysAmount || 0)}</div>
+                      </div>
+                      <div className="rounded-lg border bg-background p-3">
+                        <div className="text-xs text-muted-foreground">Tanggal TBA</div>
+                        <div className="text-lg font-bold">{shareholderLedger.stats.unagedCount || 0}</div>
+                      </div>
                     </div>
                     <div className="rounded-md border bg-background overflow-auto">
                       <Table>
@@ -818,6 +841,14 @@ export default function FinancePage() {
                     <p className="text-xs text-muted-foreground">
                       Kontrol GCG: jangan menganggap biaya pribadi sudah lunas sebelum ada credit/payment record atau keputusan konversi modal di ledger.
                     </p>
+                    {shareholderLedger.nextActions && shareholderLedger.nextActions.length > 0 && (
+                      <div className="rounded-lg border bg-background p-3 text-sm">
+                        <div className="font-medium">Next action fairness pemegang saham</div>
+                        <ul className="mt-2 list-disc space-y-1 pl-5 text-muted-foreground">
+                          {shareholderLedger.nextActions.map((action, index) => <li key={index}>{action}</li>)}
+                        </ul>
+                      </div>
+                    )}
                   </>
                 ) : (
                   <div className="text-sm text-muted-foreground">Memuat Shareholder_Ledger...</div>

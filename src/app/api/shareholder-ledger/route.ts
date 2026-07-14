@@ -18,10 +18,32 @@ function n(value: unknown): number {
   return Number(cleaned) || 0;
 }
 
+function daysSince(dateValue: string): number | null {
+  if (!dateValue) return null;
+  const date = new Date(`${dateValue.slice(0, 10)}T00:00:00Z`).getTime();
+  const today = new Date(`${new Date().toISOString().slice(0, 10)}T00:00:00Z`).getTime();
+  if (!Number.isFinite(date)) return null;
+  return Math.max(0, Math.floor((today - date) / 86400000));
+}
+
+function isClosed(status: string): boolean {
+  return ["rejected", "cancelled", "canceled", "settled", "paid", "converted to capital"].includes(status.toLowerCase().trim());
+}
+
 export async function GET() {
   try {
     const entries = await listShareholderLedger();
-    const outstandingDebt = entries.reduce((sum, entry) => sum + entry.debit - entry.credit, 0);
+    const outstandingEntries = entries
+      .map((entry) => ({
+        ...entry,
+        outstanding: entry.debit - entry.credit,
+        ageDays: daysSince(entry.date),
+      }))
+      .filter((entry) => entry.outstanding > 0 && !isClosed(entry.approvalStatus));
+    const over30Days = outstandingEntries.filter((entry) => entry.ageDays !== null && entry.ageDays > 30);
+    const over60Days = outstandingEntries.filter((entry) => entry.ageDays !== null && entry.ageDays > 60);
+    const unaged = outstandingEntries.filter((entry) => entry.ageDays === null);
+    const outstandingDebt = outstandingEntries.reduce((sum, entry) => sum + entry.outstanding, 0);
     const personalPaid = entries.filter((entry) => entry.type === "Hutang Pemegang Saham" || entry.type === "Reimbursement");
 
     return NextResponse.json({
@@ -31,16 +53,28 @@ export async function GET() {
       stats: {
         totalEntries: entries.length,
         outstandingDebt,
+        outstandingRows: outstandingEntries.length,
+        over30DaysCount: over30Days.length,
+        over30DaysAmount: over30Days.reduce((sum, entry) => sum + entry.outstanding, 0),
+        over60DaysCount: over60Days.length,
+        over60DaysAmount: over60Days.reduce((sum, entry) => sum + entry.outstanding, 0),
+        unagedCount: unaged.length,
         personalPaidCount: personalPaid.length,
         personalPaidAmount: personalPaid.reduce((sum, entry) => sum + entry.debit - entry.credit, 0),
       },
+      nextActions: [
+        over60Days.length ? "Review hutang pemegang saham >60 hari: putuskan reimburse, konversi modal, atau jadwal pembayaran." : "Tidak ada hutang pemegang saham >60 hari dari data terbaca.",
+        over30Days.length ? "Review hutang pemegang saham >30 hari agar fairness pemegang saham tetap jelas." : "Tidak ada hutang pemegang saham >30 hari dari data terbaca.",
+        unaged.length ? "Lengkapi tanggal ledger agar aging hutang pemegang saham bisa dihitung." : "Tanggal ledger cukup untuk aging dari data terbaca.",
+      ],
     });
   } catch (error) {
     if (isGoogleWorkspaceAuthError(error)) {
       return NextResponse.json({
         ...googleWorkspaceDegradedSource(SOURCE, error),
         entries: [],
-        stats: { totalEntries: 0, outstandingDebt: 0, personalPaidCount: 0, personalPaidAmount: 0 },
+        stats: { totalEntries: 0, outstandingDebt: 0, outstandingRows: 0, over30DaysCount: 0, over30DaysAmount: 0, over60DaysCount: 0, over60DaysAmount: 0, unagedCount: 0, personalPaidCount: 0, personalPaidAmount: 0 },
+        nextActions: ["Re-auth Google Workspace agar Shareholder_Ledger bisa dibaca dari source of truth."],
       });
     }
     return NextResponse.json({ error: "Failed to fetch shareholder ledger", details: String(error) }, { status: 500 });
