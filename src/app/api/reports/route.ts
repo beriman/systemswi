@@ -300,12 +300,27 @@ function generateReport(type: ReportType, period: string, context: ReportContext
 
 export async function GET() {
   return NextResponse.json({
-    source: "systemswi reports generator",
+    status: "ok",
+    source: "Google Sheets context + systemswi reports generator",
     generatedAt: new Date().toISOString(),
-    templates: REPORT_TEMPLATES,
-    automation: {
-      supportedAction: "generate_all",
-      description: "Generate weekly, monthly, quarterly investor, dan annual draft dalam satu request tanpa menulis ke Google Drive/Docs.",
+    message: "Endpoint ready. Use POST to generate reports or record a Monthly GCG snapshot.",
+    supportedTypes: REPORT_TEMPLATES,
+    actions: {
+      generateOne: {
+        method: "POST",
+        body: { type: "monthly_gcg", period: "Juli 2026", notes: "optional human notes" },
+        note: "Returns a draft report from live Google Sheets context; does not write to Sheets.",
+      },
+      generateAll: {
+        method: "POST",
+        body: { action: "generate_all", period: "Juli 2026", notes: "optional human notes" },
+        note: "Returns all report drafts in one response; does not write to Sheets.",
+      },
+      recordMonthlyGcg: {
+        method: "POST",
+        body: { action: "record_monthly_gcg", period: "Juli 2026", actor: "Beriman Juliano", role: "Direktur", notes: "review manusia wajib sebelum distribusi" },
+        note: "Writes a Monthly_GCG_Report row and Governance_Audit_Log entry only when Google Sheets sourceStatus is live.",
+      },
     },
   });
 }
