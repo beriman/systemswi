@@ -542,7 +542,17 @@ export async function POST(request: NextRequest) {
         target: `Supplier_Master:${id}`,
         summary: `Created supplier ${name} (${category}). Contact: ${contact}. Lead time: ${numberValue(body.leadTimeDays) || 7} days.`,
       });
-      return NextResponse.json({ success: true, action, supplier: { id, name, category }, auditStatus }, { status: 201 });
+      await appendProcurementGovernanceAudit({
+        actor: text(body.actor) || text(body.pic),
+        role: text(body.role),
+        action: "CREATE_SUPPLIER",
+        entityType: "Supplier",
+        entityId: id,
+        before: "",
+        after: text(body.status) || "active",
+        reason: `Created supplier ${name} (${category}). Contact: ${contact || "TBA"}; lead time ${numberValue(body.leadTimeDays) || 7} days. Vendor_Register/COI still needs review for procurement governance.`,
+      });
+      return NextResponse.json({ success: true, action, supplier: { id, name, category }, auditStatus, governanceAudit: "Governance_Audit_Log" }, { status: 201 });
     }
 
     if (action === "update-supplier") {
@@ -568,7 +578,17 @@ export async function POST(request: NextRequest) {
         target: `Supplier_Master:${supplier.id}`,
         summary: `Updated supplier ${text(body.name) || supplier.name}. Status: ${text(body.status) || supplier.status}.`,
       });
-      return NextResponse.json({ success: true, action, supplier: { id: supplier.id, name: text(body.name) || supplier.name }, auditStatus }, { status: 200 });
+      await appendProcurementGovernanceAudit({
+        actor: text(body.actor) || text(body.pic),
+        role: text(body.role),
+        action: "UPDATE_SUPPLIER",
+        entityType: "Supplier",
+        entityId: supplier.id,
+        before: supplier.status,
+        after: text(body.status) || supplier.status,
+        reason: `Updated supplier ${text(body.name) || supplier.name}. Category ${text(body.category) || supplier.category}; contact ${text(body.contact) || supplier.contact || "TBA"}.`,
+      });
+      return NextResponse.json({ success: true, action, supplier: { id: supplier.id, name: text(body.name) || supplier.name }, auditStatus, governanceAudit: "Governance_Audit_Log" }, { status: 200 });
     }
 
     if (action === "delete-supplier") {
@@ -582,7 +602,17 @@ export async function POST(request: NextRequest) {
         target: `Supplier_Master:${supplier.id}`,
         summary: `Deleted supplier ${supplier.name} (${supplier.category}).`,
       });
-      return NextResponse.json({ success: true, action, deleted: supplier.id, auditStatus }, { status: 200 });
+      await appendProcurementGovernanceAudit({
+        actor: text(body.actor) || text(body.pic),
+        role: text(body.role),
+        action: "DELETE_SUPPLIER",
+        entityType: "Supplier",
+        entityId: supplier.id,
+        before: supplier.status,
+        after: "deleted",
+        reason: `Deleted supplier ${supplier.name} (${supplier.category}). Reason: ${text(body.reason || body.notes) || "Belum dicatat"}.`,
+      });
+      return NextResponse.json({ success: true, action, deleted: supplier.id, auditStatus, governanceAudit: "Governance_Audit_Log" }, { status: 200 });
     }
 
     if (action === "delete-po") {
@@ -596,7 +626,19 @@ export async function POST(request: NextRequest) {
         target: `Purchase_Orders:${po.id}`,
         summary: `Deleted PO ${po.id} (${po.itemName} from ${po.supplierName}).`,
       });
-      return NextResponse.json({ success: true, action, deleted: po.id, auditStatus }, { status: 200 });
+      await appendProcurementGovernanceAudit({
+        actor: text(body.actor) || text(body.pic),
+        role: text(body.role),
+        action: "DELETE_PURCHASE_ORDER",
+        entityType: "Purchase Order",
+        entityId: po.id,
+        amount: po.total,
+        before: po.status,
+        after: "deleted",
+        reason: `Deleted PO ${po.id} (${po.itemName} from ${po.supplierName}). Reason: ${text(body.reason || body.notes) || "Belum dicatat"}.`,
+        proofUrl: po.proofUrl,
+      });
+      return NextResponse.json({ success: true, action, deleted: po.id, auditStatus, governanceAudit: "Governance_Audit_Log" }, { status: 200 });
     }
 
     return NextResponse.json({ error: "action tidak valid. Pilih: create-po, receive, create-supplier, update-supplier, delete-supplier, delete-po" }, { status: 400 });
