@@ -1,5 +1,6 @@
 // GET /api/governance/vendor-register — list vendor governance register
 // POST /api/governance/vendor-register — append vendor with conflict-of-interest fields
+// PUT /api/governance/vendor-register — update vendor governance review / COI fields
 import { NextRequest, NextResponse } from "next/server";
 import { googleWorkspaceDegradedSource, googleWorkspaceWriteBlockedSource, isGoogleWorkspaceAuthError } from "@/lib/api/google-workspace-error";
 import { logGovernanceActionSafe } from "@/lib/governance/audit";
@@ -7,6 +8,7 @@ import {
   appendVendorRegisterEntry,
   listVendorRegister,
   summarizeVendorRegister,
+  updateVendorRegisterEntry,
 } from "@/lib/governance/vendor-register";
 
 const SOURCE = "Google Sheets: Vendor_Register";
@@ -100,5 +102,65 @@ export async function POST(req: NextRequest) {
       }, { status: 503 });
     }
     return NextResponse.json({ error: "Failed to append Vendor_Register", details: String(error) }, { status: 500 });
+  }
+}
+
+export async function PUT(req: NextRequest) {
+  try {
+    const body = await req.json();
+    const id = text(body.id || body.vendorId);
+    if (!id) return NextResponse.json({ error: "id/vendorId wajib diisi" }, { status: 400 });
+
+    const result = await updateVendorRegisterEntry(id, {
+      name: body.name ?? body.vendorName,
+      category: body.category,
+      contact: body.contact,
+      relatedParty: body.relatedParty,
+      relationshipDetail: body.relationshipDetail,
+      priceBenchmark1: body.priceBenchmark1,
+      priceBenchmark2: body.priceBenchmark2,
+      selectedReason: body.selectedReason,
+      paymentTerm: body.paymentTerm,
+      status: body.status,
+      lastReview: body.lastReview,
+    });
+
+    await logGovernanceActionSafe({
+      actor: text(body.actor) || "Beriman Juliano",
+      role: text(body.role) || "Direktur / Procurement",
+      action: "UPDATE_VENDOR_REGISTER",
+      entityType: "Vendor",
+      entityId: id,
+      amount: 0,
+      division: text(body.division) || "Procurement",
+      before: `${result.before.status} | related-party ${result.before.relatedParty} | flags ${result.before.riskFlags.join(", ") || "none"}`,
+      after: `${result.after.status} | related-party ${result.after.relatedParty} | flags ${result.after.riskFlags.join(", ") || "none"}`,
+      reason: text(body.reason || body.notes) || `Review Vendor_Register ${result.after.name}; ${result.after.approvalRequirement}`,
+      proofUrl: "",
+      sourceModule: "/api/governance/vendor-register",
+    });
+
+    return NextResponse.json({
+      success: true,
+      source: SOURCE,
+      sourceStatus: "live",
+      before: result.before,
+      vendor: result.after,
+      audit: "Governance_Audit_Log",
+      policy: {
+        relatedParty: "Jika Related Party = Yes, detail relasi + alasan objektif + 2 benchmark harus lengkap sebelum transaksi besar/approval.",
+        benchmark: "> Rp2.000.000 wajib minimal 2 pembanding vendor atau catatan benchmark di expense.",
+      },
+    });
+  } catch (error) {
+    if (isGoogleWorkspaceAuthError(error)) {
+      return NextResponse.json({
+        ...googleWorkspaceWriteBlockedSource(SOURCE, error),
+        error: "Google Workspace OAuth perlu re-auth sebelum bisa update Vendor_Register. Tidak ada write mock/fallback yang dibuat.",
+      }, { status: 503 });
+    }
+    const message = String(error);
+    if (message.includes("Vendor not found")) return NextResponse.json({ error: message }, { status: 404 });
+    return NextResponse.json({ error: "Failed to update Vendor_Register", details: message }, { status: 500 });
   }
 }

@@ -1,7 +1,7 @@
 // Vendor Register — supplier, benchmark, and conflict-of-interest governance register
 // Schema: Vendor ID | Vendor Name | Category | Contact | Related Party? | Relationship Detail | Price Benchmark 1 | Price Benchmark 2 | Selected Reason | Payment Term | Status | Last Review
 
-import { appendRows, getAuth, readSheet, SPREADSHEET_ID } from "@/lib/sheets/sheets-real";
+import { appendRows, getAuth, readSheet, SPREADSHEET_ID, updateRow } from "@/lib/sheets/sheets-real";
 import { google } from "googleapis";
 
 export const VENDOR_REGISTER_SHEET = "Vendor_Register";
@@ -144,6 +144,38 @@ export async function appendVendorRegisterEntry(entry: Partial<NewVendorRegister
   ];
   await appendRows("VendorRegister", [row]);
   return parseVendorRegisterRows([VENDOR_REGISTER_HEADERS, row])[0];
+}
+
+export async function updateVendorRegisterEntry(
+  id: string,
+  patch: Partial<NewVendorRegisterEntry>,
+): Promise<{ before: VendorRegisterEntry; after: VendorRegisterEntry }> {
+  await ensureVendorRegisterSheet();
+  const rows = await readSheet("VendorRegister");
+  const rowIndex = rows.findIndex((row, index) => index > 0 && text(row[0]) === id);
+  if (rowIndex === -1) throw new Error(`Vendor not found: ${id}`);
+
+  const existingRow = rows[rowIndex];
+  const before = parseVendorRegisterRows([VENDOR_REGISTER_HEADERS, existingRow])[0];
+  const nextRelatedParty = patch.relatedParty !== undefined ? text(patch.relatedParty) : before.relatedParty;
+  const row = [
+    before.id,
+    patch.name !== undefined ? text(patch.name) || "Belum dicatat" : before.name,
+    patch.category !== undefined ? text(patch.category) || "TBA" : before.category,
+    patch.contact !== undefined ? text(patch.contact) || "TBA" : before.contact,
+    isYes(nextRelatedParty) ? "Yes" : "No",
+    patch.relationshipDetail !== undefined ? text(patch.relationshipDetail) : before.relationshipDetail,
+    patch.priceBenchmark1 !== undefined ? text(patch.priceBenchmark1) : before.priceBenchmark1,
+    patch.priceBenchmark2 !== undefined ? text(patch.priceBenchmark2) : before.priceBenchmark2,
+    patch.selectedReason !== undefined ? text(patch.selectedReason) : before.selectedReason,
+    patch.paymentTerm !== undefined ? text(patch.paymentTerm) || "TBA" : before.paymentTerm,
+    patch.status !== undefined ? text(patch.status) || "Trial" : before.status,
+    patch.lastReview !== undefined ? text(patch.lastReview) : before.lastReview || todayIso(),
+  ];
+
+  await updateRow("VendorRegister", rowIndex + 1, row);
+  const after = parseVendorRegisterRows([VENDOR_REGISTER_HEADERS, row])[0];
+  return { before, after };
 }
 
 export function summarizeVendorRegister(entries: VendorRegisterEntry[]) {
