@@ -105,11 +105,36 @@ export default function CompliancePage() {
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Gagal simpan compliance");
-      setMessage(`✅ ${action} tersimpan ke ${json.syncedSheets?.join(", ")}`);
+      setMessage(`OK: ${action} tersimpan ke ${json.syncedSheets?.join(", ")}`);
       event.currentTarget.reset();
       await loadCompliance();
     } catch (error) {
-      setMessage(`❌ ${String(error)}`);
+      setMessage(`ERROR: ${String(error)}`);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function seedKnownGcgCompliance() {
+    setSaving(true);
+    setMessage("");
+    try {
+      const res = await fetch("/api/governance/compliance-register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "seed-known",
+          actor: "ETIKA TARIF",
+          role: "Autonomous Governance Agent",
+          notes: "Seed LKPM/BPJS known obligations dari plan GCG; idempotent dan tidak mengisi bukti/status fiktif.",
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || json.warning || "Gagal seed Compliance_Register");
+      setMessage(`OK: Compliance_Register dicek — ${json.seeded || 0} baru, ${json.skipped || 0} sudah ada. Audit: Governance_Audit_Log.`);
+      await loadCompliance();
+    } catch (error) {
+      setMessage(`ERROR: ${String(error)}`);
     } finally {
       setSaving(false);
     }
@@ -144,12 +169,22 @@ export default function CompliancePage() {
         </section>
 
         <section className="rounded-3xl bg-white/[0.04] p-5 ring-1 ring-white/10">
-          <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+          <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
             <div>
               <h2 className="text-xl font-semibold">GCG Compliance Register</h2>
               <p className="text-sm text-white/45">LKPM, BPJSKT, BPJSKS, pajak, legal, BPOM/Halal. Bukti kosong berarti belum dicatat, bukan diasumsikan selesai.</p>
             </div>
-            <a href="/api/governance/compliance-register" className="text-sm text-[#5eead4] hover:underline">API register →</a>
+            <div className="flex flex-wrap gap-3">
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => void seedKnownGcgCompliance()}
+                className="rounded-full bg-[#0D9488] px-4 py-2 text-sm font-semibold text-white hover:bg-[#0f766e] disabled:opacity-50"
+              >
+                Seed LKPM/BPJS plan
+              </button>
+              <a href="/api/governance/compliance-register" className="rounded-full bg-white/10 px-4 py-2 text-sm text-[#5eead4] hover:bg-white/15">API register →</a>
+            </div>
           </div>
           <div className="mt-4 overflow-x-auto">
             <table className="w-full min-w-[900px] text-left text-sm">
