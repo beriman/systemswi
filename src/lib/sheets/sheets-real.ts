@@ -89,6 +89,8 @@ export const SHEETS: Record<string, { range: string; description: string }> = {
 };
 
 // ── Auth ──────────────────────────────────────────────────────────
+// googleapis does not expose a compact shared credential union here.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 let cachedAuth: any = null;
 
 // ── Read cache ────────────────────────────────────────────────────
@@ -201,8 +203,16 @@ function loadServiceAccount() {
     // fall through
   }
 
-  // 4. No hardcoded fallback — credentials MUST come from env vars or file path.
-  //    If you need Vercel support, set GOOGLE_SERVICE_ACCOUNT_PATH or SA_EMBEDDED_JSON.
+  // 4. /hermes/google/ fallback (outside src/ tree)
+  try {
+    const hermesSaPath = "/home/ubuntu/.hermes/google/swi-system-sa.json";
+    const raw = fs.readFileSync(hermesSaPath, "utf-8");
+    const EMBEDDED_SA = JSON.parse(raw);
+    if (EMBEDDED_SA?.type === "service_account") return EMBEDDED_SA;
+  } catch {
+    // fall through
+  }
+
   return null;
 }
 
@@ -341,7 +351,7 @@ export async function readRanges(ranges: string[]): Promise<Record<string, strin
 }
 
 // ── Write ─────────────────────────────────────────────────────────
-export async function writeRange(range: string, values: (string | number)[][]): Promise<void> {
+export async function writeRange(range: string, values: (string | number | boolean)[][]): Promise<void> {
   await withCircuitBreaker(
     "google-sheets-write",
     () =>
@@ -404,7 +414,7 @@ export async function deleteRow(sheetName: string, rowNumber: number): Promise<v
     fields: "sheets.properties",
   });
   const sheetId = ss.data.sheets?.find(
-    (s: any) => s.properties?.title === sheetName
+    (s) => s.properties?.title === sheetName
   )?.properties?.sheetId;
 
   if (sheetId === undefined) throw new Error(`Sheet "${sheetName}" not found`);

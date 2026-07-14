@@ -1,6 +1,8 @@
 // Google Sheets integration for Event Management (Fragrantions)
 // PIC: Wapiq Rizya Zaelan
 // Uses the same Google OAuth token as the main SWI spreadsheet
+// ⚠️ SERVER-ONLY: Never import from client components
+import "server-only";
 import { google } from "googleapis";
 import fs from "fs";
 
@@ -22,6 +24,8 @@ export const EVENT_SHEETS = {
 };
 
 // ── Auth (reuse from sheets-real) ──
+// googleapis does not expose a compact shared credential union here.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 let cachedAuth: any = null;
 
 // ── Read cache ────────────────────────────────────────────────────
@@ -87,12 +91,55 @@ function loadCredentialsFromEnv() {
   };
 }
 
+function loadServiceAccount() {
+  // Try env first
+  const saB64 = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
+  if (saB64) {
+    try {
+      const decoded = Buffer.from(saB64, "base64").toString("utf-8");
+      if (decoded.trim().startsWith("{")) {
+        const sa = JSON.parse(decoded);
+        if (sa.type === "service_account") return sa;
+      }
+    } catch { /* fall through */ }
+    try {
+      const sa = JSON.parse(saB64);
+      if (sa.type === "service_account") return sa;
+    } catch { /* fall through */ }
+  }
+  // Try /hermes/google/ fallback (outside src/ tree)
+  try {
+    const raw = fs.readFileSync("/home/ubuntu/.hermes/google/swi-system-sa.json", "utf-8");
+    const sa = JSON.parse(raw);
+    if (sa?.type === "service_account") return sa;
+  } catch { /* fall through */ }
+  return null;
+}
+
 function getAuth() {
   if (cachedAuth) return cachedAuth;
+
+  // ── Service Account (unlimited, no expiry) ───────────────────────
+  const sa = loadServiceAccount();
+  if (sa) {
+    const jwtAuth = new google.auth.JWT({
+      email: sa.client_email,
+      key: sa.private_key,
+      scopes: [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive",
+        "https://www.googleapis.com/auth/documents",
+      ],
+    });
+    cachedAuth = jwtAuth;
+    return cachedAuth;
+  }
+
+  // ── OAuth (existing fallback) ──────────────────────────────────────
   const creds = loadCredentialsFromFile() || loadCredentialsFromEnv();
   if (!creds) {
     throw new Error(
-      "Google credentials not found. Set GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REFRESH_TOKEN env vars."
+      "Google credentials not found."
     );
   }
 

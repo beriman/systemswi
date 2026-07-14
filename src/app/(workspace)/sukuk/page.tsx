@@ -15,6 +15,7 @@ type SukukProduct = {
   tenor_bulan: number; nisbah_investor: number; nisbah_pengelola: number;
   jenis_akad: string; target_cogs: number; target_harga_jual: number;
   status: string; unit_terjual?: number; total_terkumpul?: number; created_at: string;
+  from_sheets?: boolean;
 };
 
 type Investment = {

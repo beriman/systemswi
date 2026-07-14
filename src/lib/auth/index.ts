@@ -1,13 +1,24 @@
 // Auth utilities for Google OAuth
 
 import { SignJWT, jwtVerify } from "jose";
-import type { User, Session, GoogleTokenResponse, GoogleUserInfo, UserRole } from "./types";
+import type { User, GoogleTokenResponse, GoogleUserInfo, UserRole } from "./types";
 
 // Environment variables
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "";
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || "";
-const JWT_SECRET = process.env.JWT_SECRET || "dev-secret-change-in-production";
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+
+function getJwtSecret(): string {
+    if (process.env.JWT_SECRET) {
+        return process.env.JWT_SECRET;
+    }
+
+    if (process.env.NODE_ENV !== "production") {
+        return "dev-secret-change-in-production";
+    }
+
+    throw new Error("JWT_SECRET is required in production");
+}
 
 // Google OAuth URLs
 const GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
@@ -84,7 +95,7 @@ export async function getGoogleUserInfo(accessToken: string): Promise<GoogleUser
  * Create JWT session token
  */
 export async function createSessionToken(user: User): Promise<string> {
-    const secret = new TextEncoder().encode(JWT_SECRET);
+    const secret = new TextEncoder().encode(getJwtSecret());
 
     const token = await new SignJWT({
         sub: user.id,
@@ -106,7 +117,7 @@ export async function createSessionToken(user: User): Promise<string> {
  */
 export async function verifySessionToken(token: string): Promise<User | null> {
     try {
-        const secret = new TextEncoder().encode(JWT_SECRET);
+        const secret = new TextEncoder().encode(getJwtSecret());
         const { payload } = await jwtVerify(token, secret);
 
         return {

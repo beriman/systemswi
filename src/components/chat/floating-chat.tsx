@@ -15,7 +15,7 @@ interface ChatMessage {
 }
 
 // Configuration
-const N8N_WEBHOOK_URL = process.env.NEXT_PUBLIC_N8N_CHAT_WEBHOOK_URL || "https://n8n.srv1206623.hstgr.cloud/webhook/swi-chat";
+const N8N_WEBHOOK_URL = process.env.NEXT_PUBLIC_N8N_CHAT_WEBHOOK_URL || "";
 const SESSION_KEY = "swi_chat_session";
 
 // Generate unique ID

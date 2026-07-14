@@ -182,15 +182,16 @@ function writeCustomerToSqlite(customer: Omit<Customer, "rowNumber">) {
 }
 
 // ── GET: List interactions for a customer ────────────────────────
-export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
+    const { id } = await context.params;
     // Try SQLite first
-    const sqliteInteractions = readInteractionsFromSqlite(params.id);
+    const sqliteInteractions = readInteractionsFromSqlite(id);
     if (sqliteInteractions.length > 0) {
       return NextResponse.json({
         source: "SQLite (local DB)",
         sourceStatus: "live",
-        customerId: params.id,
+        customerId: id,
         interactions: sqliteInteractions,
       });
     }
@@ -201,13 +202,13 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       const rows = await readRange("Customer_Interactions!A1:J1000");
       const all = parseInteractions(rows);
       const filtered = all
-        .filter((ix) => ix.customerId === params.id)
+        .filter((ix) => ix.customerId === id)
         .sort((a, b) => b.timestamp.localeCompare(a.timestamp));
 
       return NextResponse.json({
         source: "Google Sheets",
         sourceStatus: "live",
-        customerId: params.id,
+        customerId: id,
         interactions: filtered,
       });
     } catch (error) {
@@ -215,7 +216,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
         return NextResponse.json({
           source: "SQLite (fallback)",
           sourceStatus: sqliteInteractions.length > 0 ? "live" : "degraded",
-          customerId: params.id,
+          customerId: id,
           interactions: sqliteInteractions,
           warning: "Google Workspace auth blocked; returning SQLite data only",
         });
@@ -228,8 +229,9 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 }
 
 // ── POST: Log new interaction ───────────────────────────────────
-export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
+    const { id } = await context.params;
     const body = await request.json();
     const now = new Date().toISOString();
 
@@ -237,7 +239,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     const allInteractions = readInteractionsFromSqlite();
     const interactionId = makeInteractionId(allInteractions);
 
-    const customerId = text(body.customerId) || params.id;
+    const customerId = text(body.customerId) || id;
     const value = numberValue(body.value);
 
     const interaction: Interaction = {

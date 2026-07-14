@@ -39,6 +39,11 @@ yarn-error.log*
 # vercel
 .vercel
 
+# Service account files (NEVER commit)
+*sa-embedded*.json
+*service-account*.json
+*service_account*.json
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

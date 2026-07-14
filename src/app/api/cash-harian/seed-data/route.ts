@@ -1,5 +1,5 @@
 // POST /api/cash-harian/seed-data — Seed 14 days of cash entries
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { readSheet, appendRows } from "@/lib/sheets/sheets-real";
 
 export const runtime = "nodejs";
@@ -57,7 +57,11 @@ const SEED_DATA: (string | number)[][] = [
   ["CH-SEED-028", "2026-06-22", "Keluar", "Operasional", "Biaya maintenance mesin", 1100000, 25570000, "system", "2026-06-22 14:00"],
 ];
 
-export async function POST(request: NextRequest) {
+export async function POST() {
+  if (process.env.NODE_ENV !== "development") {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
   try {
     const raw = await readSheet(SHEET_NAME);
     const hasHeader = raw.length > 0 && raw[0][0] === "EntryId";

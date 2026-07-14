@@ -175,6 +175,175 @@ function summarizeCommercial(tenantRows: string[][], sponsorRows: string[][]) {
   };
 }
 
+// ── Divisi Financial Summary ──
+// Maps brands to divisions based on category/name heuristics
+// Production: L'Arc~en~Scent, Pixel Potion, Nuscentza, dan brand fisik lainnya
+// Website/Store: Online/digital sales
+// Event: Fragrantions series (offline events)
+
+const DIVISI_KEYWORDS: Record<string, string[]> = {
+  "Produksi": ["l'arc", "pixel", "nuscentza", "fragrance", "parfum", "scent", "aroma", "cologne", "edp", "edt", "body mist", "perfume"],
+  "Website": ["online", "e-commerce", "store", "digital", "marketplace", "shopee", "tokopedia", "lazada", "blibli"],
+  "Event": ["fragrantions", "event", "exhibition", "bazaar", "pop-up", "popup", "launch", "showcase", "festival", "market"],
+};
+
+function categorizeDivisi(brandName: string, category: string): string {
+  const text = `${brandName} ${category}`.toLowerCase();
+  for (const [divisi, keywords] of Object.entries(DIVISI_KEYWORDS)) {
+    if (keywords.some((kw) => text.includes(kw))) return divisi;
+  }
+  return "Produksi"; // default
+}
+
+function categorizeExpenseDivisi(description: string, category: string): string {
+  const text = `${description} ${category}`.toLowerCase();
+  // Event-related expenses
+  if (/event|fragrantions|bazaar|exhibition|launch|venue|tenda|sound|dekorasi|dokumentasi/.test(text)) return "Event";
+  // Advertising/Media
+  if (/iklan|media|ads|advertising|promosi|influencer|kol|endorsement|banner|poster|sosmed|social media/.test(text)) return "Iklan";
+  // Operational
+  if (/operasional|gaji|listrik|air|internet|sewa|transport|atk|perlengkapan|maintenance/.test(text)) return "Operasional";
+  // Production
+  if (/produksi|bahan|packaging|botol|label|box|baku|material/.test(text)) return "Produksi";
+  return "Operasional"; // default
+}
+
+function summarizeDivisiFinancials(
+  brandMasterRows: string[][],
+  brandSalesRows: string[][],
+  brandExpenseRows: string[][],
+  brandProductionRows: string[][],
+  eventRows: string[][],
+  tenantRows: string[][],
+  sponsorRows: string[][],
+  mediaRows: string[][]
+) {
+  // Build brand → divisi mapping from Brand_Master
+  const brandDivisiMap: Record<string, string> = {};
+  const masterData = brandMasterRows.slice(1).filter((row) => row[0] || row[1]);
+  for (const row of masterData) {
+    const brandName = (row[1] || row[0] || "").toLowerCase();
+    const category = (row[2] || row[3] || "").toLowerCase();
+    brandDivisiMap[brandName] = categorizeDivisi(brandName, category);
+  }
+
+  // Initialize divisi financials
+  const divisiMap: Record<string, {
+    omzet: number;
+    biayaProduksi: number;
+    biayaIklan: number;
+    biayaOperasional: number;
+    labaBersih: number;
+    brandCount: number;
+    unitSold: number;
+  }> = {
+    "Produksi": { omzet: 0, biayaProduksi: 0, biayaIklan: 0, biayaOperasional: 0, labaBersih: 0, brandCount: 0, unitSold: 0 },
+    "Website": { omzet: 0, biayaProduksi: 0, biayaIklan: 0, biayaOperasional: 0, labaBersih: 0, brandCount: 0, unitSold: 0 },
+    "Event": { omzet: 0, biayaProduksi: 0, biayaIklan: 0, biayaOperasional: 0, labaBersih: 0, brandCount: 0, unitSold: 0 },
+  };
+
+  // Brand_Sales: [3]=brandName, [7]=unitsSold, [11]=netRevenue, [12]=cogs
+  const salesRows = brandSalesRows.slice(1).filter((row) => row[0] || row[3]);
+  for (const row of salesRows) {
+    const brandName = (row[3] || row[0] || "").toLowerCase();
+    const divisi = brandDivisiMap[brandName] || "Produksi";
+    const revenue = parseNumber(row[11]);
+    const cogs = parseNumber(row[12]);
+    const units = parseNumber(row[7]);
+    if (divisiMap[divisi]) {
+      divisiMap[divisi].omzet += revenue;
+      divisiMap[divisi].biayaProduksi += cogs;
+      divisiMap[divisi].unitSold += units;
+    }
+  }
+
+  // Brand_Production: [3]=brandName, [15]=totalCost (biaya produksi per batch)
+  const prodRows = brandProductionRows.slice(1).filter((row) => row[0] || row[3]);
+  for (const row of prodRows) {
+    const brandName = (row[3] || row[0] || "").toLowerCase();
+    const divisi = brandDivisiMap[brandName] || "Produksi";
+    const cost = parseNumber(row[15]) || parseNumber(row[11]);
+    if (divisiMap[divisi]) {
+      divisiMap[divisi].biayaProduksi += cost;
+    }
+  }
+
+  // Brand_Expenses: [2]=description, [3]=category, [7]=amount
+  const expenseRows = brandExpenseRows.slice(1).filter((row) => row[0] || row[2]);
+  for (const row of expenseRows) {
+    const desc = row[2] || row[1] || "";
+    const category = row[3] || "";
+    const amount = parseNumber(row[7]);
+    const divisi = categorizeExpenseDivisi(desc, category);
+    if (divisiMap[divisi]) {
+      if (divisi === "Iklan") {
+        divisiMap[divisi].biayaIklan += amount;
+      } else if (divisi === "Operasional") {
+        divisiMap[divisi].biayaOperasional += amount;
+      } else if (divisi === "Produksi") {
+        divisiMap[divisi].biayaProduksi += amount;
+      } else {
+        divisiMap[divisi].biayaOperasional += amount;
+      }
+    }
+  }
+
+  // Event revenue from tenants + sponsors
+  const tenants = tenantRows.slice(1).filter((row) => row[0] || row[2]);
+  const sponsors = sponsorRows.slice(1).filter((row) => row[0] || row[2]);
+  const tenantRevenue = tenants.reduce((sum, row) => sum + parseNumber(row[11]), 0);
+  const sponsorRevenue = sponsors.reduce((sum, row) => sum + parseNumber(row[7]) + parseNumber(row[10]), 0);
+  divisiMap["Event"].omzet = tenantRevenue + sponsorRevenue;
+
+  // Event media costs
+  const mediaItems = mediaRows.slice(1).filter((row) => row[0] || row[1]);
+  const mediaCost = mediaItems.reduce((sum, row) => sum + parseNumber(row[5]), 0);
+  divisiMap["Event"].biayaIklan = mediaCost;
+
+  // Event operational costs from event rows
+  const events = eventRows.slice(1).filter((row) => row[0] || row[1]);
+  const eventCost = events.reduce((sum, row) => sum + parseNumber(row[13]), 0);
+  divisiMap["Event"].biayaOperasional = eventCost;
+
+  // Brand count per divisi
+  for (const brand of masterData) {
+    const brandName = (brand[1] || brand[0] || "").toLowerCase();
+    const divisi = brandDivisiMap[brandName] || "Produksi";
+    if (divisiMap[divisi]) divisiMap[divisi].brandCount++;
+  }
+
+  // Calculate laba bersih per divisi
+  for (const d of Object.values(divisiMap)) {
+    d.labaBersih = d.omzet - d.biayaProduksi - d.biayaIklan - d.biayaOperasional;
+  }
+
+  // Margin percentages
+  const result: Record<string, {
+    omzet: number;
+    biayaProduksi: number;
+    biayaIklan: number;
+    biayaOperasional: number;
+    labaBersih: number;
+    marginLaba: number;
+    brandCount: number;
+    unitSold: number;
+  }> = {};
+  for (const [divisi, data] of Object.entries(divisiMap)) {
+    result[divisi] = {
+      omzet: data.omzet,
+      biayaProduksi: data.biayaProduksi,
+      biayaIklan: data.biayaIklan,
+      biayaOperasional: data.biayaOperasional,
+      labaBersih: data.labaBersih,
+      marginLaba: data.omzet > 0 ? (data.labaBersih / data.omzet) * 100 : 0,
+      brandCount: data.brandCount,
+      unitSold: data.unitSold,
+    };
+  }
+
+  return result;
+}
+
 function summarizeMedia(mediaRows: string[][]) {
   const items = mediaRows.slice(1).filter((row) => cell(row, 0) || cell(row, 1));
   const totalMedia = items.length;
@@ -234,7 +403,7 @@ export async function GET() {
         "Brand_Production!A1:T1000",
         "Brand_Sales!A1:N1000",
         "Brand_Expenses!A1:L1000",
-      ]).catch(emptyOnAuthError({})),
+      ]).catch(emptyOnAuthError<Record<string, string[][]>>({})),
       readEventSheet(EVENT_SHEETS.Events).catch(emptyOnAuthError([])),
       readSheet("Inventory_Master").catch(emptyOnAuthError([])),
       readSheet("Purchase_Orders").catch(emptyOnAuthError([])),
@@ -417,6 +586,16 @@ export async function GET() {
     const complianceSummary = summarizeCompliance(complianceRows, qcRows);
     const commercialSummary = summarizeCommercial(tenantRows, sponsorRows);
     const mediaSummary = summarizeMedia(mediaRows);
+    const divisiFinancials = summarizeDivisiFinancials(
+      brandRanges["Brand_Master!A1:K200"] || [],
+      brandRanges["Brand_Sales!A1:N1000"] || [],
+      brandRanges["Brand_Expenses!A1:L1000"] || [],
+      brandRanges["Brand_Production!A1:T1000"] || [],
+      eventRows,
+      tenantRows,
+      sponsorRows,
+      mediaRows
+    );
 
     return NextResponse.json({
       source: "Google Sheets: finance + events + production + inventory + procurement + compliance + commercial",
@@ -446,6 +625,7 @@ export async function GET() {
       complianceSummary,
       commercialSummary,
       mediaSummary,
+      divisiFinancials,
       executiveSnapshot: {
         cash: totalSaldoAkhir,
         cashAwal: totalSaldoAwal,

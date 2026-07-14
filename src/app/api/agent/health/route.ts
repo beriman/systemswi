@@ -35,6 +35,7 @@ export async function POST(request: NextRequest) {
       target: "All SWI Systems",
       status: report.status === "healthy" ? "success" : "failed",
       humanApproved: "n/a",
+      notes: `Health: ${report.status}, Checks: ${report.checks.length}, Telegram: ${telegramResult ? "sent" : "not configured"}`,
       details: `Health: ${report.status}, Checks: ${report.checks.length}, Telegram: ${telegramResult ? "sent" : "not configured"}`,
     });
 

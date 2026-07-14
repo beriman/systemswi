@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { appendRows, readRange } from "@/lib/sheets/sheets-real";
 
 // Seed data: 8 sample tasks + 3 sample comments
@@ -106,6 +106,10 @@ async function ensureHeaders() {
 }
 
 export async function POST() {
+  if (process.env.NODE_ENV !== "development") {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
   try {
     await ensureHeaders();
 
@@ -150,9 +154,10 @@ export async function POST() {
       },
       totalSeeded: tasksAppended + commentsAppended,
     });
-  } catch (error: any) {
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to seed task data";
     return NextResponse.json(
-      { error: error.message || "Failed to seed task data" },
+      { error: message },
       { status: 500 }
     );
   }

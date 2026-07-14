@@ -246,10 +246,11 @@ async function readCrm() {
 }
 
 // ── GET: Single customer detail ──────────────────────────────────
-export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
+    const { id } = await context.params;
     const { customers, interactions, sourceStatus, source } = await readCrm();
-    const customer = customers.find((c) => c.id === params.id);
+    const customer = customers.find((c) => c.id === id);
 
     if (!customer) {
       return NextResponse.json({ error: "Customer tidak ditemukan" }, { status: 404 });
@@ -279,11 +280,12 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 }
 
 // ── PUT: Update customer ─────────────────────────────────────────
-export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
+export async function PUT(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
+    const { id } = await context.params;
     const body = await request.json();
     const { customers, interactions, source } = await readCrm();
-    const existing = customers.find((c) => c.id === params.id);
+    const existing = customers.find((c) => c.id === id);
 
     if (!existing) {
       return NextResponse.json({ error: "Customer tidak ditemukan" }, { status: 404 });

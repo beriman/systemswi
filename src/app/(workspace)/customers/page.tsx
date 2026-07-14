@@ -63,6 +63,7 @@ type CustomerPayload = {
   customers: Customer[];
   interactions: Interaction[];
   summary: Summary;
+  totalBeforeFilter?: number;
 };
 
 type SegmentData = {

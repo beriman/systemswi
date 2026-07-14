@@ -1,6 +1,6 @@
 // POST /api/buku-kas/fix-seed — Clear bad data and re-seed with correct column mapping
-import { NextRequest, NextResponse } from "next/server";
-import { readSheet, appendRows, writeRange, SHEETS } from "@/lib/sheets/sheets-real";
+import { NextResponse } from "next/server";
+import { readSheet, appendRows, writeRange } from "@/lib/sheets/sheets-real";
 import { googleWorkspaceWriteBlockedSource } from "@/lib/api/google-workspace-error";
 
 export const runtime = "nodejs";
@@ -39,7 +39,11 @@ const SEED_DATA = [
   ["2026-06-21", "K", "Salary", "Bonus karyawan", 0, 2000000],
 ];
 
-export async function POST(request: NextRequest) {
+export async function POST() {
+  if (process.env.NODE_ENV !== "development") {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
   try {
     // Step 1: Clear existing data (clear rows 6 onwards - data starts at row 6)
     // Clear all data rows by writing empty values

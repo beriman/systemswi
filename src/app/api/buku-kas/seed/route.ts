@@ -1,5 +1,5 @@
 // POST /api/buku-kas/seed — Seed 20 sample transactions
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { readSheet, appendRows } from "@/lib/sheets/sheets-real";
 import { googleWorkspaceWriteBlockedSource } from "@/lib/api/google-workspace-error";
 
@@ -37,7 +37,11 @@ const SEED_DATA = [
   ["2026-06-19", "Kredit", "Operating", "Biaya izin BPOM", 0, 5000000, "OP-004"],
 ];
 
-export async function POST(request: NextRequest) {
+export async function POST() {
+  if (process.env.NODE_ENV !== "development") {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
   try {
     // Check if data already exists
     const raw = await readSheet(SHEET_NAME);

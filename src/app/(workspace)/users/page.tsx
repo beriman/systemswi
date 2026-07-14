@@ -1,10 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { RoleGate } from "@/components/auth/role-gate";
 import { usePermissions } from "@/hooks/use-permissions";
 import type { UserRole } from "@/lib/auth/types";
@@ -22,11 +21,11 @@ type SystemUser = {
 
 // Default users based on SWI structure
 const DEFAULT_USERS: SystemUser[] = [
-  { id: "dev-beriman", name: "Beriman Juliano", email: "beriman.juliano@gmail.com", role: "ceo", isActive: true, lastLogin: new Date().toISOString(), createdAt: "2026-01-01T00:00:00.000Z" },
-  { id: "dev-coo", name: "COO SWI", email: "coo@swi.id", role: "coo", isActive: true, lastLogin: "2026-06-15T10:00:00.000Z", createdAt: "2026-01-15T00:00:00.000Z" },
-  { id: "dev-komisaris", name: "Komisaris SWI", email: "komisaris@swi.id", role: "komisaris", isActive: true, lastLogin: "2026-06-10T14:00:00.000Z", createdAt: "2026-01-15T00:00:00.000Z" },
-  { id: "dev-panitia", name: "Panitia Event", email: "panitia@swi.id", role: "panitia", isActive: true, lastLogin: "2026-06-16T08:00:00.000Z", createdAt: "2026-02-01T00:00:00.000Z" },
-  { id: "dev-freelancer", name: "Freelancer", email: "freelancer@swi.id", role: "freelancer", isActive: false, lastLogin: "2026-05-20T16:00:00.000Z", createdAt: "2026-03-01T00:00:00.000Z" },
+  { id: "dev-ceo", name: "Local CEO User", email: "ceo@example.invalid", role: "ceo", isActive: true, lastLogin: new Date().toISOString(), createdAt: "2026-01-01T00:00:00.000Z" },
+  { id: "dev-coo", name: "Local COO User", email: "coo@example.invalid", role: "coo", isActive: true, lastLogin: "2026-06-15T10:00:00.000Z", createdAt: "2026-01-15T00:00:00.000Z" },
+  { id: "dev-komisaris", name: "Local Komisaris User", email: "komisaris@example.invalid", role: "komisaris", isActive: true, lastLogin: "2026-06-10T14:00:00.000Z", createdAt: "2026-01-15T00:00:00.000Z" },
+  { id: "dev-panitia", name: "Local Panitia User", email: "panitia@example.invalid", role: "panitia", isActive: true, lastLogin: "2026-06-16T08:00:00.000Z", createdAt: "2026-02-01T00:00:00.000Z" },
+  { id: "dev-freelancer", name: "Local Freelancer User", email: "freelancer@example.invalid", role: "freelancer", isActive: false, lastLogin: "2026-05-20T16:00:00.000Z", createdAt: "2026-03-01T00:00:00.000Z" },
 ];
 
 function formatDate(dateStr: string): string {

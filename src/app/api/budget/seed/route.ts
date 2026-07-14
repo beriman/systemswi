@@ -1,6 +1,6 @@
 // POST /api/budget/seed — Seed budget vs actual data
 import { NextRequest, NextResponse } from "next/server";
-import { readRange, writeRange, appendRows } from "@/lib/sheets/sheets-real";
+import { readRange, writeRange } from "@/lib/sheets/sheets-real";
 
 export const runtime = "nodejs";
 
@@ -40,6 +40,10 @@ function randBetween(min: number, max: number): number {
 }
 
 export async function POST(req: NextRequest) {
+  if (process.env.NODE_ENV !== "development") {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
   try {
     const { searchParams } = new URL(req.url);
     const force = searchParams.get("force") === "true";

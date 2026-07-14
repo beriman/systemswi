@@ -89,6 +89,7 @@ export default function DashboardPage() {
         <Tabs defaultValue="overview" className="space-y-4">
           <TabsList className="flex-wrap">
             <TabsTrigger value="overview">📊 Overview</TabsTrigger>
+            <TabsTrigger value="divisi">🏢 Per Divisi</TabsTrigger>
             <TabsTrigger value="brands">🏷️ Brand Tracker</TabsTrigger>
             <TabsTrigger value="cashflow">💰 Cashflow</TabsTrigger>
             <TabsTrigger value="quicklinks">⚡ Quick Links</TabsTrigger>
@@ -96,6 +97,29 @@ export default function DashboardPage() {
 
           {/* ── Overview Tab ── */}
           <TabsContent value="overview" className="space-y-4">
+            {/* Divisi Quick Summary */}
+            {data?.divisiFinancials && (
+              <div className="grid gap-3 md:grid-cols-3">
+                {Object.entries(data.divisiFinancials).map(([divisi, d]: [string, any]) => {
+                  const colors: Record<string, string> = { "Produksi": "bg-green-50 border-green-200", "Website": "bg-blue-50 border-blue-200", "Event": "bg-purple-50 border-purple-200" };
+                  const icons: Record<string, string> = { "Produksi": "🏭", "Website": "💻", "Event": "🎪" };
+                  return (
+                    <Card key={divisi} className={`border ${colors[divisi] || ""}`}>
+                      <CardContent className="pt-4 pb-4">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-sm font-medium">{icons[divisi]} Divisi {divisi}</span>
+                          <span className={`text-xs font-semibold ${d.labaBersih >= 0 ? "text-green-600" : "text-red-600"}`}>
+                            {d.marginLaba.toFixed(1)}%
+                          </span>
+                        </div>
+                        <div className="text-lg font-bold">{formatCurrency(d.omzet)}</div>
+                        <div className="text-xs text-muted-foreground">Laba: <span className={d.labaBersih >= 0 ? "text-green-600" : "text-red-600"}>{formatCurrency(d.labaBersih)}</span></div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            )}
             {/* KPI Cards */}
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
               <Card>
@@ -406,6 +430,208 @@ export default function DashboardPage() {
                     </CardContent>
                   </Card>
                 ))}
+              </div>
+            )}
+          </TabsContent>
+
+          {/* ── Per Divisi Tab ── */}
+          <TabsContent value="divisi" className="space-y-4">
+            <div>
+              <h3 className="text-lg font-semibold mb-1">Laporan Keuangan Per Divisi</h3>
+              <p className="text-sm text-muted-foreground mb-4">
+                Omzet, biaya, dan laba bersih dikelompokkan berdasarkan divisi: Produksi, Website, dan Event.
+                Data bersumber dari Google Sheets (Brand_Sales, Brand_Expenses, Event_Tenants, Event_Sponsors).
+              </p>
+            </div>
+
+            {/* Divisi KPI Cards */}
+            {loading ? (
+              <div className="grid gap-4 md:grid-cols-3">
+                {[1,2,3].map((i) => <Skeleton key={i} className="h-48 rounded-xl" />)}
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {data?.divisiFinancials && Object.entries(data.divisiFinancials).map(([divisi, d]: [string, any]) => {
+                  const colors: Record<string, string> = {
+                    "Produksi": "border-green-200 bg-green-50",
+                    "Website": "border-blue-200 bg-blue-50",
+                    "Event": "border-purple-200 bg-purple-50",
+                  };
+                  const iconColors: Record<string, string> = {
+                    "Produksi": "text-green-600",
+                    "Website": "text-blue-600",
+                    "Event": "text-purple-600",
+                  };
+                  const icons: Record<string, string> = {
+                    "Produksi": "🏭",
+                    "Website": "💻",
+                    "Event": "🎪",
+                  };
+                  return (
+                    <Card key={divisi} className={`border-2 ${colors[divisi] || "border-gray-200"}`}>
+                      <CardHeader className="pb-2">
+                        <div className="flex items-center justify-between">
+                          <CardTitle className="text-lg flex items-center gap-2">
+                            <span>{icons[divisi] || "📊"}</span>
+                            <span className={iconColors[divisi] || "text-gray-600"}>Divisi {divisi}</span>
+                          </CardTitle>
+                          <Badge variant="outline" className="text-xs">
+                            {d.brandCount} brand
+                          </Badge>
+                        </div>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                          <div>
+                            <div className="text-xs text-muted-foreground">Omzet</div>
+                            <div className="text-lg font-bold text-foreground">
+                              {formatCurrency(d.omzet)}
+                            </div>
+                          </div>
+                          <div>
+                            <div className="text-xs text-muted-foreground">Biaya Produksi</div>
+                            <div className="text-lg font-semibold text-orange-600">
+                              {formatCurrency(d.biayaProduksi)}
+                            </div>
+                          </div>
+                          <div>
+                            <div className="text-xs text-muted-foreground">Biaya Iklan</div>
+                            <div className="text-lg font-semibold text-pink-600">
+                              {formatCurrency(d.biayaIklan)}
+                            </div>
+                          </div>
+                          <div>
+                            <div className="text-xs text-muted-foreground">Biaya Operasional</div>
+                            <div className="text-lg font-semibold text-amber-600">
+                              {formatCurrency(d.biayaOperasional)}
+                            </div>
+                          </div>
+                          <div>
+                            <div className="text-xs text-muted-foreground">Laba Bersih</div>
+                            <div className={`text-lg font-bold ${d.labaBersih >= 0 ? "text-green-600" : "text-red-600"}`}>
+                              {formatCurrency(d.labaBersih)}
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              Margin: {d.marginLaba.toFixed(1)}%
+                            </div>
+                          </div>
+                        </div>
+                        {/* Margin Bar */}
+                        <div className="mt-4">
+                          <div className="flex justify-between text-xs text-muted-foreground mb-1">
+                            <span>Margin Laba</span>
+                            <span>{d.marginLaba.toFixed(1)}%</span>
+                          </div>
+                          <div className="w-full bg-gray-200 rounded-full h-2">
+                            <div
+                              className={`h-2 rounded-full transition-all ${
+                                d.marginLaba >= 30 ? "bg-green-500" :
+                                d.marginLaba >= 15 ? "bg-yellow-500" :
+                                d.marginLaba >= 0 ? "bg-orange-500" : "bg-red-500"
+                              }`}
+                              style={{ width: `${Math.min(Math.max(d.marginLaba, 0), 100)}%` }}
+                            />
+                          </div>
+                        </div>
+                        {d.unitSold > 0 && (
+                          <div className="mt-2 text-xs text-muted-foreground">
+                            Unit terjual: {formatNumber(d.unitSold)}
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+
+                {/* Summary Table */}
+                {data?.divisiFinancials && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-base">📋 Ringkasan Perbandingan Divisi</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Divisi</TableHead>
+                            <TableHead className="text-right">Omzet</TableHead>
+                            <TableHead className="text-right">Biaya Produksi</TableHead>
+                            <TableHead className="text-right">Biaya Iklan</TableHead>
+                            <TableHead className="text-right">Biaya Operasional</TableHead>
+                            <TableHead className="text-right">Laba Bersih</TableHead>
+                            <TableHead className="text-right">Margin</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {Object.entries(data.divisiFinancials).map(([divisi, d]: [string, any]) => (
+                            <TableRow key={divisi}>
+                              <TableCell className="font-medium">🏢 {divisi}</TableCell>
+                              <TableCell className="text-right">{formatCurrency(d.omzet)}</TableCell>
+                              <TableCell className="text-right text-orange-600">{formatCurrency(d.biayaProduksi)}</TableCell>
+                              <TableCell className="text-right text-pink-600">{formatCurrency(d.biayaIklan)}</TableCell>
+                              <TableCell className="text-right text-amber-600">{formatCurrency(d.biayaOperasional)}</TableCell>
+                              <TableCell className={`text-right font-bold ${d.labaBersih >= 0 ? "text-green-600" : "text-red-600"}`}>
+                                {formatCurrency(d.labaBersih)}
+                              </TableCell>
+                              <TableCell className={`text-right font-semibold ${
+                                d.marginLaba >= 30 ? "text-green-600" :
+                                d.marginLaba >= 15 ? "text-yellow-600" : "text-red-600"
+                              }`}>
+                                {d.marginLaba.toFixed(1)}%
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                          {/* Total Row */}
+                          <TableRow className="bg-muted/50 font-bold">
+                            <TableCell>TOTAL</TableCell>
+                            <TableCell className="text-right">
+                              {formatCurrency(
+                                Object.values(data.divisiFinancials).reduce((s: number, d: any) => s + d.omzet, 0)
+                              )}
+                            </TableCell>
+                            <TableCell className="text-right text-orange-600">
+                              {formatCurrency(
+                                Object.values(data.divisiFinancials).reduce((s: number, d: any) => s + d.biayaProduksi, 0)
+                              )}
+                            </TableCell>
+                            <TableCell className="text-right text-pink-600">
+                              {formatCurrency(
+                                Object.values(data.divisiFinancials).reduce((s: number, d: any) => s + d.biayaIklan, 0)
+                              )}
+                            </TableCell>
+                            <TableCell className="text-right text-amber-600">
+                              {formatCurrency(
+                                Object.values(data.divisiFinancials).reduce((s: number, d: any) => s + d.biayaOperasional, 0)
+                              )}
+                            </TableCell>
+                            <TableCell className="text-right text-green-600">
+                              {formatCurrency(
+                                Object.values(data.divisiFinancials).reduce((s: number, d: any) => s + d.labaBersih, 0)
+                              )}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              {(
+                                (Object.values(data.divisiFinancials).reduce((s: number, d: any) => s + d.labaBersih, 0) /
+                                Math.max(Object.values(data.divisiFinancials).reduce((s: number, d: any) => s + d.omzet, 0), 1)) * 100
+                              ).toFixed(1)}%
+                            </TableCell>
+                          </TableRow>
+                        </TableBody>
+                      </Table>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Data Source Note */}
+                <Card className="bg-muted/30 border-dashed">
+                  <CardContent className="pt-4">
+                    <p className="text-xs text-muted-foreground">
+                      ℹ️ <strong>Catatan:</strong> Kategorisasi divisi dilakukan secara otomatis berdasarkan nama brand dan deskripsi expense.
+                      Untuk akurasi lebih tinggi, tambahkan kolom "Divisi" di sheet Brand_Master atau Brand_Expenses.
+                      Mapping default: brand parfum → Produksi, tenant/sponsor → Event, iklan/media → biaya Iklan.
+                    </p>
+                  </CardContent>
+                </Card>
               </div>
             )}
           </TabsContent>

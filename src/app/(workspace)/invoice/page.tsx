@@ -191,7 +191,6 @@ export default function InvoicePreview() {
         </button>
         <button
           onClick={() => setShowSaved(!showSaved)}
-          variant="outline"
           className="bg-muted text-muted-foreground px-4 py-2 rounded-md hover:bg-muted/80 text-sm font-medium"
         >
           📋 Tersimpan ({savedInvoices.length})

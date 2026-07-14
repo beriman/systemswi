@@ -1,6 +1,9 @@
 // POST /api/customers/seed — seed sample customer data into SQLite + Google Sheets
 // Body: { force?: boolean }
 import { NextRequest, NextResponse } from "next/server";
+import Database from "better-sqlite3";
+import * as fs from "fs";
+import * as path from "path";
 import { googleWorkspaceWriteBlockedSource, isGoogleWorkspaceAuthError } from "@/lib/api/google-workspace-error";
 import { readRange, appendRows, writeRange } from "@/lib/sheets/sheets-real";
 import { ensureCustomerTables } from "@/lib/customer/init-db";
@@ -52,11 +55,8 @@ const SAMPLE_INTERACTIONS = [
 ];
 
 // ── SQLite helpers ──
-function getDbSafe(): any {
+function getDbSafe(): Database.Database | null {
   try {
-    const Database = require("better-sqlite3");
-    const path = require("path");
-    const fs = require("fs");
     const dbDir = path.join(process.cwd(), ".data");
     const dbPath = path.join(dbDir, "systemswi.db");
     if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir, { recursive: true });
@@ -108,6 +108,10 @@ function seedSqlite(): { customers: number; interactions: number } {
 }
 
 export async function POST(request: NextRequest) {
+  if (process.env.NODE_ENV !== "development") {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
   try {
     const body = await request.json().catch(() => ({}));
     const force = body.force === true;

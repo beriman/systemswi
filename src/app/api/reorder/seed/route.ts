@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { googleWorkspaceWriteBlockedSource, isGoogleWorkspaceAuthError } from "@/lib/api/google-workspace-error";
 import { appendRows, writeRange, readRange, updateRow } from "@/lib/sheets/sheets-real";
 import {
@@ -11,12 +11,6 @@ import {
 
 export const runtime = "nodejs";
 
-const text = (v: unknown) => String(v ?? "").trim();
-const num = (v: unknown) => {
-  if (typeof v === "number") return v;
-  if (!v) return 0;
-  return Number(String(v).replace(/[^\d.-]/g, "")) || 0;
-};
 const today = () => new Date().toISOString().slice(0, 10);
 const dateStr = today();
 
@@ -27,6 +21,10 @@ const dateStr = today();
  * - 2 items in Inventory_Master set below minimum
  */
 export async function POST() {
+  if (process.env.NODE_ENV !== "development") {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
   try {
     await ensureReorderSheetsInitialized();
 

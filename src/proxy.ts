@@ -4,9 +4,11 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { jwtVerify } from "jose";
 
-// Auth is disabled by default while System SWI is still in active development.
-// Set ENABLE_PORTAL_AUTH=true in production when the portal is ready to be locked down.
-const ENABLE_PORTAL_AUTH = process.env.ENABLE_PORTAL_AUTH === "true";
+// Auth may be disabled explicitly for local development with ENABLE_PORTAL_AUTH=false.
+// In production, default to locked down so a missing env var does not expose APIs.
+const ENABLE_PORTAL_AUTH = process.env.ENABLE_PORTAL_AUTH !== "false" && (
+    process.env.NODE_ENV === "production" || process.env.ENABLE_PORTAL_AUTH === "true"
+);
 
 // Paths that require authentication when ENABLE_PORTAL_AUTH=true.
 const PROTECTED_PATHS = [
@@ -14,34 +16,39 @@ const PROTECTED_PATHS = [
     "/workspace",
 ];
 
-// Paths that are always public
-const PUBLIC_PATHS = [
-    "/",
-    "/login",
-    "/api/auth/google",
-    "/api/auth/callback",
+// API routes are protected by default when portal auth is enabled. Keep only
+// authentication callbacks and webhook receivers with their own signature/secret
+// verification public.
+const PUBLIC_API_PATHS = [
+    "/api/auth",
+    "/api/agent/telegram-webhook",
+    "/api/invites",
 ];
 
 // Cookie name (must match auth/index.ts)
 const AUTH_COOKIE_NAME = "auth-token";
 
-// JWT secret
-const JWT_SECRET = process.env.JWT_SECRET || "dev-secret-change-in-production";
+// JWT secret. Production must provide JWT_SECRET; the fallback is dev-only.
+const JWT_SECRET = process.env.JWT_SECRET || (process.env.NODE_ENV !== "production" ? "dev-secret-change-in-production" : "");
 
 /**
- * Check if path is protected
+ * Check if path is an API endpoint intentionally left public.
  */
-function isProtectedPath(pathname: string): boolean {
-    return PROTECTED_PATHS.some(
+function isPublicApiPath(pathname: string): boolean {
+    return PUBLIC_API_PATHS.some(
         (path) => pathname === path || pathname.startsWith(`${path}/`)
     );
 }
 
 /**
- * Check if path is public
+ * Check if path is protected
  */
-function isPublicPath(pathname: string): boolean {
-    return PUBLIC_PATHS.some(
+function isProtectedPath(pathname: string): boolean {
+    if (pathname.startsWith("/api/")) {
+        return !isPublicApiPath(pathname);
+    }
+
+    return PROTECTED_PATHS.some(
         (path) => pathname === path || pathname.startsWith(`${path}/`)
     );
 }
@@ -51,6 +58,10 @@ function isPublicPath(pathname: string): boolean {
  */
 async function verifyToken(token: string): Promise<boolean> {
     try {
+        if (!JWT_SECRET) {
+            return false;
+        }
+
         const secret = new TextEncoder().encode(JWT_SECRET);
         await jwtVerify(token, secret);
         return true;
@@ -67,10 +78,10 @@ export async function proxy(request: NextRequest) {
         return NextResponse.next();
     }
 
-    // Skip middleware for static files and API routes (except protected ones)
+    // Skip proxy for static files and explicitly public API endpoints.
     if (
         pathname.startsWith("/_next") ||
-        pathname.startsWith("/api/auth") ||
+        isPublicApiPath(pathname) ||
         pathname.includes(".")
     ) {
         return NextResponse.next();
@@ -80,7 +91,12 @@ export async function proxy(request: NextRequest) {
     const token = request.cookies.get(AUTH_COOKIE_NAME)?.value;
     const isAuthenticated = token ? await verifyToken(token) : false;
 
-    // If accessing protected route without auth, redirect to login
+    // If accessing protected API without auth, return JSON 401 instead of a page redirect.
+    if (pathname.startsWith("/api/") && isProtectedPath(pathname) && !isAuthenticated) {
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // If accessing protected page route without auth, redirect to login
     if (isProtectedPath(pathname) && !isAuthenticated) {
         const loginUrl = new URL("/login", request.url);
         loginUrl.searchParams.set("callbackUrl", pathname);

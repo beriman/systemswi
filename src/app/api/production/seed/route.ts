@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { appendRows, readRange } from "@/lib/sheets/sheets-real";
 
 // Brand_Production actual schema (20 columns):
@@ -82,7 +82,11 @@ async function ensureHeaders() {
   }
 }
 
-export async function POST(req: NextRequest) {
+export async function POST() {
+  if (process.env.NODE_ENV !== "development") {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
   try {
     await ensureHeaders();
 
@@ -109,9 +113,10 @@ export async function POST(req: NextRequest) {
       },
       totalRows: prodAppended + wasteAppended + targetsAppended,
     });
-  } catch (error: any) {
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to seed production data";
     return NextResponse.json(
-      { error: error.message || "Failed to seed production data" },
+      { error: message },
       { status: 500 }
     );
   }

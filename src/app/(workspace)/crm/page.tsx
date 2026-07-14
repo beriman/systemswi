@@ -62,7 +62,7 @@ const CONTACT_TYPE_META: Record<string, { label: string; color: string; icon: st
   sponsor: { label: "Sponsor", color: "bg-amber-600", icon: "🤝" },
 };
 
-const STATUS_META: Record<string, { label: string; variant: string }> = {
+const STATUS_META: Record<string, { label: string; variant: "default" | "outline" | "secondary" | "destructive" }> = {
   paid: { label: "Lunas", variant: "default" as const },
   pending: { label: "Pending", variant: "outline" as const },
   partial: { label: "Partial", variant: "secondary" as const },

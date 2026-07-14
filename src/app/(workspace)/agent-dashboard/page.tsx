@@ -275,7 +275,7 @@ export default function AgentDashboardPage() {
 
         {/* Tab Navigation */}
         <div className="flex gap-2 border-b">
-          {(["overview", "approvals", "audit", "modules"] as const).map((tab) => (
+          {(["overview", "health", "approvals", "audit", "modules"] as const).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}

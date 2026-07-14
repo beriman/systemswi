@@ -42,16 +42,13 @@ export async function GET() {
     ];
 
     let regRows: string[][] = [];
-    let timelineRows: string[][] = [];
     let sourceStatus: "live" | "degraded" = "live";
 
     try {
       const data = await readRanges([
         "BPOM_Registry!A1:N1000",
-        "BPOM_Timeline!A1:J500",
       ]);
       regRows = data["BPOM_Registry!A1:N1000"] || [];
-      timelineRows = data["BPOM_Timeline!A1:J500"] || [];
     } catch (err) {
       if (isSheetsError(err)) {
         sourceStatus = "degraded";
@@ -153,6 +150,10 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === "seed") {
+      if (process.env.NODE_ENV !== "development") {
+        return NextResponse.json({ error: "Not found" }, { status: 404 });
+      }
+
       const seedRows = [
         ["BPOM-SEED-001", "2025-01-15", "L'Arc~en~Scent EDP 30ml", "L'Arc~en~Scent", "Perfume", "Reguler", "approved", "2024-12-01", "2025-01-10", "2027-01-10", "BPOM-2025-0001", "Beriman", "First BPOM certificate for main product", ""],
         ["BPOM-SEED-002", "2025-06-20", "Pixel Potion Discovery Set", "Pixel Potion", "Perfume", "Reguler", "approved", "2025-05-15", "2025-06-15", "2027-06-15", "BPOM-2025-0042", "Beriman", "Discovery set variation", ""],

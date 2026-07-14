@@ -13,7 +13,11 @@ import {
 export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const code = searchParams.get("code");
+    const state = searchParams.get("state");
     const error = searchParams.get("error");
+    const cookieStore = await cookies();
+    const expectedState = cookieStore.get("oauth-state")?.value;
+    cookieStore.delete("oauth-state");
 
     // Handle OAuth errors
     if (error) {
@@ -26,6 +30,13 @@ export async function GET(request: NextRequest) {
     if (!code) {
         return NextResponse.redirect(
             new URL("/login?error=no_code", request.url)
+        );
+    }
+
+    // Validate OAuth state to prevent login CSRF/session fixation attacks.
+    if (!state || !expectedState || state !== expectedState) {
+        return NextResponse.redirect(
+            new URL("/login?error=invalid_state", request.url)
         );
     }
 
@@ -43,7 +54,6 @@ export async function GET(request: NextRequest) {
         const sessionToken = await createSessionToken(user);
 
         // Set auth cookie
-        const cookieStore = await cookies();
         cookieStore.set(AUTH_COOKIE_NAME, sessionToken, AUTH_COOKIE_OPTIONS);
 
         // Redirect to dashboard

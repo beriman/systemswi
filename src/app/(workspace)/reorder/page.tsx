@@ -4,7 +4,7 @@ import { FormEvent, useEffect, useMemo, useState, useCallback } from "react";
 import {
   Package, AlertTriangle, ShoppingCart, ClipboardList, RefreshCw,
   Plus, CheckCircle, XCircle, Truck, TrendingDown, DollarSign,
-  ArrowDownCircle, Eye, Send
+  ArrowDownCircle, Eye, Send, X
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";

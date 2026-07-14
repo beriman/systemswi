@@ -45,7 +45,7 @@ export async function getOpenRouterResponse(
     chatHistory: ChatMessage[] = [],
     apiKey?: string
 ): Promise<ChatMessage> {
-    const key = apiKey || process.env.NEXT_PUBLIC_OPENROUTER_API_KEY;
+    const key = apiKey;
 
     if (!key) {
         // Fallback to mock if no API key
@@ -108,5 +108,5 @@ export async function getOpenRouterResponse(
 
 // Check if OpenRouter is configured
 export function isOpenRouterConfigured(): boolean {
-    return !!process.env.NEXT_PUBLIC_OPENROUTER_API_KEY;
+    return false;
 }

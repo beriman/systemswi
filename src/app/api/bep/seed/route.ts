@@ -1,12 +1,16 @@
 // POST /api/bep/seed — Seed BEP calculations for 3 brands
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { appendRows, readRange } from "@/lib/sheets/sheets-real";
-import { calculateBEP, SEED_BEP_CALCULATIONS } from "@/lib/bep/bep-calculations";
+import { SEED_BEP_CALCULATIONS } from "@/lib/bep/bep-calculations";
 import { isGoogleWorkspaceAuthError, googleWorkspaceWriteBlockedSource } from "@/lib/api/google-workspace-error";
 
 export const runtime = "nodejs";
 
-export async function POST(req: NextRequest) {
+export async function POST() {
+  if (process.env.NODE_ENV !== "development") {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
   try {
     // Check if data already exists
     const existing = await readRange("Break_Even_Analysis!A1:J16");

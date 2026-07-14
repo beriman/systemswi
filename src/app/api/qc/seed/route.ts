@@ -20,17 +20,19 @@ const SEED_DATA = [
 ];
 
 export async function POST() {
+  if (process.env.NODE_ENV !== "development") {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
   try {
     const existing = await readRange("QC_Results!A1:N1000");
     const hasHeader = existing && existing.length > 0 && existing[0]?.[0] === "Result ID";
     const hasData = existing && existing.length > (hasHeader ? 1 : 0);
 
-    let seeded = 0;
     let skipped = 0;
 
     if (!hasData) {
       await writeRange("QC_Results!A1:N1", [HEADER]);
-      seeded = HEADER.length;
     }
 
     const existingIds = new Set<string>();
@@ -46,7 +48,6 @@ export async function POST() {
         skipped++;
         return false;
       }
-      seeded++;
       return true;
     });
 

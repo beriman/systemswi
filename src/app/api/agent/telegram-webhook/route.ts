@@ -1,12 +1,13 @@
 // POST /api/agent/telegram-webhook — Handle Telegram callback queries (approve/reject)
 // GET /api/agent/telegram-webhook — Set webhook URL (one-time setup)
 import { NextRequest, NextResponse } from "next/server";
-import { readRange, appendRows, updateRow } from "@/lib/sheets/sheets-real";
+import { readRange, updateRow } from "@/lib/sheets/sheets-real";
 import { logAgentActionSafe } from "@/lib/agent/audit";
 
 export const runtime = "nodejs";
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
+const TELEGRAM_WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET || "";
 
 async function sendTelegramRequest(method: string, body: Record<string, unknown>) {
   const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/${method}`;
@@ -36,6 +37,17 @@ async function editMessageReplyMarkup(chatId: string, messageId: number) {
 
 export async function POST(request: NextRequest) {
   try {
+    if (!TELEGRAM_WEBHOOK_SECRET && process.env.NODE_ENV === "production") {
+      return NextResponse.json({ ok: false, error: "Webhook secret not configured" }, { status: 503 });
+    }
+
+    if (TELEGRAM_WEBHOOK_SECRET) {
+      const receivedSecret = request.headers.get("x-telegram-bot-api-secret-token");
+      if (receivedSecret !== TELEGRAM_WEBHOOK_SECRET) {
+        return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+      }
+    }
+
     const body = await request.json();
 
     // Handle callback_query (button press)
@@ -153,6 +165,17 @@ export async function POST(request: NextRequest) {
 
 // GET — Set webhook URL (one-time setup call)
 export async function GET(request: NextRequest) {
+  if (!TELEGRAM_WEBHOOK_SECRET && process.env.NODE_ENV === "production") {
+    return NextResponse.json({ ok: false, error: "Webhook secret not configured" }, { status: 503 });
+  }
+
+  if (TELEGRAM_WEBHOOK_SECRET) {
+    const receivedSecret = request.headers.get("x-telegram-bot-api-secret-token");
+    if (receivedSecret !== TELEGRAM_WEBHOOK_SECRET) {
+      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+    }
+  }
+
   const { searchParams } = new URL(request.url);
   const webhookUrl = searchParams.get("url");
 
@@ -170,6 +193,7 @@ export async function GET(request: NextRequest) {
     const result = await sendTelegramRequest("setWebhook", {
       url: webhookUrl,
       allowed_updates: ["callback_query", "message"],
+      ...(TELEGRAM_WEBHOOK_SECRET ? { secret_token: TELEGRAM_WEBHOOK_SECRET } : {}),
     });
     return NextResponse.json(result);
   } catch (error) {

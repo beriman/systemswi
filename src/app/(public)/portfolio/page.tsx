@@ -20,8 +20,11 @@ type FragrantionsEvent = {
     location: string;
     venue: string;
     attendeeActual?: number;
+    attendeeTarget?: number;
     tenantCount?: number;
     sponsorCount?: number;
+    budget?: number;
+    revenue?: number;
     notes?: string;
 };
 

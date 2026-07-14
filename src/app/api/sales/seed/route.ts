@@ -11,12 +11,6 @@ import {
 
 // ── Seed data definitions ──────────────────────────────────────────
 
-const BRANDS = [
-  { id: "brand-larc-en-scent", name: "L'Arc~en~Scent" },
-  { id: "brand-pixel-potion", name: "Pixel Potion" },
-  { id: "brand-nuscentza", name: "Nuscentza" },
-];
-
 // Targets: 3 brands × 6 months (Jan-Jun 2026)
 const TARGET_DATA: { brandId: string; brandName: string; month: number; targetAmount: number }[] = [];
 
@@ -69,6 +63,10 @@ const ACTUAL_DATA: {
 ];
 
 export async function POST(request: NextRequest) {
+  if (process.env.NODE_ENV !== "development") {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
   try {
     await ensureSalesSheetsInitialized();
 
@@ -139,9 +137,10 @@ export async function POST(request: NextRequest) {
       actualsCreated,
       force,
     });
-  } catch (error: any) {
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to seed data";
     return NextResponse.json(
-      { error: error.message || "Failed to seed data" },
+      { error: message },
       { status: 500 }
     );
   }
