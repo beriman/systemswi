@@ -52,9 +52,35 @@ function QuickLink({ href, title, description }: { href: string; title: string; 
   );
 }
 
+type EventItem = { id?: string; name?: string; startDate?: string; venue?: string };
+type BatchItem = { date?: string; brandName?: string; sku?: string; productName?: string; qtyProduced?: number; status?: string; qcStatus?: string };
+type BankAccount = { bank?: string; noRek?: string; nama?: string; saldoAwal?: string | number; saldoAkhir?: string | number };
+type RekapRow = { bulan?: string; akun?: string; saldoAwal?: string; totalMasuk?: string; totalKeluar?: string; saldoAkhir?: string };
+type Shareholder = { nama?: string; persen?: string; jumlahSaham?: number; progress?: number; kewajiban?: number; sudahSetor?: number; sisaKewajiban?: number };
+
+type DashboardData = {
+  sourceStatus?: string;
+  warning?: string;
+  bankAccounts?: BankAccount[];
+  rekapData?: RekapRow[];
+  shareholders?: Shareholder[];
+  eventSummary?: { totalBudget?: number; totalCost?: number; totalRevenue?: number; latestEvents?: EventItem[]; [key: string]: unknown };
+  brandSummary?: { latestBatches?: BatchItem[]; [key: string]: unknown };
+  governanceSummary?: { latestMonthlyGcgReport?: { period?: string; status?: string } | null; [key: string]: unknown };
+  sukukInfo?: { status?: string; akad?: string; nisbah?: string; yield?: string };
+  sukukInvestors?: unknown[];
+  totalUnitTerjual?: number;
+  totalSaldoAkhir?: number;
+  totalSudahSetor?: number;
+  totalSisaKewajiban?: number;
+  totalSetoranPercent?: number;
+  totalModalDitempatkan?: number;
+  [key: string]: unknown;
+};
+
 export default function DashboardPage() {
   const { accessibleFeatures } = usePermissions();
-  const [data, setData] = useState<any>(null);
+  const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -204,7 +230,7 @@ export default function DashboardPage() {
                         </div>
                       )}
                       <div className="space-y-2">
-                        {(data?.eventSummary?.latestEvents || []).slice(0, 2).map((event: any) => (
+                        {(data?.eventSummary?.latestEvents || []).slice(0, 2).map((event) => (
                           <div key={event.id || event.name} className="rounded-lg bg-white/70 p-2 text-sm">
                             <div className="font-medium">{event.name}</div>
                             <div className="text-xs text-muted-foreground">{formatDate(event.startDate)} • {event.venue || "Venue TBA"}</div>
@@ -244,7 +270,7 @@ export default function DashboardPage() {
                         <span className="font-semibold">{formatCurrency(data?.brandSummary?.avgHppPerUnit || 0)}</span>
                       </div>
                       <div className="space-y-2">
-                        {(data?.brandSummary?.latestBatches || []).slice(0, 2).map((batch: any) => (
+                        {(data?.brandSummary?.latestBatches || []).slice(0, 2).map((batch) => (
                           <div key={`${batch.sku}-${batch.productName}`} className="rounded-lg bg-white/70 p-2 text-sm">
                             <div className="font-medium">{batch.brandName} — {batch.sku || batch.productName}</div>
                             <div className="text-xs text-muted-foreground">{formatNumber(batch.qtyProduced)} unit • {batch.status} • QC {batch.qcStatus}</div>
@@ -423,7 +449,7 @@ export default function DashboardPage() {
             {/* Bank Accounts Detail */}
             {data?.bankAccounts?.length > 0 && (
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {data.bankAccounts.map((acc: any, i: number) => (
+                {data.bankAccounts.map((acc, i) => (
                   <Card key={i}>
                     <CardHeader className="pb-2">
                       <CardTitle className="text-sm">{acc.bank} — {acc.nama}</CardTitle>
@@ -510,7 +536,7 @@ export default function DashboardPage() {
                 <CardContent>
                   {loading ? <Skeleton className="h-40 w-full" /> : (
                     <div className="space-y-3">
-                      {(data?.brandSummary?.latestBatches || []).map((batch: any, i: number) => (
+                      {(data?.brandSummary?.latestBatches || []).map((batch, i) => (
                         <div key={i} className="flex items-center justify-between rounded-lg border p-3">
                           <div>
                             <div className="font-medium text-sm">{batch.brandName} — {batch.productName}</div>
@@ -632,7 +658,7 @@ export default function DashboardPage() {
                     <div className="rounded-md border overflow-auto">
                       <Table>
                         <TableHeader><TableRow><TableHead>Bulan</TableHead><TableHead>Akun</TableHead><TableHead className="text-right">Saldo Awal</TableHead><TableHead className="text-right">Masuk</TableHead><TableHead className="text-right">Keluar</TableHead><TableHead className="text-right">Saldo Akhir</TableHead></TableRow></TableHeader>
-                        <TableBody>{data.rekapData.map((row: any, i: number) => <TableRow key={i}><TableCell className="font-medium">{row.bulan}</TableCell><TableCell>{row.akun}</TableCell><TableCell className="text-right text-xs">{row.saldoAwal}</TableCell><TableCell className="text-right text-green-600 text-xs">{row.totalMasuk}</TableCell><TableCell className="text-right text-red-600 text-xs">{row.totalKeluar}</TableCell><TableCell className="text-right font-medium text-xs">{row.saldoAkhir}</TableCell></TableRow>)}</TableBody>
+                        <TableBody>{data.rekapData.map((row, i) => <TableRow key={i}><TableCell className="font-medium">{row.bulan}</TableCell><TableCell>{row.akun}</TableCell><TableCell className="text-right text-xs">{row.saldoAwal}</TableCell><TableCell className="text-right text-green-600 text-xs">{row.totalMasuk}</TableCell><TableCell className="text-right text-red-600 text-xs">{row.totalKeluar}</TableCell><TableCell className="text-right font-medium text-xs">{row.saldoAkhir}</TableCell></TableRow>)}</TableBody>
                       </Table>
                     </div>
                   ) : <p className="text-muted-foreground text-center py-8">Tidak ada data rekap rekening</p>}
@@ -647,7 +673,7 @@ export default function DashboardPage() {
                 <CardContent>
                   {loading ? <div className="space-y-2">{[1,2,3].map(i => <Skeleton key={i} className="h-20 w-full" />)}</div> : (
                     <div className="grid gap-4 md:grid-cols-3">
-                      {data?.shareholders?.map((sh: any, i: number) => <div key={i} className="p-4 border rounded-lg"><div className="flex justify-between items-start mb-2"><div><h4 className="font-semibold">{sh.nama}</h4><span className="text-xs text-muted-foreground">{sh.persen} • {sh.jumlahSaham} saham</span></div><span className={`text-xs px-2 py-1 rounded ${sh.progress >= 100 ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700"}`}>{sh.progress.toFixed(1)}%</span></div><div className="space-y-1 text-sm"><div className="flex justify-between"><span className="text-muted-foreground">Kewajiban:</span><span>{formatCurrency(sh.kewajiban)}</span></div><div className="flex justify-between"><span className="text-muted-foreground">Disetor:</span><span className="text-green-600">{formatCurrency(sh.sudahSetor)}</span></div><div className="flex justify-between border-t pt-1"><span className="font-medium">Sisa:</span><span className="font-bold text-red-600">{formatCurrency(sh.sisaKewajiban ?? (sh.kewajiban - sh.sudahSetor))}</span></div></div><div className="mt-3"><div className="w-full bg-gray-200 rounded-full h-2"><div className="bg-blue-600 h-2 rounded-full" style={{ width: `${Math.min(sh.progress, 100)}%` }} /></div></div></div>)}
+                      {data?.shareholders?.map((sh, i) => <div key={i} className="p-4 border rounded-lg"><div className="flex justify-between items-start mb-2"><div><h4 className="font-semibold">{sh.nama}</h4><span className="text-xs text-muted-foreground">{sh.persen} • {sh.jumlahSaham} saham</span></div><span className={`text-xs px-2 py-1 rounded ${(sh.progress || 0) >= 100 ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700"}`}>{(sh.progress || 0).toFixed(1)}%</span></div><div className="space-y-1 text-sm"><div className="flex justify-between"><span className="text-muted-foreground">Kewajiban:</span><span>{formatCurrency(sh.kewajiban || 0)}</span></div><div className="flex justify-between"><span className="text-muted-foreground">Disetor:</span><span className="text-green-600">{formatCurrency(sh.sudahSetor || 0)}</span></div><div className="flex justify-between border-t pt-1"><span className="font-medium">Sisa:</span><span className="font-bold text-red-600">{formatCurrency(sh.sisaKewajiban ?? ((sh.kewajiban || 0) - (sh.sudahSetor || 0)))}</span></div></div><div className="mt-3"><div className="w-full bg-gray-200 rounded-full h-2"><div className="bg-blue-600 h-2 rounded-full" style={{ width: `${Math.min(sh.progress || 0, 100)}%` }} /></div></div></div>)}
                     </div>
                   )}
                 </CardContent>
@@ -657,7 +683,7 @@ export default function DashboardPage() {
             {/* Bank Accounts */}
             {data?.bankAccounts?.length > 0 && (
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {data.bankAccounts.map((acc: any, i: number) => (
+                {data.bankAccounts.map((acc, i) => (
                   <Card key={i}>
                     <CardHeader className="pb-2">
                       <CardTitle className="text-sm">{acc.bank} — {acc.nama}</CardTitle>

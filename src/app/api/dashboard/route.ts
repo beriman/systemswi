@@ -35,6 +35,46 @@ function parseNumber(value: unknown): number {
   return Number(String(value).replace(/[^0-9.-]/g, "")) || 0;
 }
 
+type BankAccount = {
+  bank: string;
+  noRek: string;
+  nama: string;
+  saldoAwal: number;
+  saldoAkhir: number;
+};
+
+type SukukInfo = {
+  akad?: string;
+  nilai?: string;
+  nisbah?: string;
+  yield?: string;
+  status?: string;
+};
+
+type SukukInvestor = {
+  no: string;
+  nama: string;
+  jenis: string;
+  unit: number;
+  nominal: number;
+  persen: string;
+  tanggal: string;
+  status: string;
+};
+
+type RekapData = {
+  bulan: string;
+  periode: string;
+  saldoAwal: string;
+  totalMasuk: string;
+  totalKeluar: string;
+  saldoAkhir: string;
+  saldoAkhirNum: number;
+  jTxns: string;
+  status?: string;
+  akun: "Holding" | "Website";
+};
+
 function summarizeBrands(masterRows: string[][], productionRows: string[][], salesRows: string[][], expenseRows: string[][]) {
   const brands = masterRows.slice(1).filter((row) => cell(row, 0) || cell(row, 1));
   const production = productionRows.slice(1).filter((row) => cell(row, 0) || cell(row, 4) || cell(row, 5));
@@ -315,7 +355,7 @@ export async function GET() {
 
     // ── Parse bank balances from RekeningKoran ──
     // Sheet layout: row 0=title, row 1=per date, row 2=empty, row 3=header, row 4-5=accounts, row 6=total, row 7=empty, row 8-9=mutasi header, row 10+=mutasi
-    let bankAccounts: any[] = [];
+    const bankAccounts: BankAccount[] = [];
     let totalSaldoAkhir = 0;
     let totalSaldoAwal = 0;
     if (rekeningKoran.length >= 4) {
@@ -347,7 +387,7 @@ export async function GET() {
     }
     
     // Parse mutasi (debet/kredit) from RekeningKoran
-    let mutasiSummary = { totalDebet: 0, totalKredit: 0, mutasiCount: 0 };
+    const mutasiSummary = { totalDebet: 0, totalKredit: 0, mutasiCount: 0 };
     if (rekeningKoran.length > 10) {
       for (let i = 10; i < rekeningKoran.length; i++) {
         const row = rekeningKoran[i];
@@ -396,7 +436,7 @@ export async function GET() {
       .filter((cell): cell is string => typeof cell === "string" && /^\d+\./.test(cell.trim()));
 
     // ── Parse sukuk info ──
-    let sukukInfo: any = {};
+    const sukukInfo: SukukInfo = {};
     if (sukukStore.length >= 4) {
       for (const row of sukukStore) {
         if (row[0] === "Jenis Akad:") sukukInfo.akad = row[1];
@@ -408,7 +448,7 @@ export async function GET() {
     }
 
     // ── Parse sukuk investors ──
-    let sukukInvestors: any[] = [];
+    const sukukInvestors: SukukInvestor[] = [];
     let totalUnitTerjual = 0;
     if (sukukInvestor.length >= 2) {
       for (let i = 1; i < sukukInvestor.length; i++) {
@@ -432,7 +472,7 @@ export async function GET() {
     }
 
     // ── Parse rekap rekening (8 months) ──
-    let rekapData: any[] = [];
+    const rekapData: RekapData[] = [];
     if (rekapRekening.length >= 6) {
       // Find Holding section
       let inHolding = false;
