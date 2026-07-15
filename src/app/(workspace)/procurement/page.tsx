@@ -113,12 +113,20 @@ function SupplierForm({ onSave, onCancel }: {
   const [leadTimeDays, setLeadTimeDays] = useState("7");
   const [rating, setRating] = useState("3");
   const [status, setStatus] = useState("active");
+  const [relatedParty, setRelatedParty] = useState("No");
+  const [relationshipDetail, setRelationshipDetail] = useState("");
+  const [priceBenchmark1, setPriceBenchmark1] = useState("");
+  const [priceBenchmark2, setPriceBenchmark2] = useState("");
+  const [selectedReason, setSelectedReason] = useState("");
+  const [paymentTerm, setPaymentTerm] = useState("");
   const [notes, setNotes] = useState("");
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
     onSave({
-      name, category, contact, channel, leadTimeDays, rating, status, notes,
+      name, category, contact, channel, leadTimeDays, rating, status,
+      relatedParty, relationshipDetail, priceBenchmark1, priceBenchmark2, selectedReason, paymentTerm,
+      notes,
     });
   };
 
@@ -157,6 +165,45 @@ function SupplierForm({ onSave, onCancel }: {
           <Label htmlFor="supplier-status">Status</Label>
           <Input id="supplier-status" value={status} onChange={(e) => setStatus(e.target.value)} />
         </div>
+      </div>
+      <div className="rounded-lg border bg-amber-50 p-3 text-xs text-amber-900">
+        <b>Vendor_Register GCG:</b> supplier baru otomatis masuk Vendor_Register status Trial. Jika related party atau transaksi besar, isi relasi, 2 benchmark, alasan pemilihan, dan payment term sebelum PO/approval.
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <Label htmlFor="supplier-related-party">Related Party?</Label>
+          <select
+            id="supplier-related-party"
+            className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
+            value={relatedParty}
+            onChange={(e) => setRelatedParty(e.target.value)}
+          >
+            <option value="No">No</option>
+            <option value="Yes">Yes</option>
+          </select>
+        </div>
+        <div>
+          <Label htmlFor="supplier-payment-term">Payment Term</Label>
+          <Input id="supplier-payment-term" value={paymentTerm} onChange={(e) => setPaymentTerm(e.target.value)} placeholder="DP / Lunas / Net 7 / TBA" />
+        </div>
+      </div>
+      <div>
+        <Label htmlFor="supplier-relationship">Detail Relasi / COI</Label>
+        <Input id="supplier-relationship" value={relationshipDetail} onChange={(e) => setRelationshipDetail(e.target.value)} placeholder="Tidak ada / teman / keluarga / afiliasi bisnis" />
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <Label htmlFor="supplier-benchmark-1">Benchmark Harga 1</Label>
+          <Input id="supplier-benchmark-1" value={priceBenchmark1} onChange={(e) => setPriceBenchmark1(e.target.value)} placeholder="Nominal/link pembanding 1" />
+        </div>
+        <div>
+          <Label htmlFor="supplier-benchmark-2">Benchmark Harga 2</Label>
+          <Input id="supplier-benchmark-2" value={priceBenchmark2} onChange={(e) => setPriceBenchmark2(e.target.value)} placeholder="Nominal/link pembanding 2" />
+        </div>
+      </div>
+      <div>
+        <Label htmlFor="supplier-selected-reason">Alasan Pemilihan</Label>
+        <Textarea id="supplier-selected-reason" value={selectedReason} onChange={(e) => setSelectedReason(e.target.value)} rows={2} placeholder="Harga/kualitas/waktu terbaik; tulis TBA jika belum dibandingkan" />
       </div>
       <div>
         <Label htmlFor="supplier-notes">Catatan</Label>
