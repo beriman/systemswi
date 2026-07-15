@@ -59,6 +59,9 @@ export type RabContext = {
     sponsorPaid: number;
     receivable: number;
     mediaRows: number;
+    expensesWithoutProof: number;
+    expensesNeedsProof: number;
+    personalPaidExpenses: number;
   }>;
 };
 
@@ -395,6 +398,10 @@ function generateEventCloseoutReport(data: Record<string, string>, letterNumber:
     const receivable = eventCommercial?.receivable ?? (context?.tenantOutstanding || 0) + (context?.sponsorPipelineValue || 0);
     const payable = eventCommercial?.payable ?? 0;
     const mediaRows = eventCommercial?.mediaRows ?? context?.eventMediaRows ?? 0;
+    const expensesWithoutProof = eventCommercial?.expensesWithoutProof ?? 0;
+    const expensesNeedsProof = eventCommercial?.expensesNeedsProof ?? 0;
+    const personalPaidExpenses = eventCommercial?.personalPaidExpenses ?? 0;
+    const closeoutReady = expensesWithoutProof === 0 && expensesNeedsProof === 0 && receivable === 0 && payable === 0 && mediaRows > 0;
     const eventTable = rows.length
         ? `| Event | Budget | Actual | Remaining | Status |\n|---|---:|---:|---:|---|\n${rows.map((event) => `| ${event.name || "TBA"} | ${rupiah(event.budget)} | ${rupiah(event.actual)} | ${rupiah(event.remaining)} | ${event.status || "TBA"} |`).join("\n")}`
         : "Belum ada data Event_Budget yang cocok. Isi TBA/0 sampai Sheets dilengkapi.";
@@ -431,10 +438,17 @@ ${eventTable}
 
 Jika media rows masih 0/TBA, closeout belum boleh dianggap lengkap untuk pemegang saham.
 
-## 4. Lessons Learned
+## 4. TARIF Closeout Readiness
+- Expense tanpa proof URL: **${expensesWithoutProof}** item.
+- Expense status Needs Proof: **${expensesNeedsProof}** item.
+- Personal-paid expense yang harus direkonsiliasi ke Shareholder_Ledger: **${personalPaidExpenses}** item.
+- Receivable/payable tersisa: **${rupiah(receivable)} / ${rupiah(payable)}**.
+- Status siap closeout: **${closeoutReady ? "Siap review manusia" : "Belum siap — lengkapi proof, receivable/payable, media, dan ledger sebelum ditutup"}**.
+
+## 5. Lessons Learned
 ${data.lessons_learned || "TBA — isi setelah post-event review bersama PIC."}
 
-## 5. Next Actions
+## 6. Next Actions
 ${data.next_actions || "1. Validasi tenant/sponsor paid vs outstanding.\n2. Lengkapi proof expense dan invoice.\n3. Rekonsiliasi payable/receivable sebelum event ditutup."}
 
 ---

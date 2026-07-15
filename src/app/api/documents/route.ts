@@ -47,6 +47,9 @@ type SheetContext = {
     sponsorPaid: number;
     receivable: number;
     mediaRows: number;
+    expensesWithoutProof: number;
+    expensesNeedsProof: number;
+    personalPaidExpenses: number;
   }>;
 };
 
@@ -257,6 +260,9 @@ async function readContext(): Promise<SheetContext> {
     const tenantRowsForEvent = tenants.slice(1).filter((tenant) => text(tenant[1]) === eventId || text(tenant[1]) === eventName);
     const sponsorRowsForEvent = sponsors.slice(1).filter((sponsor) => text(sponsor[1]) === eventId || text(sponsor[1]) === eventName);
     const expenseRowsForEvent = expenseSubmissions.slice(1).filter((expense) => text(expense[3]) === eventId || text(expense[3]) === eventName);
+    const expensesWithoutProof = expenseRowsForEvent.filter((expense) => amount(expense[6]) > 0 && !text(expense[7])).length;
+    const expensesNeedsProof = expenseRowsForEvent.filter((expense) => ["needs proof", "butuh bukti"].includes(text(expense[8]).toLowerCase())).length;
+    const personalPaidExpenses = expenseRowsForEvent.filter((expense) => text(expense[14]).toLowerCase() === "personal paid" || ["yes", "ya", "true", "1"].includes(text(expense[17]).toLowerCase())).length;
     const actualExpense = expenseRowsForEvent
       .filter((expense) => ["approved", "paid", "lunas", "settled", "completed", "submitted"].includes(text(expense[8]).toLowerCase()))
       .reduce((sum, expense) => sum + amount(expense[6]), 0);
@@ -290,6 +296,9 @@ async function readContext(): Promise<SheetContext> {
       sponsorPaid,
       receivable: Math.max(tenantExpected - tenantPaid, 0) + Math.max(sponsorExpected - sponsorPaid, 0),
       mediaRows: mediaRowsByEvent[eventId] || 0,
+      expensesWithoutProof,
+      expensesNeedsProof,
+      personalPaidExpenses,
     };
   });
 
