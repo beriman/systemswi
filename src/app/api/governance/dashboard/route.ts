@@ -71,6 +71,11 @@ function isMissingPaymentMethod(value: string): boolean {
   return !value || normalized.includes("tba") || normalized.includes("belum dicatat") || normalized.includes("belum tersedia");
 }
 
+function isMissingVendorPaymentTerm(value: string): boolean {
+  const normalized = value.toLowerCase();
+  return !value || normalized.includes("tba") || normalized.includes("belum dicatat") || normalized.includes("belum tersedia");
+}
+
 function isAutomationActor(value: string): boolean {
   const normalized = value.toLowerCase();
   return ["agent", "system", "systemswi", "hermes", "hemuhemu", "automation", "cron"].some((marker) => normalized.includes(marker));
@@ -274,7 +279,7 @@ export async function GET(req: NextRequest) {
     const relatedPartyVendors = vendorRegister.filter((row) => isYes(text(row[4])));
     const vendorExceptions = vendorRegister.filter((row) => isYes(text(row[4])) || !text(row[6]) || !text(row[7]) || !text(row[8]));
     const activeVendorRows = vendorRegister.filter((row) => !["blacklist", "inactive", "rejected", "cancelled"].includes(text(row[10]).toLowerCase()));
-    const vendorsMissingPaymentTerm = activeVendorRows.filter((row) => !text(row[9]));
+    const vendorsMissingPaymentTerm = activeVendorRows.filter((row) => isMissingVendorPaymentTerm(text(row[9])));
 
     const shareholderDebtOutstanding = shareholderLedger.reduce((sum, row) => {
       const status = text(row[9]).toLowerCase();

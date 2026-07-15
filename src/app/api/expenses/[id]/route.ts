@@ -40,6 +40,11 @@ function isMissingPaymentMethod(value: string): boolean {
   return !value || normalized.includes("tba") || normalized.includes("belum dicatat") || normalized.includes("belum tersedia");
 }
 
+function isMissingVendorPaymentTerm(value: string): boolean {
+  const normalized = value.toLowerCase();
+  return !value || normalized.includes("tba") || normalized.includes("belum dicatat") || normalized.includes("belum tersedia");
+}
+
 function parseExpense(row: string[]) {
   return {
     id: s(row, 0),
@@ -103,6 +108,9 @@ async function approvalBlockers(row: string[]): Promise<string[]> {
         const missingRegisteredReason = !vendor.selectedReason;
         if (amount > 2_000_000 && vendorRequiredCategories.has(category) && missingRegisteredBenchmarks && !vendorBenchmarkNotes) {
           blockers.push("Vendor_Register untuk transaksi > Rp2.000.000 belum punya 2 benchmark; isi benchmark di Vendor_Register atau Benchmark / COI Notes expense.");
+        }
+        if (vendorRequiredCategories.has(category) && isMissingVendorPaymentTerm(vendor.paymentTerm)) {
+          blockers.push("Vendor_Register belum punya payment term valid (DP/Lunas/Net 7/dll); lengkapi sebelum approve expense material agar payable dan fairness vendor bisa ditelusuri.");
         }
         if (registeredRelatedParty && (!vendor.relationshipDetail || missingRegisteredReason) && !vendorBenchmarkNotes) {
           blockers.push("Vendor_Register menandai related-party tetapi detail relasi/alasan objektif belum lengkap; lengkapi register atau Benchmark / COI Notes sebelum approve.");
@@ -181,6 +189,7 @@ export async function PUT(
             paymentMethod: "Payment Method wajib jelas: Cash / Bank / Personal Paid / Company Paid; TBA tidak cukup untuk approval.",
             eventExpense: "Expense event/venue/sewa booth wajib dikaitkan ke event/project.",
             vendorThreshold: "Bahan Baku/Packaging/Venue/Dokumentasi/Sewa Booth wajib vendor; > Rp2.000.000 wajib benchmark notes.",
+            vendorPaymentTerm: "Vendor material wajib punya payment term valid (DP/Lunas/Net 7/dll) di Vendor_Register sebelum approve.",
             relatedParty: "Related-party vendor wajib catatan konflik kepentingan.",
           },
         }, { status: 422 });

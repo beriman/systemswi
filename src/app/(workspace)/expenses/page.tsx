@@ -101,6 +101,8 @@ interface VendorOption {
   name: string;
   category: string;
   relatedParty: string;
+  paymentTerm?: string;
+  riskFlags?: string[];
 }
 
 interface VendorApiResponse {
@@ -494,8 +496,9 @@ export default function ExpensesPage() {
                   <p className="text-xs text-muted-foreground mt-1">Wajib untuk Bahan Baku, Packaging, Venue, Dokumentasi, dan Sewa Booth jika vendor sudah tercatat.</p>
                   {selectedVendor && (
                     <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                      Vendor terpilih: {selectedVendor.name} • Kategori {selectedVendor.category || "Belum dicatat"} • Related party: {selectedVendor.relatedParty || "Belum dicatat"}.
+                      Vendor terpilih: {selectedVendor.name} • Kategori {selectedVendor.category || "Belum dicatat"} • Related party: {selectedVendor.relatedParty || "Belum dicatat"} • Payment term: {selectedVendor.paymentTerm || "Belum dicatat"}.
                       {selectedVendor.relatedParty === "Yes" ? " Wajib isi benchmark/alasan objektif sebelum approval." : ""}
+                      {selectedVendor.riskFlags?.includes("MISSING_PAYMENT_TERM") ? " Lengkapi payment term Vendor_Register sebelum approval expense material." : ""}
                     </div>
                   )}
                 </div>
