@@ -147,6 +147,27 @@ function getStatusEmoji(status: string) {
   return "🟡";
 }
 
+function isMissingGovernanceValue(value?: string): boolean {
+  const normalized = (value || "").trim().toLowerCase();
+  return !normalized || normalized.includes("tba") || normalized.includes("belum dicatat") || normalized.includes("belum tersedia");
+}
+
+function getApprovalReadiness(exp: Expense): string[] {
+  const blockers: string[] = [];
+  const vendorRequiredCategories = new Set(["Bahan Baku", "Packaging", "Venue", "Dokumentasi", "Sewa Booth"]);
+
+  if (exp.amount > 0 && !exp.proofUrl) blockers.push("bukti");
+  if (!exp.division) blockers.push("division");
+  if (isMissingGovernanceValue(exp.coaCategory)) blockers.push("COA");
+  if (isMissingGovernanceValue(exp.paymentMethod)) blockers.push("payment");
+  if ((exp.category === "Sewa Booth" || exp.category === "Venue" || exp.division === "Event") && !exp.relatedEvent) blockers.push("event");
+  if (vendorRequiredCategories.has(exp.category) && !exp.vendorId && !exp.vendorName) blockers.push("vendor");
+  if (exp.amount > 2_000_000 && vendorRequiredCategories.has(exp.category) && !exp.vendorBenchmarkNotes) blockers.push("benchmark");
+  if (exp.vendorRelatedParty === "Yes" && !exp.vendorBenchmarkNotes) blockers.push("COI notes");
+
+  return blockers;
+}
+
 const CATEGORIES = ["Bahan Baku", "Packaging", "Venue", "Dokumentasi", "Sewa Booth", "Iklan", "Transport", "Lainnya"];
 const DIVISIONS = ["Produksi", "Event", "Website", "Store", "Holding"];
 const PAYMENT_METHODS = ["Company Paid", "Cash", "Bank", "Personal Paid"];
@@ -800,53 +821,67 @@ export default function ExpensesPage() {
                       <TableHead>Description</TableHead>
                       <TableHead className="text-right">Amount</TableHead>
                       <TableHead>Proof</TableHead>
+                      <TableHead>GCG Ready</TableHead>
                       <TableHead className="text-center">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {pendingExpenses.map((exp) => (
-                      <TableRow key={exp.id}>
-                        <TableCell className="text-xs font-mono">{exp.id}</TableCell>
-                        <TableCell className="text-xs">{formatDate(exp.date)}</TableCell>
-                        <TableCell>{exp.submitterName}</TableCell>
-                        <TableCell>{exp.relatedEvent || "-"}</TableCell>
-                        <TableCell>{exp.category}</TableCell>
-                        <TableCell className="max-w-[200px] truncate">{exp.description}</TableCell>
-                        <TableCell className="text-right font-bold">{formatCurrency(exp.amount)}</TableCell>
-                        <TableCell>
-                          {exp.proofUrl ? (
-                            <a
-                              href={`https://drive.google.com/file/d/${exp.proofUrl}/view`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-blue-600 hover:underline text-xs"
-                            >
-                              📎 View
-                            </a>
-                          ) : (
-                            <span className="text-xs text-muted-foreground">-</span>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex gap-1 justify-center">
-                            <button
-                              onClick={() => handleApprove(exp.id, "Approved")}
-                              disabled={approvingId === exp.id}
-                              className="bg-green-600 text-white text-xs py-1 px-2 rounded hover:bg-green-700 disabled:opacity-50"
-                            >
-                              ✅ Approve
-                            </button>
-                            <button
-                              onClick={() => handleApprove(exp.id, "Rejected")}
-                              disabled={approvingId === exp.id}
-                              className="bg-red-600 text-white text-xs py-1 px-2 rounded hover:bg-red-700 disabled:opacity-50"
-                            >
-                              ❌ Reject
-                            </button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                    {pendingExpenses.map((exp) => {
+                      const readinessBlockers = getApprovalReadiness(exp);
+                      return (
+                        <TableRow key={exp.id}>
+                          <TableCell className="text-xs font-mono">{exp.id}</TableCell>
+                          <TableCell className="text-xs">{formatDate(exp.date)}</TableCell>
+                          <TableCell>{exp.submitterName}</TableCell>
+                          <TableCell>{exp.relatedEvent || "-"}</TableCell>
+                          <TableCell>{exp.category}</TableCell>
+                          <TableCell className="max-w-[200px] truncate">{exp.description}</TableCell>
+                          <TableCell className="text-right font-bold">{formatCurrency(exp.amount)}</TableCell>
+                          <TableCell>
+                            {exp.proofUrl ? (
+                              <a
+                                href={`https://drive.google.com/file/d/${exp.proofUrl}/view`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-blue-600 hover:underline text-xs"
+                              >
+                                📎 View
+                              </a>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">-</span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {readinessBlockers.length ? (
+                              <div className="max-w-[180px] text-xs text-amber-700">
+                                <div className="font-medium">Perlu lengkapi:</div>
+                                <div>{readinessBlockers.join(", ")}</div>
+                              </div>
+                            ) : (
+                              <Badge className="bg-emerald-100 text-emerald-700">Siap approve</Badge>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex gap-1 justify-center">
+                              <button
+                                onClick={() => handleApprove(exp.id, "Approved")}
+                                disabled={approvingId === exp.id}
+                                className="bg-green-600 text-white text-xs py-1 px-2 rounded hover:bg-green-700 disabled:opacity-50"
+                              >
+                                ✅ Approve
+                              </button>
+                              <button
+                                onClick={() => handleApprove(exp.id, "Rejected")}
+                                disabled={approvingId === exp.id}
+                                className="bg-red-600 text-white text-xs py-1 px-2 rounded hover:bg-red-700 disabled:opacity-50"
+                              >
+                                ❌ Reject
+                              </button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
                   </TableBody>
                 </Table>
               </div>
