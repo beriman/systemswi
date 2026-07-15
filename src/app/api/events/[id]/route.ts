@@ -23,6 +23,14 @@ function isPayableExpenseStatus(value: string): boolean {
   return ["pending", "needs proof", "butuh bukti", "approved"].includes(value.toLowerCase().trim());
 }
 
+function isOpenPoStatus(value: string): boolean {
+  return ["draft", "ordered", "partial"].includes(value.toLowerCase().trim());
+}
+
+function text(value: unknown): string {
+  return String(value ?? "").trim();
+}
+
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }  // Next.js 16: params is a Promise
@@ -31,7 +39,7 @@ export async function GET(
     const { id } = await params;
 
     // Fetch all related data in parallel
-    const [events, budget, tenants, sponsors, timeline, media, expenses, governanceAuditLog] = await Promise.all([
+    const [events, budget, tenants, sponsors, timeline, media, expenses, governanceAuditLog, purchaseOrders] = await Promise.all([
       readEventSheet(EVENT_SHEETS.Events).catch(() => []),
       readEventSheet(EVENT_SHEETS.Budget).catch(() => []),
       readEventSheet(EVENT_SHEETS.Tenants).catch(() => []),
@@ -40,6 +48,7 @@ export async function GET(
       readEventSheet(EVENT_SHEETS.Media).catch(() => []),
       readExpenseSheet(EXPENSE_SHEETS.Submissions).catch(() => []),
       readSheet("GovernanceAuditLog").catch(() => []),
+      readSheet("PurchaseOrders").catch(() => []),
     ]);
 
     // Find the event
@@ -129,6 +138,21 @@ export async function GET(
     }));
 
     const eventExpenseIds = new Set(eventExpenses.map((item) => item.id).filter(Boolean));
+    const eventMatchTokens = [id, event.name, event.slug].map((value) => text(value).toLowerCase()).filter(Boolean);
+    const eventPurchaseOrders = purchaseOrders.slice(1).filter((r) => {
+      const haystack = [r[0], r[3], r[4], r[5], r[13]].map((value) => text(value).toLowerCase()).join(" ");
+      return eventMatchTokens.some((token) => haystack.includes(token));
+    }).map((r) => ({
+      id: r[0] || "",
+      date: r[1] || "",
+      supplierName: r[3] || "Belum dicatat",
+      itemName: r[5] || "Belum dicatat",
+      total: parseAmount(r[9]),
+      status: r[10] || "Belum dicatat",
+      expectedDate: r[11] || "TBA",
+      proofUrl: r[12] || "",
+      notes: r[13] || "",
+    }));
     const governanceAuditTrail = governanceAuditLog.slice(1)
       .filter((r) => {
         const entityType = String(r[5] || "").toLowerCase().trim();
@@ -168,6 +192,9 @@ export async function GET(
     const payableExpenseTotal = eventExpenses
       .filter((item) => isPayableExpenseStatus(item.status) && item.amount > 0 && item.paymentMethod !== "Personal Paid")
       .reduce((sum, item) => sum + item.amount, 0);
+    const payablePurchaseOrderTotal = eventPurchaseOrders
+      .filter((item) => isOpenPoStatus(item.status))
+      .reduce((sum, item) => sum + item.total, 0);
     const actualExpenseTotal = approvedExpenseTotal || budgetActualTotal;
     const tenantRevenuePaid = eventTenants.reduce((sum, item) => sum + item.paymentAmount, 0);
     const tenantRevenueExpected = eventTenants.reduce((sum, item) => sum + item.fee, 0);
@@ -206,7 +233,10 @@ export async function GET(
       totalRevenuePaid: revenuePaidTotal,
       totalRevenueExpected: revenueExpectedTotal,
       receivable: tenantReceivable + sponsorReceivable,
-      payable: payableExpenseTotal,
+      payable: payableExpenseTotal + payablePurchaseOrderTotal,
+      payableFromExpenses: payableExpenseTotal,
+      payableFromPurchaseOrders: payablePurchaseOrderTotal,
+      purchaseOrderPayableCount: eventPurchaseOrders.filter((item) => isOpenPoStatus(item.status)).length,
       finalProfitLoss: revenuePaidTotal - actualExpenseTotal,
       expensesWithoutProof,
       expensesNeedsProof,
@@ -219,6 +249,7 @@ export async function GET(
       governanceAuditTrail,
       expenseByCategory,
       expenses: eventExpenses,
+      purchaseOrders: eventPurchaseOrders,
     };
 
     return NextResponse.json({

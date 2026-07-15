@@ -107,6 +107,18 @@ interface CloseoutGovernanceAudit {
   sourceModule: string;
 }
 
+interface CloseoutPurchaseOrder {
+  id: string;
+  date: string;
+  supplierName: string;
+  itemName: string;
+  total: number;
+  status: string;
+  expectedDate: string;
+  proofUrl: string;
+  notes: string;
+}
+
 interface CloseoutSummary {
   plannedBudget: number;
   actualExpense: number;
@@ -120,6 +132,9 @@ interface CloseoutSummary {
   totalRevenueExpected: number;
   receivable: number;
   payable: number;
+  payableFromExpenses?: number;
+  payableFromPurchaseOrders?: number;
+  purchaseOrderPayableCount?: number;
   finalProfitLoss: number;
   expensesWithoutProof: number;
   expensesNeedsProof: number;
@@ -132,6 +147,7 @@ interface CloseoutSummary {
   governanceAuditTrail: CloseoutGovernanceAudit[];
   expenseByCategory: { category: string; amount: number }[];
   expenses: CloseoutExpense[];
+  purchaseOrders?: CloseoutPurchaseOrder[];
 }
 
 interface EventDetailData {
@@ -1002,7 +1018,10 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
                   <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Receivable / Payable</CardTitle></CardHeader>
                   <CardContent>
                     <div className="text-2xl font-bold">{formatCurrency(closeout.receivable)}</div>
-                    <div className="text-xs text-muted-foreground">Payable {formatCurrency(closeout.payable)}</div>
+                    <div className="text-xs text-muted-foreground">
+                      Payable {formatCurrency(closeout.payable)}
+                      {closeout.payableFromPurchaseOrders ? ` • PO ${formatCurrency(closeout.payableFromPurchaseOrders)} (${closeout.purchaseOrderPayableCount || 0})` : ""}
+                    </div>
                   </CardContent>
                 </Card>
                 <Card>
@@ -1137,6 +1156,45 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
                     </div>
                   ) : (
                     <p className="text-sm text-muted-foreground">Belum ada expense closeout untuk event ini.</p>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Purchase Order Terkait Event</CardTitle>
+                  <CardDescription>PO dicocokkan hanya jika menyebut event ID/nama/slug di supplier, item, atau notes. Jika belum ada link event di PO, tampil kosong/TBA.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {closeout.purchaseOrders?.length ? (
+                    <div className="rounded-md border overflow-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>PO</TableHead>
+                            <TableHead>Supplier</TableHead>
+                            <TableHead>Item</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead>Expected</TableHead>
+                            <TableHead className="text-right">Total</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {closeout.purchaseOrders.map((po) => (
+                            <TableRow key={po.id}>
+                              <TableCell>{po.id || "TBA"}</TableCell>
+                              <TableCell>{po.supplierName || "Belum dicatat"}</TableCell>
+                              <TableCell>{po.itemName || "Belum dicatat"}</TableCell>
+                              <TableCell>{po.status || "Belum dicatat"}</TableCell>
+                              <TableCell>{po.expectedDate || "TBA"}</TableCell>
+                              <TableCell className="text-right">{formatCurrency(po.total)}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">Belum ada Purchase_Orders yang bisa dicocokkan ke event ini dari data yang terbaca.</p>
                   )}
                 </CardContent>
               </Card>
