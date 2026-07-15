@@ -37,6 +37,17 @@ export type ComplianceRegisterEntry = {
 
 export type NewComplianceRegisterEntry = Omit<ComplianceRegisterEntry, "daysUntilDue" | "riskBadge">;
 
+export type ComplianceRegisterReminder = {
+  id: string;
+  area: string;
+  obligation: string;
+  dueDate: string;
+  owner: string;
+  status: string;
+  level: "overdue" | "h-1" | "h-3" | "h-7";
+  message: string;
+};
+
 const DEFAULT_KNOWN_ITEMS: NewComplianceRegisterEntry[] = [
   {
     id: "CMP-LKPM-Q2-2026",
@@ -261,4 +272,40 @@ export function summarizeComplianceRegister(entries: ComplianceRegisterEntry[]) 
     completed: entries.filter((entry) => entry.riskBadge === "green").length,
     missingProof: entries.filter((entry) => !entry.sourceProof && isCompletedStatus(entry.status)).length,
   };
+}
+
+function reminderLevel(daysUntilDue: number | null): ComplianceRegisterReminder["level"] | null {
+  if (daysUntilDue === null) return null;
+  if (daysUntilDue < 0) return "overdue";
+  if (daysUntilDue <= 1) return "h-1";
+  if (daysUntilDue <= 3) return "h-3";
+  if (daysUntilDue <= 7) return "h-7";
+  return null;
+}
+
+export function buildComplianceRegisterReminders(entries: ComplianceRegisterEntry[]): ComplianceRegisterReminder[] {
+  return entries
+    .filter((entry) => !isCompletedStatus(entry.status))
+    .map((entry) => {
+      const level = reminderLevel(entry.daysUntilDue);
+      if (!level) return null;
+      const timing = level === "overdue"
+        ? `overdue ${Math.abs(entry.daysUntilDue || 0)} hari`
+        : level.toUpperCase();
+      return {
+        id: entry.id,
+        area: entry.area,
+        obligation: entry.obligation,
+        dueDate: entry.dueDate,
+        owner: entry.owner,
+        status: entry.status,
+        level,
+        message: `${entry.area} — ${entry.obligation} ${timing}; owner ${entry.owner || "Belum dicatat"}. Jangan tandai selesai tanpa Source Proof.`,
+      };
+    })
+    .filter((reminder): reminder is ComplianceRegisterReminder => Boolean(reminder))
+    .sort((a, b) => {
+      const order = { overdue: 0, "h-1": 1, "h-3": 2, "h-7": 3 } as const;
+      return order[a.level] - order[b.level] || a.dueDate.localeCompare(b.dueDate);
+    });
 }

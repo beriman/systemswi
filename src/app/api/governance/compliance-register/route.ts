@@ -4,6 +4,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   appendComplianceRegisterEntry,
+  buildComplianceRegisterReminders,
   listComplianceRegister,
   seedKnownComplianceRegisterItems,
   summarizeComplianceRegister,
@@ -17,12 +18,15 @@ const SOURCE = "Google Sheets: Compliance_Register";
 export async function GET() {
   try {
     const entries = await listComplianceRegister();
+    const summary = summarizeComplianceRegister(entries);
+    const reminders = buildComplianceRegisterReminders(entries);
     return NextResponse.json({
       source: SOURCE,
       sourceStatus: "live",
       generatedAt: new Date().toISOString(),
       entries,
-      summary: summarizeComplianceRegister(entries),
+      summary,
+      reminders,
     });
   } catch (error) {
     if (isGoogleWorkspaceAuthError(error)) {
@@ -30,6 +34,7 @@ export async function GET() {
         ...googleWorkspaceDegradedSource(SOURCE, error),
         entries: [],
         summary: { total: 0, open: 0, overdue: 0, dueSoon: 0, completed: 0, missingProof: 0 },
+        reminders: [],
       });
     }
     return NextResponse.json({ error: "Failed to fetch compliance register", details: String(error) }, { status: 500 });

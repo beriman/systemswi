@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { appendRows, readRange } from "@/lib/sheets/sheets-real";
-import { listComplianceRegister, summarizeComplianceRegister } from "@/lib/governance/compliance-register";
+import { buildComplianceRegisterReminders, listComplianceRegister, summarizeComplianceRegister } from "@/lib/governance/compliance-register";
 
 export const runtime = "nodejs";
 
@@ -103,11 +103,14 @@ export async function GET() {
     const checks = parseChecks(checkRows);
     const batches = parseBatches(batchRows);
     const qcChecklist = parseQc(qcRows);
+    const complianceRegisterSummary = summarizeComplianceRegister(complianceRegister);
+    const complianceRegisterReminders = buildComplianceRegisterReminders(complianceRegister);
     return NextResponse.json({
       source: "Google Sheets: Compliance_Checks + Product_Batches + QC_Checklist + Compliance_Register",
       generatedAt: new Date().toISOString(),
       summary: summarize(checks, batches, qcChecklist),
-      complianceRegisterSummary: summarizeComplianceRegister(complianceRegister),
+      complianceRegisterSummary,
+      complianceRegisterReminders,
       complianceRegister: complianceRegister.slice(0, 50),
       checks: checks.slice(0, 50),
       batches: batches.slice(0, 50),

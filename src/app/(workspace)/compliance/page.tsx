@@ -17,6 +17,17 @@ type ComplianceRegisterEntry = {
   riskBadge: "green" | "yellow" | "red" | "gray";
 };
 
+type ComplianceRegisterReminder = {
+  id: string;
+  area: string;
+  obligation: string;
+  dueDate: string;
+  owner: string;
+  status: string;
+  level: "overdue" | "h-1" | "h-3" | "h-7";
+  message: string;
+};
+
 type ComplianceData = {
   source: string;
   generatedAt: string;
@@ -30,6 +41,7 @@ type ComplianceData = {
     traceabilityDraft: number;
   };
   complianceRegisterSummary?: { total: number; open: number; overdue: number; dueSoon: number; completed: number; missingProof: number };
+  complianceRegisterReminders?: ComplianceRegisterReminder[];
   complianceRegister?: ComplianceRegisterEntry[];
   checks: Array<{ formulaId: string; formulaName: string; product: string; ifraCategory: string; status: string; allergenLabel: string; findings: string; reference: string }>;
   batches: Array<{ batchId: string; product: string; formulaId: string; productionDate: string; quantity: number; unit: string; qcStatus: string; traceabilityStatus: string; inventoryReference: string; proofUrl: string }>;
@@ -167,6 +179,30 @@ export default function CompliancePage() {
           <MetricCard label="GCG Overdue" value={String(data?.complianceRegisterSummary?.overdue || 0)} hint="LKPM/BPJS/Pajak/legal" />
           <MetricCard label="GCG Due Soon" value={String(data?.complianceRegisterSummary?.dueSoon || 0)} hint="jatuh tempo ≤ 7 hari" />
         </section>
+
+        {!!data?.complianceRegisterReminders?.length && (
+          <section className="rounded-3xl bg-red-500/10 p-5 ring-1 ring-red-400/30">
+            <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+              <div>
+                <h2 className="text-xl font-semibold text-white">Reminder Compliance GCG</h2>
+                <p className="text-sm text-white/55">Alert H-7/H-3/H-1/overdue dari Compliance_Register. Agent hanya mengingatkan; status selesai tetap perlu aktor manusia dan Source Proof.</p>
+              </div>
+              <span className="rounded-full bg-white/10 px-3 py-1 text-xs text-white/70">{data.complianceRegisterReminders.length} alert</span>
+            </div>
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              {data.complianceRegisterReminders.slice(0, 6).map((reminder) => (
+                <div key={reminder.id} className="rounded-2xl bg-black/25 p-4 text-sm ring-1 ring-white/10">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="font-semibold text-white">{reminder.area} • {reminder.level.toUpperCase()}</span>
+                    <span className="text-xs text-white/45">Due {reminder.dueDate || "TBA"}</span>
+                  </div>
+                  <p className="mt-2 text-white/70">{reminder.message}</p>
+                  <p className="mt-1 text-xs text-white/45">Owner: {reminder.owner || "Belum dicatat"} • Status: {reminder.status || "TBA"}</p>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
 
         <section className="rounded-3xl bg-white/[0.04] p-5 ring-1 ring-white/10">
           <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
