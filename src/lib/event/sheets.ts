@@ -1,14 +1,9 @@
 // Google Sheets integration for Event Management (Fragrantions)
 // PIC: Wapiq Rizya Zaelan
-// Uses the same Google OAuth token as the main SWI spreadsheet
+// Uses the same auth stack as the main SWI spreadsheet helper so Vercel service-account
+// fallback and OAuth refresh behavior stay consistent across finance + event modules.
 import { google } from "googleapis";
-import fs from "fs";
-
-// We'll use a separate spreadsheet for events
-// For now, we'll create sheets within the existing spreadsheet
-// Later can be migrated to a dedicated Fragrantions spreadsheet
-export const SPREADSHEET_ID = process.env.GOOGLE_SHEETS_ID || "1lQ_FX6v-aX0XNwkRO6TyYLU1NGq6lAMFvK88S09KZsA";
-const TOKEN_PATH = "/home/ubuntu/.hermes/google_token.json";
+import { getAuth, SPREADSHEET_ID } from "@/lib/sheets/sheets-real";
 
 // ── Sheet names for Event Management ──
 export const EVENT_SHEETS = {
@@ -21,8 +16,8 @@ export const EVENT_SHEETS = {
   Media: "Event_Media",
 };
 
-// ── Auth (reuse from sheets-real) ──
-let cachedAuth: any = null;
+// ── Auth is provided by src/lib/sheets/sheets-real.ts ──────────────
+// Keep one credentials implementation for OAuth file/env + service-account fallback.
 
 // ── Read cache ────────────────────────────────────────────────────
 const READ_CACHE_TTL_MS = Number.parseInt(process.env.SHEETS_READ_CACHE_TTL_MS || "30000", 10);
@@ -54,61 +49,6 @@ function setCachedRows(cacheKey: string, rows: string[][]): void {
 
 function invalidateReadCache(): void {
   readCache.clear();
-}
-
-function loadCredentialsFromFile() {
-  try {
-    const content = JSON.parse(fs.readFileSync(TOKEN_PATH, "utf-8"));
-    return {
-      client_id: content.client_id,
-      client_secret: content.client_secret,
-      refresh_token: content.refresh_token,
-      access_token: content.token || content.access_token || "",
-      expiry_date: content.expiry_date || content.expiry || 0,
-    };
-  } catch {
-    return null;
-  }
-}
-
-function loadCredentialsFromEnv() {
-  const client_id = process.env.GOOGLE_CLIENT_ID;
-  const client_secret = process.env.GOOGLE_CLIENT_SECRET;
-  const refresh_token = process.env.GOOGLE_REFRESH_TOKEN;
-  if (!client_id || !client_secret || !refresh_token) return null;
-  return {
-    client_id,
-    client_secret,
-    refresh_token,
-    access_token: process.env.GOOGLE_ACCESS_TOKEN || "",
-    expiry_date: process.env.GOOGLE_ACCESS_TOKEN
-      ? (parseInt(process.env.GOOGLE_EXPIRY_DATE || "0", 10) || 0)
-      : 0,
-  };
-}
-
-function getAuth() {
-  if (cachedAuth) return cachedAuth;
-  const creds = loadCredentialsFromFile() || loadCredentialsFromEnv();
-  if (!creds) {
-    throw new Error(
-      "Google credentials not found. Set GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REFRESH_TOKEN env vars."
-    );
-  }
-
-  const oauth2 = new google.auth.OAuth2(
-    creds.client_id,
-    creds.client_secret,
-    process.env.GOOGLE_REDIRECT_URI || "http://localhost:1"
-  );
-  oauth2.setCredentials({
-    refresh_token: creds.refresh_token,
-    access_token: creds.access_token,
-    token_type: "Bearer",
-    expiry_date: creds.expiry_date,
-  });
-  cachedAuth = oauth2;
-  return cachedAuth;
 }
 
 // ── Read ──
