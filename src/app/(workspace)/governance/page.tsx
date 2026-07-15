@@ -73,7 +73,7 @@ type DashboardPayload = {
       unagedCount?: number;
     };
     compliance?: { total: number; open: number; overdue: number; dueSoon: number; completedWithoutProof: number };
-    vendor?: { total: number; relatedParty: number; exceptions: number; benchmarkComplete: number; openPo?: number; overduePo?: number; overduePoValue?: number };
+    vendor?: { total: number; relatedParty: number; exceptions: number; benchmarkComplete: number; openPo?: number; overduePo?: number; overduePoValue?: number; missingPaymentTerm?: number };
     audit?: { governanceAuditRows: number; humanOnlyAutomationApprovalCount?: number };
     monthlyGcgReport?: { total: number; latestPeriod: string; latestGeneratedAt: string; latestStatus: string };
     event?: {
@@ -302,6 +302,7 @@ export default function GovernancePage() {
               <div className="flex justify-between"><span>Total vendor</span><b>{vendor?.total || 0}</b></div>
               <div className="flex justify-between"><span>Benchmark complete</span><b>{vendor?.benchmarkComplete || 0}</b></div>
               <div className="flex justify-between"><span>Related party</span><b>{vendor?.relatedParty || 0}</b></div>
+              <div className="flex justify-between text-amber-600"><span>Missing payment term</span><b>{vendor?.missingPaymentTerm || 0}</b></div>
               <div className="flex justify-between"><span>Open PO</span><b>{vendor?.openPo || 0}</b></div>
               <div className="flex justify-between text-red-600"><span>Overdue PO</span><b>{vendor?.overduePo || 0} • {rupiah(vendor?.overduePoValue)}</b></div>
               <div className="flex justify-between text-amber-600"><span>Exceptions</span><b>{vendor?.exceptions || 0}</b></div>

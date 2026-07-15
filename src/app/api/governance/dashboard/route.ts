@@ -273,6 +273,8 @@ export async function GET(req: NextRequest) {
     const vendorWithBenchmark = vendorRegister.filter((row) => Boolean(text(row[6])) && Boolean(text(row[7])) && Boolean(text(row[8])));
     const relatedPartyVendors = vendorRegister.filter((row) => isYes(text(row[4])));
     const vendorExceptions = vendorRegister.filter((row) => isYes(text(row[4])) || !text(row[6]) || !text(row[7]) || !text(row[8]));
+    const activeVendorRows = vendorRegister.filter((row) => !["blacklist", "inactive", "rejected", "cancelled"].includes(text(row[10]).toLowerCase()));
+    const vendorsMissingPaymentTerm = activeVendorRows.filter((row) => !text(row[9]));
 
     const shareholderDebtOutstanding = shareholderLedger.reduce((sum, row) => {
       const status = text(row[9]).toLowerCase();
@@ -434,6 +436,7 @@ export async function GET(req: NextRequest) {
           openPo: openPurchaseOrders.length,
           overduePo: overduePurchaseOrders.length,
           overduePoValue: overduePurchaseOrders.reduce((sum, row) => sum + amount(row[9]), 0),
+          missingPaymentTerm: vendorsMissingPaymentTerm.length,
         },
         audit: {
           governanceAuditRows: governanceAuditLog.length,
@@ -478,6 +481,7 @@ export async function GET(req: NextRequest) {
         }),
         ...completedComplianceMissingProof.slice(0, 10).map((row) => ({ type: "COMPLIANCE_COMPLETED_WITHOUT_PROOF", severity: "medium", entityId: text(row[0]), description: text(row[2]) || "Compliance selesai tanpa proof URL", amount: 0, owner: text(row[6]) || "Belum dicatat" })),
         ...vendorExceptions.slice(0, 10).map((row) => ({ type: "VENDOR_GOVERNANCE_EXCEPTION", severity: isYes(text(row[4])) ? "high" : "medium", entityId: text(row[0]), description: text(row[1]) || "Vendor perlu review benchmark/COI", amount: 0, owner: text(row[3]) || "Belum dicatat" })),
+        ...vendorsMissingPaymentTerm.slice(0, 10).map((row) => ({ type: "VENDOR_PAYMENT_TERM_MISSING", severity: "medium", entityId: text(row[0]), description: `${text(row[1]) || "Vendor"} belum punya payment term; wajib jelas DP/Lunas/Net 7 sebelum PO/expense material.`, amount: 0, owner: text(row[3]) || "Procurement/Finance" })),
         ...overduePurchaseOrders.slice(0, 10).map((row) => ({ type: "VENDOR_PO_OVERDUE", severity: highValueOverduePurchaseOrders.some((po) => text(po[0]) === text(row[0])) ? "high" : "medium", entityId: text(row[0]), description: `${text(row[3]) || "Vendor"} — ${text(row[5]) || "PO open melewati expected date"} due ${text(row[11]) || "TBA"}`, amount: amount(row[9]), owner: text(row[3]) || "Belum dicatat" })),
         ...expensesWithoutVendor.slice(0, 10).map((row) => ({ type: "EXPENSE_VENDOR_NOT_LINKED", severity: amount(row[6]) > 2000000 ? "high" : "medium", entityId: text(row[0]), description: text(row[5]) || "Expense kategori vendor belum dikaitkan ke Vendor_Register", amount: amount(row[6]), owner: text(row[2]) || "Belum dicatat" })),
         ...personalPaidNotInLedger.slice(0, 10).map((row) => ({ type: "PERSONAL_PAID_NOT_IN_LEDGER", severity: "medium", entityId: text(row[0]), description: text(row[5]) || "Personal paid belum cocok ke Shareholder_Ledger", amount: amount(row[6]), owner: text(row[2]) || "Belum dicatat" })),
@@ -496,7 +500,7 @@ export async function GET(req: NextRequest) {
         expenseNeedsProof.length ? "Lengkapi proof URL untuk expense berstatus Needs Proof/tanpa bukti." : "Pertahankan disiplin bukti expense.",
         approvedWithoutDivisionOrCoa.length ? "Perbaiki approved expense yang belum punya division/COA; acceptance GCG melarang approved expense tanpa klasifikasi." : approvedWithoutPaymentMethod.length ? "Perbaiki approved expense yang belum punya payment method agar sumber dana perusahaan/pribadi dapat ditelusuri." : expensePending.length ? "Review dan approve/reject expense pending; semua keputusan harus masuk Governance_Audit_Log." : "Tidak ada expense pending dari data yang terbaca.",
         overdueCompliance.length ? "Tindaklanjuti compliance overdue dan upload bukti setelah selesai." : dueSoonCompliance.length ? "Follow-up compliance due soon (H-7/H-3/H-1) dan siapkan proof URL sebelum status submitted/paid." : completedComplianceMissingProof.length ? "Lengkapi proof URL untuk compliance yang sudah marked submitted/paid/complete." : "Pantau compliance due soon dan jangan menandai submitted tanpa bukti.",
-        vendorExceptions.length ? "Lengkapi benchmark vendor dan deklarasi related-party sebelum transaksi besar." : "Vendor register tidak menunjukkan exception dari data terbaca.",
+        vendorExceptions.length ? "Lengkapi benchmark vendor dan deklarasi related-party sebelum transaksi besar." : vendorsMissingPaymentTerm.length ? "Lengkapi payment term vendor aktif agar DP/Lunas/Net 7 dan aging payable jelas." : "Vendor register tidak menunjukkan exception dari data terbaca.",
         overduePurchaseOrders.length ? "Review PO/vendor payable yang melewati expected date; update status received/cancelled atau catat alasan keterlambatan." : "Tidak ada open PO melewati expected date dari data Purchase_Orders yang terbaca.",
         humanOnlyAutomationApprovals.length ? "Review ulang approval pajak/legal/termination/COI yang tercatat oleh actor otomatis; prinsip TARIF mewajibkan keputusan human-only." : "Tidak ada approval human-only oleh automation dari Governance_Audit_Log yang terbaca.",
         eventBudgetOverActualWithoutNotes.length + eventsOverBudgetWithoutNotes.length ? "Lengkapi catatan closeout untuk event/budget row yang actual-nya melewati budget." : tenantReceivableRows.length + sponsorReceivableRows.length ? "Follow-up receivable tenant/sponsor sebelum event closeout dinyatakan selesai." : eventsMissingMedia.length ? "Lengkapi Event_Media untuk event yang sudah selesai/berakhir agar closeout siap dibagikan." : "Event closeout tidak menunjukkan exception dari data terbaca.",
