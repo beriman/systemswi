@@ -114,6 +114,14 @@ function daysSince(dateValue: string): number | null {
   return Math.max(0, Math.floor((today - date) / 86400000));
 }
 
+function normalizePeriod(value: string): string {
+  return value.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function currentMonthlyGcgPeriod(): string {
+  return new Intl.DateTimeFormat("id-ID", { month: "long", year: "numeric", timeZone: "Asia/Jakarta" }).format(new Date());
+}
+
 function csvCell(value: unknown): string {
   const textValue = String(value ?? "");
   return /[",\n]/.test(textValue) ? `"${textValue.replace(/"/g, '""')}"` : textValue;
@@ -336,6 +344,8 @@ export async function GET(req: NextRequest) {
     const overduePurchaseOrders = openPurchaseOrders.filter((row) => isOverdue(text(row[11])));
     const highValueOverduePurchaseOrders = overduePurchaseOrders.filter((row) => amount(row[9]) > 2000000);
 
+    const currentPeriod = currentMonthlyGcgPeriod();
+    const hasCurrentMonthlyGcgReport = monthlyGcgReport.some((row) => normalizePeriod(text(row[1])) === normalizePeriod(currentPeriod));
     const latestMonthlyGcg = monthlyGcgReport
       .map((row) => ({
         id: text(row[0]),
@@ -372,7 +382,7 @@ export async function GET(req: NextRequest) {
       .sort((a, b) => b.timestamp.localeCompare(a.timestamp))
       .slice(0, 10);
 
-    const transparencyScore = Math.round((percent(expenseWithProof.length, expenses.length) + percent(expenseWithDivision.length, expenses.length) + percent(hasMonthlyGcgReport ? 1 : 0, 1)) / 3);
+    const transparencyScore = Math.round((percent(expenseWithProof.length, expenses.length) + percent(expenseWithDivision.length, expenses.length) + percent(hasCurrentMonthlyGcgReport ? 1 : 0, 1)) / 3);
     const accountabilityScore = Math.round((percent(approvedWithReviewer.length, approvedExpenses.length) + percent(taskWithOwner.length, tasks.length) + percent(governanceAuditLog.length > 0 ? 1 : 0, 1)) / 3);
     const complianceOnTimeScore = percent(complianceRegister.length - overdueCompliance.length, complianceRegister.length);
     const complianceProofScore = percent(completedCompliance.length - completedComplianceMissingProof.length, completedCompliance.length);
@@ -384,7 +394,7 @@ export async function GET(req: NextRequest) {
     ) / 2);
 
     const scores = [
-      makeScore("transparency", "Transparency", transparencyScore, `${expenseWithProof.length}/${expenses.length} expense punya bukti atau amount 0; ${expenseWithDivision.length}/${expenses.length} punya division/COA; Monthly_GCG_Report ${hasMonthlyGcgReport ? "tersedia" : "belum dicatat"}.`),
+      makeScore("transparency", "Transparency", transparencyScore, `${expenseWithProof.length}/${expenses.length} expense punya bukti atau amount 0; ${expenseWithDivision.length}/${expenses.length} punya division/COA; Monthly_GCG_Report periode ${currentPeriod} ${hasCurrentMonthlyGcgReport ? "sudah dicatat" : "belum dicatat"}.`),
       makeScore("accountability", "Accountability", accountabilityScore, `${approvedWithReviewer.length}/${approvedExpenses.length} approved expense punya reviewer; ${governanceAuditLog.length} governance audit rows.`),
       makeScore("responsibility", "Responsibility", responsibilityScore, `${overdueCompliance.length} overdue dari ${complianceRegister.length} compliance item; ${completedComplianceMissingProof.length}/${completedCompliance.length} completed compliance belum punya proof URL.`),
       makeScore("independency", "Independency", independencyScore, `${vendorWithBenchmark.length}/${vendorRegister.length} vendor punya benchmark + selected reason; ${expenseVendorRequired.length - expensesWithoutVendor.length}/${expenseVendorRequired.length} expense vendor-category punya vendor link.`),
@@ -453,6 +463,8 @@ export async function GET(req: NextRequest) {
         },
         monthlyGcgReport: {
           total: monthlyGcgReport.length,
+          currentPeriod,
+          isCurrentPeriodRecorded: hasCurrentMonthlyGcgReport,
           latestPeriod: latestMonthlyGcg?.period || "TBA",
           latestGeneratedAt: latestMonthlyGcg?.generatedAt || "TBA",
           latestStatus: latestMonthlyGcg?.status || "Belum dicatat",
@@ -506,7 +518,7 @@ export async function GET(req: NextRequest) {
         ...(complianceRegisterMissing ? [{ type: "COMPLIANCE_REGISTER_EMPTY", severity: "medium", entityId: "Compliance_Register", description: "Compliance_Register belum punya baris; LKPM/BPJS/Pajak/Legal belum bisa dimonitor dari source of truth.", amount: 0, owner: "Direksi/Legal/Finance" }] : []),
         ...(vendorRegisterMissing ? [{ type: "VENDOR_REGISTER_EMPTY_FOR_PROCUREMENT", severity: "medium", entityId: "Vendor_Register", description: "Ada expense kategori vendor/PO, tetapi Vendor_Register belum punya baris; conflict-of-interest dan benchmark belum bisa diverifikasi.", amount: 0, owner: "Procurement/Finance" }] : []),
         ...(shareholderLedgerMissingForPersonalPaid ? [{ type: "SHAREHOLDER_LEDGER_EMPTY_FOR_PERSONAL_PAID", severity: "high", entityId: "Shareholder_Ledger", description: "Ada approved Personal Paid expense, tetapi Shareholder_Ledger kosong; hutang pemegang saham belum terpisah dari expense operasional.", amount: approvedPersonalPaidExpenses.reduce((sum, row) => sum + amount(row[6]), 0), owner: "Direksi/Finance" }] : []),
-        ...(!hasMonthlyGcgReport ? [{ type: "MONTHLY_GCG_REPORT_NOT_RECORDED", severity: "medium", entityId: "Monthly_GCG_Report", description: "Belum ada log laporan bulanan GCG/TARIF untuk pemegang saham", amount: 0, owner: "Direksi/Finance" }] : []),
+        ...(!hasCurrentMonthlyGcgReport ? [{ type: hasMonthlyGcgReport ? "MONTHLY_GCG_REPORT_STALE" : "MONTHLY_GCG_REPORT_NOT_RECORDED", severity: "medium", entityId: "Monthly_GCG_Report", description: `Monthly_GCG_Report periode ${currentPeriod} belum dicatat; laporan lama tidak cukup untuk readiness bulanan pemegang saham.`, amount: 0, owner: "Direksi/Finance" }] : []),
       ],
       recentAuditTrail,
       nextActions: [
@@ -523,7 +535,7 @@ export async function GET(req: NextRequest) {
         expensesWithoutVendor.length ? "Hubungkan expense Bahan Baku/Packaging/Sewa Booth ke Vendor_Register atau isi vendor name." : "Expense kategori vendor sudah punya vendor link atau belum ada data.",
         personalPaidNotInLedger.length ? "Cocokkan approved Personal Paid expense ke Shareholder_Ledger." : "Approved personal-paid expense sudah cocok atau belum ada data personal-paid approved.",
         shareholderDebtOver60.length ? "Review hutang pemegang saham berumur >60 hari; putuskan reimburse, konversi modal, atau jadwal pembayaran." : shareholderDebtOver30.length ? "Review aging hutang pemegang saham >30 hari agar fairness pemegang saham tetap jelas." : shareholderDebtUnaged.length ? "Lengkapi tanggal di Shareholder_Ledger agar aging hutang pemegang saham bisa dihitung." : "Aging hutang pemegang saham tidak menunjukkan exception dari data terbaca.",
-        hasMonthlyGcgReport ? `Review Monthly_GCG_Report terakhir: ${latestMonthlyGcg?.period || "TBA"}.` : "Generate dan catat Monthly GCG Report pertama setelah data expense/compliance/vendor siap.",
+        hasCurrentMonthlyGcgReport ? `Review Monthly_GCG_Report periode berjalan: ${currentPeriod}.` : `Generate dan catat Monthly GCG Report periode ${currentPeriod} setelah data expense/compliance/vendor siap.`,
       ],
     };
 
