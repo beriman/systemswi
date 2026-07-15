@@ -3,7 +3,7 @@ import { googleWorkspaceDegradedSource, googleWorkspaceWriteBlockedSource, isGoo
 import { appendRows, readRange, updateRow, deleteRow } from "@/lib/sheets/sheets-real";
 import { appendSwiMemoryLog } from "@/lib/google/audit-log";
 import { logGovernanceActionSafe } from "@/lib/governance/audit";
-import { parseVendorRegisterRows, type VendorRegisterEntry } from "@/lib/governance/vendor-register";
+import { appendVendorRegisterEntry, parseVendorRegisterRows, type VendorRegisterEntry } from "@/lib/governance/vendor-register";
 
 export const runtime = "nodejs";
 
@@ -537,10 +537,43 @@ export async function POST(request: NextRequest) {
         text(body.notes) || "",
       ];
       await appendRows("SupplierMaster", [row]);
+
+      let governanceVendorId = "Belum dicatat";
+      let vendorRegisterStatus: "created_trial" | "already_linked" | "warning" = "warning";
+      const existingVendor = parseVendorRegisterRows(vendorRows).find((vendor) =>
+        vendor.id.toLowerCase() === id.toLowerCase() || vendor.name.toLowerCase() === name.toLowerCase()
+      );
+      if (existingVendor) {
+        governanceVendorId = existingVendor.id;
+        vendorRegisterStatus = "already_linked";
+      } else {
+        try {
+          const vendor = await appendVendorRegisterEntry({
+            id,
+            name,
+            category,
+            contact,
+            relatedParty: text(body.relatedParty) || "No",
+            relationshipDetail: text(body.relationshipDetail),
+            priceBenchmark1: text(body.priceBenchmark1),
+            priceBenchmark2: text(body.priceBenchmark2),
+            selectedReason: text(body.selectedReason),
+            paymentTerm: text(body.paymentTerm),
+            status: "Trial",
+            lastReview: new Date().toISOString().slice(0, 10),
+          });
+          governanceVendorId = vendor.id;
+          vendorRegisterStatus = "created_trial";
+        } catch (error) {
+          vendorRegisterStatus = "warning";
+          governanceVendorId = `Belum dicatat — ${String(error).slice(0, 120)}`;
+        }
+      }
+
       const auditStatus = await appendProcurementAudit({
         action: "Procurement Supplier Created",
         target: `Supplier_Master:${id}`,
-        summary: `Created supplier ${name} (${category}). Contact: ${contact}. Lead time: ${numberValue(body.leadTimeDays) || 7} days.`,
+        summary: `Created supplier ${name} (${category}). Contact: ${contact}. Lead time ${numberValue(body.leadTimeDays) || 7} days. Vendor_Register ${vendorRegisterStatus}: ${governanceVendorId}.`,
       });
       await appendProcurementGovernanceAudit({
         actor: text(body.actor) || text(body.pic),
@@ -550,9 +583,16 @@ export async function POST(request: NextRequest) {
         entityId: id,
         before: "",
         after: text(body.status) || "active",
-        reason: `Created supplier ${name} (${category}). Contact: ${contact || "TBA"}; lead time ${numberValue(body.leadTimeDays) || 7} days. Vendor_Register/COI still needs review for procurement governance.`,
+        reason: `Created supplier ${name} (${category}). Contact: ${contact || "TBA"}; lead time ${numberValue(body.leadTimeDays) || 7} days. Vendor_Register ${vendorRegisterStatus}: ${governanceVendorId}. Related-party/benchmark fields must be completed before high-value or COI approval.`,
       });
-      return NextResponse.json({ success: true, action, supplier: { id, name, category }, auditStatus, governanceAudit: "Governance_Audit_Log" }, { status: 201 });
+      return NextResponse.json({
+        success: true,
+        action,
+        supplier: { id, name, category },
+        vendorRegister: { id: governanceVendorId, status: vendorRegisterStatus, defaultStatus: vendorRegisterStatus === "created_trial" ? "Trial" : undefined },
+        auditStatus,
+        governanceAudit: "Governance_Audit_Log",
+      }, { status: 201 });
     }
 
     if (action === "update-supplier") {
