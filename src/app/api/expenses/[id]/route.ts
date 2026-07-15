@@ -35,6 +35,11 @@ function isMissingCoa(value: string): boolean {
   return !value || normalized.includes("tba") || normalized.includes("belum dicatat") || normalized.includes("belum tersedia");
 }
 
+function isMissingPaymentMethod(value: string): boolean {
+  const normalized = value.toLowerCase();
+  return !value || normalized.includes("tba") || normalized.includes("belum dicatat") || normalized.includes("belum tersedia");
+}
+
 function parseExpense(row: string[]) {
   return {
     id: s(row, 0),
@@ -68,6 +73,7 @@ async function approvalBlockers(row: string[]): Promise<string[]> {
   const category = s(row, 4);
   const division = s(row, 12);
   const coaCategory = s(row, 13);
+  const paymentMethod = s(row, 14);
   const proofUrl = s(row, 7);
   const relatedEvent = s(row, 3);
   const vendorId = s(row, 18);
@@ -79,6 +85,7 @@ async function approvalBlockers(row: string[]): Promise<string[]> {
   if (amount > 0 && !proofUrl) blockers.push("Bukti pembayaran/nota wajib diisi sebelum approve expense bernilai > 0.");
   if (!division) blockers.push("Division wajib diisi sebelum approve.");
   if (isMissingCoa(coaCategory)) blockers.push("COA Category valid wajib diisi dari sheet COA sebelum approve; TBA/Belum dicatat tidak cukup untuk approval.");
+  if (isMissingPaymentMethod(paymentMethod)) blockers.push("Payment Method wajib diisi sebelum approve agar sumber pembayaran perusahaan/pribadi bisa ditelusuri.");
   if ((category === "Sewa Booth" || category === "Venue" || division === "Event") && !relatedEvent) blockers.push("Expense event/venue/sewa booth wajib dikaitkan ke related event/project sebelum approve.");
   if (vendorRequiredCategories.has(category) && !vendorId && !vendorName) blockers.push("Kategori vendor (Bahan Baku/Packaging/Venue/Dokumentasi/Sewa Booth) wajib punya Vendor ID atau Vendor Name sebelum approve.");
   if (amount > 2_000_000 && vendorRequiredCategories.has(category) && !vendorBenchmarkNotes) blockers.push("Expense vendor > Rp2.000.000 wajib mencatat minimal 2 benchmark/alasan pemilihan sebelum approve.");
@@ -171,6 +178,7 @@ export async function PUT(
           policy: {
             proofRequired: "Expense amount > 0 wajib punya proof URL.",
             divisionAndCoa: "Division wajib terisi dan COA Category harus valid dari sheet COA sebelum approve (TBA tidak cukup).",
+            paymentMethod: "Payment Method wajib jelas: Cash / Bank / Personal Paid / Company Paid; TBA tidak cukup untuk approval.",
             eventExpense: "Expense event/venue/sewa booth wajib dikaitkan ke event/project.",
             vendorThreshold: "Bahan Baku/Packaging/Venue/Dokumentasi/Sewa Booth wajib vendor; > Rp2.000.000 wajib benchmark notes.",
             relatedParty: "Related-party vendor wajib catatan konflik kepentingan.",

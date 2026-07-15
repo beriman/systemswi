@@ -33,6 +33,11 @@ function isMissingCoa(value: string): boolean {
   return !value || normalized.includes("tba") || normalized.includes("belum dicatat") || normalized.includes("belum tersedia");
 }
 
+function isMissingPaymentMethod(value: string): boolean {
+  const normalized = value.toLowerCase();
+  return !value || normalized.includes("tba") || normalized.includes("belum dicatat") || normalized.includes("belum tersedia");
+}
+
 interface ExpenseSubmission {
   id: string;
   date: string;
@@ -114,6 +119,8 @@ export async function GET(req: NextRequest) {
     const needsProof = expenses.filter((e) => e.status === "Needs Proof" || (e.amount > 0 && !e.proofUrl));
     const withoutDivision = expenses.filter((e) => !e.division);
     const approvedWithoutDivisionOrCoa = approved.filter((e) => !e.division || isMissingCoa(e.coaCategory));
+    const withoutPaymentMethod = expenses.filter((e) => isMissingPaymentMethod(e.paymentMethod));
+    const approvedWithoutPaymentMethod = approved.filter((e) => isMissingPaymentMethod(e.paymentMethod));
     const personalPaid = expenses.filter((e) => e.paymentMethod === "Personal Paid" || e.shareholderDebtFlag === "Yes");
     const approvedPersonalPaid = personalPaid.filter((e) => e.status === "Approved");
     let personalPaidNotInLedger = approvedPersonalPaid;
@@ -181,6 +188,8 @@ export async function GET(req: NextRequest) {
         needsProofAmount: needsProof.reduce((sum, e) => sum + e.amount, 0),
         withoutDivisionCount: withoutDivision.length,
         approvedWithoutDivisionOrCoaCount: approvedWithoutDivisionOrCoa.length,
+        withoutPaymentMethodCount: withoutPaymentMethod.length,
+        approvedWithoutPaymentMethodCount: approvedWithoutPaymentMethod.length,
         personalPaidCount: personalPaid.length,
         personalPaidAmount: personalPaid.reduce((sum, e) => sum + e.amount, 0),
         personalPaidNotInLedgerCount: personalPaidNotInLedger.length,
@@ -196,7 +205,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({
         ...googleWorkspaceDegradedSource(EXPENSES_SOURCE, error),
         expenses: [],
-        stats: { total: 0, pendingCount: 0, pendingAmount: 0, approvedCount: 0, approvedAmount: 0, approvedThisMonthCount: 0, approvedThisMonthAmount: 0, rejectedCount: 0, rejectedAmount: 0, needsProofCount: 0, needsProofAmount: 0, withoutDivisionCount: 0, approvedWithoutDivisionOrCoaCount: 0, personalPaidCount: 0, personalPaidAmount: 0, personalPaidNotInLedgerCount: 0, personalPaidNotInLedgerAmount: 0, vendorRequiredCount: 0, withoutVendorCount: 0, vendorRelatedPartyCount: 0 },
+        stats: { total: 0, pendingCount: 0, pendingAmount: 0, approvedCount: 0, approvedAmount: 0, approvedThisMonthCount: 0, approvedThisMonthAmount: 0, rejectedCount: 0, rejectedAmount: 0, needsProofCount: 0, needsProofAmount: 0, withoutDivisionCount: 0, approvedWithoutDivisionOrCoaCount: 0, withoutPaymentMethodCount: 0, approvedWithoutPaymentMethodCount: 0, personalPaidCount: 0, personalPaidAmount: 0, personalPaidNotInLedgerCount: 0, personalPaidNotInLedgerAmount: 0, vendorRequiredCount: 0, withoutVendorCount: 0, vendorRelatedPartyCount: 0 },
         budgetVsActual: {},
       });
     }
