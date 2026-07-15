@@ -348,6 +348,10 @@ export async function GET(req: NextRequest) {
     const humanOnlyAutomationApprovals = governanceAuditLog.filter((row) =>
       isAutomationActor(text(row[2])) && isApprovalAction(text(row[4])) && isHumanOnlyApprovalContext(row)
     );
+    const complianceRegisterMissing = complianceRegister.length === 0;
+    const vendorRegisterMissing = vendorRegister.length === 0 && (expenseVendorRequired.length > 0 || purchaseOrders.length > 0);
+    const shareholderLedgerMissingForPersonalPaid = shareholderLedger.length === 0 && approvedPersonalPaidExpenses.length > 0;
+    const governanceAuditMissingForApprovals = governanceAuditLog.length === 0 && approvedExpenses.length > 0;
     const recentAuditTrail = governanceAuditLog
       .map((row) => ({
         logId: text(row[0]),
@@ -498,6 +502,10 @@ export async function GET(req: NextRequest) {
         ...sponsorReceivableRows.slice(0, 10).map((row) => ({ type: "EVENT_SPONSOR_RECEIVABLE", severity: amount(row[7]) + amount(row[10]) > 2000000 ? "high" : "medium", entityId: text(row[1]) || text(row[0]), description: `${text(row[2]) || "Sponsor"} belum lunas/follow-up`, amount: amount(row[7]) + amount(row[10]), owner: text(row[3]) || "Event PIC" })),
         ...eventsMissingMedia.slice(0, 10).map((row) => ({ type: "EVENT_CLOSEOUT_MEDIA_MISSING", severity: "medium", entityId: text(row[0]), description: `${text(row[1]) || "Event"} perlu dokumentasi Event_Media untuk closeout`, amount: 0, owner: text(row[6]) || "Event PIC" })),
         ...humanOnlyAutomationApprovals.slice(0, 10).map((row) => ({ type: "HUMAN_ONLY_APPROVAL_BY_AUTOMATION", severity: "high", entityId: text(row[6]) || text(row[5]) || "Governance_Audit_Log", description: `${text(row[4]) || "Approval"} untuk pajak/legal/termination/COI tercatat oleh actor otomatis; wajib review manusia.`, amount: amount(row[7]), owner: text(row[2]) || "Belum dicatat" })),
+        ...(governanceAuditMissingForApprovals ? [{ type: "GOVERNANCE_AUDIT_LOG_EMPTY_WITH_APPROVALS", severity: "high", entityId: "Governance_Audit_Log", description: "Expense approved sudah ada, tetapi Governance_Audit_Log belum punya baris; audit approval manusia belum bisa ditelusuri.", amount: 0, owner: "Direksi/Finance" }] : []),
+        ...(complianceRegisterMissing ? [{ type: "COMPLIANCE_REGISTER_EMPTY", severity: "medium", entityId: "Compliance_Register", description: "Compliance_Register belum punya baris; LKPM/BPJS/Pajak/Legal belum bisa dimonitor dari source of truth.", amount: 0, owner: "Direksi/Legal/Finance" }] : []),
+        ...(vendorRegisterMissing ? [{ type: "VENDOR_REGISTER_EMPTY_FOR_PROCUREMENT", severity: "medium", entityId: "Vendor_Register", description: "Ada expense kategori vendor/PO, tetapi Vendor_Register belum punya baris; conflict-of-interest dan benchmark belum bisa diverifikasi.", amount: 0, owner: "Procurement/Finance" }] : []),
+        ...(shareholderLedgerMissingForPersonalPaid ? [{ type: "SHAREHOLDER_LEDGER_EMPTY_FOR_PERSONAL_PAID", severity: "high", entityId: "Shareholder_Ledger", description: "Ada approved Personal Paid expense, tetapi Shareholder_Ledger kosong; hutang pemegang saham belum terpisah dari expense operasional.", amount: approvedPersonalPaidExpenses.reduce((sum, row) => sum + amount(row[6]), 0), owner: "Direksi/Finance" }] : []),
         ...(!hasMonthlyGcgReport ? [{ type: "MONTHLY_GCG_REPORT_NOT_RECORDED", severity: "medium", entityId: "Monthly_GCG_Report", description: "Belum ada log laporan bulanan GCG/TARIF untuk pemegang saham", amount: 0, owner: "Direksi/Finance" }] : []),
       ],
       recentAuditTrail,
@@ -508,6 +516,9 @@ export async function GET(req: NextRequest) {
         vendorExceptions.length ? "Lengkapi benchmark vendor dan deklarasi related-party sebelum transaksi besar." : vendorsMissingPaymentTerm.length ? "Lengkapi payment term vendor aktif agar DP/Lunas/Net 7 dan aging payable jelas." : "Vendor register tidak menunjukkan exception dari data terbaca.",
         overduePurchaseOrders.length ? "Review PO/vendor payable yang melewati expected date; update status received/cancelled atau catat alasan keterlambatan." : "Tidak ada open PO melewati expected date dari data Purchase_Orders yang terbaca.",
         humanOnlyAutomationApprovals.length ? "Review ulang approval pajak/legal/termination/COI yang tercatat oleh actor otomatis; prinsip TARIF mewajibkan keputusan human-only." : "Tidak ada approval human-only oleh automation dari Governance_Audit_Log yang terbaca.",
+        governanceAuditMissingForApprovals ? "Backfill Governance_Audit_Log untuk expense approved agar jejak approval manusia dapat diaudit." : "Governance_Audit_Log tersedia atau belum ada approved expense yang perlu diaudit.",
+        complianceRegisterMissing ? "Seed/isi Compliance_Register dari kewajiban nyata LKPM, BPJS, pajak, dan legal; jangan tandai selesai tanpa proof URL." : "Compliance_Register sudah punya baris source-of-truth.",
+        vendorRegisterMissing ? "Isi Vendor_Register untuk supplier/PO yang sudah muncul agar benchmark, related-party, dan payment term bisa diverifikasi." : "Vendor_Register tersedia atau belum ada PO/expense kategori vendor yang perlu register.",
         eventBudgetOverActualWithoutNotes.length + eventsOverBudgetWithoutNotes.length ? "Lengkapi catatan closeout untuk event/budget row yang actual-nya melewati budget." : tenantReceivableRows.length + sponsorReceivableRows.length ? "Follow-up receivable tenant/sponsor sebelum event closeout dinyatakan selesai." : eventsMissingMedia.length ? "Lengkapi Event_Media untuk event yang sudah selesai/berakhir agar closeout siap dibagikan." : "Event closeout tidak menunjukkan exception dari data terbaca.",
         expensesWithoutVendor.length ? "Hubungkan expense Bahan Baku/Packaging/Sewa Booth ke Vendor_Register atau isi vendor name." : "Expense kategori vendor sudah punya vendor link atau belum ada data.",
         personalPaidNotInLedger.length ? "Cocokkan approved Personal Paid expense ke Shareholder_Ledger." : "Approved personal-paid expense sudah cocok atau belum ada data personal-paid approved.",
