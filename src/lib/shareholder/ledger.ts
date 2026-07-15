@@ -1,7 +1,7 @@
 // Shareholder Ledger — separation of personal-paid expenses and company obligations
 // Schema: Entry ID | Date | Shareholder | Type | Division | Description | Debit | Credit | Balance | Approval Status | Approved By | Proof URL | Notes
 
-import { appendRows, getAuth, readSheet, SPREADSHEET_ID } from "@/lib/sheets/sheets-real";
+import { appendRows, getAuth, readSheet, SPREADSHEET_ID, updateRow } from "@/lib/sheets/sheets-real";
 import { google } from "googleapis";
 
 export const SHAREHOLDER_LEDGER_SHEET = "Shareholder_Ledger";
@@ -141,4 +141,47 @@ export async function appendShareholderLedgerEntryOnce(
   const duplicate = existing.find((row) => row.notes.includes(sourceKey) || row.description.includes(sourceKey));
   if (duplicate) return { entry: duplicate, created: false };
   return { entry: await appendShareholderLedgerEntry(entry), created: true };
+}
+
+export async function updateShareholderLedgerEntry(
+  id: string,
+  patch: Partial<NewShareholderLedgerEntry>
+): Promise<{ before: ShareholderLedgerEntry; after: ShareholderLedgerEntry }> {
+  await ensureShareholderLedgerSheet();
+  const rows = await readSheet("ShareholderLedger");
+  const rowIndex = rows.findIndex((row, index) => index > 0 && s(row, 0) === id);
+  if (rowIndex === -1) throw new Error(`Shareholder ledger entry not found: ${id}`);
+
+  const before = parseShareholderLedgerRows([SHAREHOLDER_LEDGER_HEADERS, rows[rowIndex]])[0];
+  const nextDebit = patch.debit !== undefined ? n(patch.debit) : before.debit;
+  const nextCredit = patch.credit !== undefined ? n(patch.credit) : before.credit;
+  const nextProofUrl = patch.proofUrl !== undefined ? patch.proofUrl : before.proofUrl;
+  const nextNotes = patch.notes !== undefined ? patch.notes : before.notes;
+  const nextStatus = patch.approvalStatus !== undefined ? patch.approvalStatus : before.approvalStatus;
+
+  if (nextCredit > before.credit && !nextProofUrl && !nextNotes) {
+    throw new Error("Proof URL atau notes wajib diisi sebelum mencatat pelunasan/credit Shareholder_Ledger.");
+  }
+
+  const row = [
+    before.id,
+    patch.date !== undefined ? patch.date || today() : before.date,
+    patch.shareholder !== undefined ? patch.shareholder || "Belum dicatat" : before.shareholder,
+    patch.type !== undefined ? patch.type || "Hutang Pemegang Saham" : before.type,
+    patch.division !== undefined ? patch.division || "Belum dicatat" : before.division,
+    patch.description !== undefined ? patch.description || "Belum dicatat" : before.description,
+    nextDebit,
+    nextCredit,
+    patch.balance !== undefined ? patch.balance : before.balance,
+    nextStatus || "Draft",
+    patch.approvedBy !== undefined ? patch.approvedBy : before.approvedBy,
+    nextProofUrl || "",
+    nextNotes || "",
+  ];
+
+  await updateRow("ShareholderLedger", rowIndex + 1, row);
+  return {
+    before,
+    after: parseShareholderLedgerRows([SHAREHOLDER_LEDGER_HEADERS, row.map(String)])[0],
+  };
 }

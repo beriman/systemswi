@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   appendShareholderLedgerEntry,
   listShareholderLedger,
+  updateShareholderLedgerEntry,
 } from "@/lib/shareholder/ledger";
 import { googleWorkspaceDegradedSource, isGoogleWorkspaceAuthError } from "@/lib/api/google-workspace-error";
 import { logGovernanceActionSafe } from "@/lib/governance/audit";
@@ -67,6 +68,10 @@ export async function GET() {
         over30Days.length ? "Review hutang pemegang saham >30 hari agar fairness pemegang saham tetap jelas." : "Tidak ada hutang pemegang saham >30 hari dari data terbaca.",
         unaged.length ? "Lengkapi tanggal ledger agar aging hutang pemegang saham bisa dihitung." : "Tanggal ledger cukup untuk aging dari data terbaca.",
       ],
+      endpoint: {
+        post: "POST JSON { description, debit/credit, shareholder, type, proofUrl, notes } untuk menambah ledger row.",
+        put: "PUT JSON { id, credit/status/proofUrl/notes } untuk mencatat pelunasan/konversi/update; credit baru wajib proofUrl atau notes dan menulis Governance_Audit_Log.",
+      },
     });
   } catch (error) {
     if (isGoogleWorkspaceAuthError(error)) {
@@ -130,5 +135,67 @@ export async function POST(req: NextRequest) {
       }, { status: 503 });
     }
     return NextResponse.json({ error: "Failed to append shareholder ledger", details: String(error) }, { status: 500 });
+  }
+}
+
+export async function PUT(req: NextRequest) {
+  try {
+    const body = await req.json();
+    const id = String(body.id || body.entryId || "").trim();
+    if (!id) return NextResponse.json({ error: "id/entryId wajib diisi" }, { status: 400 });
+
+    const result = await updateShareholderLedgerEntry(id, {
+      date: body.date,
+      shareholder: body.shareholder,
+      type: body.type,
+      division: body.division,
+      description: body.description,
+      debit: body.debit !== undefined ? n(body.debit) : undefined,
+      credit: body.credit !== undefined ? n(body.credit) : undefined,
+      balance: body.balance,
+      approvalStatus: body.approvalStatus || body.status,
+      approvedBy: body.approvedBy,
+      proofUrl: body.proofUrl,
+      notes: body.notes,
+    });
+
+    const beforeOutstanding = result.before.debit - result.before.credit;
+    const afterOutstanding = result.after.debit - result.after.credit;
+    await logGovernanceActionSafe({
+      actor: body.actor || body.approvedBy || "Beriman Juliano",
+      role: body.role || "Finance/Governance",
+      action: afterOutstanding < beforeOutstanding ? "SETTLE_SHAREHOLDER_LEDGER" : "UPDATE_SHAREHOLDER_LEDGER",
+      entityType: "Shareholder Ledger",
+      entityId: id,
+      amount: Math.abs(beforeOutstanding - afterOutstanding) || result.after.debit || result.after.credit,
+      division: result.after.division,
+      before: `${result.before.approvalStatus || "Draft"} | outstanding ${beforeOutstanding}`,
+      after: `${result.after.approvalStatus || "Draft"} | outstanding ${afterOutstanding}`,
+      reason: String(body.reason || result.after.notes || result.after.description || "Update Shareholder_Ledger"),
+      proofUrl: result.after.proofUrl,
+      sourceModule: "/api/shareholder-ledger",
+    });
+
+    return NextResponse.json({
+      success: true,
+      source: SOURCE,
+      sourceStatus: "live",
+      before: result.before,
+      entry: result.after,
+      audit: "Governance_Audit_Log",
+    });
+  } catch (error) {
+    if (isGoogleWorkspaceAuthError(error)) {
+      return NextResponse.json({
+        sourceStatus: "blocked",
+        source: SOURCE,
+        error: "Google Workspace OAuth perlu re-auth sebelum bisa update shareholder ledger",
+        details: String(error),
+      }, { status: 503 });
+    }
+    const message = String(error);
+    if (message.includes("not found")) return NextResponse.json({ error: message }, { status: 404 });
+    if (message.includes("Proof URL atau notes wajib")) return NextResponse.json({ error: message }, { status: 422 });
+    return NextResponse.json({ error: "Failed to update shareholder ledger", details: message }, { status: 500 });
   }
 }
