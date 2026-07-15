@@ -66,6 +66,21 @@ function isMissingCoa(value: string): boolean {
   return !value || normalized.includes("tba") || normalized.includes("belum dicatat") || normalized.includes("belum tersedia");
 }
 
+function isAutomationActor(value: string): boolean {
+  const normalized = value.toLowerCase();
+  return ["agent", "system", "systemswi", "hermes", "hemuhemu", "automation", "cron"].some((marker) => normalized.includes(marker));
+}
+
+function isHumanOnlyApprovalContext(row: string[]): boolean {
+  const haystack = [text(row[4]), text(row[5]), text(row[6]), text(row[8]), text(row[11]), text(row[13])].join(" ").toLowerCase();
+  return ["pajak", "tax", "legal", "termination", "phk", "konflik", "conflict", "related-party", "related party"].some((marker) => haystack.includes(marker));
+}
+
+function isApprovalAction(value: string): boolean {
+  const normalized = value.toLowerCase();
+  return normalized.includes("approve") || normalized.includes("approval") || normalized.includes("submit") || normalized.includes("settle");
+}
+
 function isOverdue(dueDate: string): boolean {
   if (!dueDate) return false;
   const due = new Date(`${dueDate}T00:00:00Z`).getTime();
@@ -316,6 +331,9 @@ export async function GET(req: NextRequest) {
       }))
       .sort((a, b) => b.generatedAt.localeCompare(a.generatedAt))[0] || null;
     const hasMonthlyGcgReport = monthlyGcgReport.length > 0;
+    const humanOnlyAutomationApprovals = governanceAuditLog.filter((row) =>
+      isAutomationActor(text(row[2])) && isApprovalAction(text(row[4])) && isHumanOnlyApprovalContext(row)
+    );
     const recentAuditTrail = governanceAuditLog
       .map((row) => ({
         logId: text(row[0]),
@@ -410,6 +428,7 @@ export async function GET(req: NextRequest) {
         },
         audit: {
           governanceAuditRows: governanceAuditLog.length,
+          humanOnlyAutomationApprovalCount: humanOnlyAutomationApprovals.length,
         },
         monthlyGcgReport: {
           total: monthlyGcgReport.length,
@@ -459,6 +478,7 @@ export async function GET(req: NextRequest) {
         ...tenantReceivableRows.slice(0, 10).map((row) => ({ type: "EVENT_TENANT_RECEIVABLE", severity: Math.max(amount(row[9]) - amount(row[11]), 0) > 2000000 ? "high" : "medium", entityId: text(row[1]) || text(row[0]), description: `${text(row[2]) || "Tenant"} belum lunas`, amount: Math.max(amount(row[9]) - amount(row[11]), 0), owner: text(row[3]) || "Event PIC" })),
         ...sponsorReceivableRows.slice(0, 10).map((row) => ({ type: "EVENT_SPONSOR_RECEIVABLE", severity: amount(row[7]) + amount(row[10]) > 2000000 ? "high" : "medium", entityId: text(row[1]) || text(row[0]), description: `${text(row[2]) || "Sponsor"} belum lunas/follow-up`, amount: amount(row[7]) + amount(row[10]), owner: text(row[3]) || "Event PIC" })),
         ...eventsMissingMedia.slice(0, 10).map((row) => ({ type: "EVENT_CLOSEOUT_MEDIA_MISSING", severity: "medium", entityId: text(row[0]), description: `${text(row[1]) || "Event"} perlu dokumentasi Event_Media untuk closeout`, amount: 0, owner: text(row[6]) || "Event PIC" })),
+        ...humanOnlyAutomationApprovals.slice(0, 10).map((row) => ({ type: "HUMAN_ONLY_APPROVAL_BY_AUTOMATION", severity: "high", entityId: text(row[6]) || text(row[5]) || "Governance_Audit_Log", description: `${text(row[4]) || "Approval"} untuk pajak/legal/termination/COI tercatat oleh actor otomatis; wajib review manusia.`, amount: amount(row[7]), owner: text(row[2]) || "Belum dicatat" })),
         ...(!hasMonthlyGcgReport ? [{ type: "MONTHLY_GCG_REPORT_NOT_RECORDED", severity: "medium", entityId: "Monthly_GCG_Report", description: "Belum ada log laporan bulanan GCG/TARIF untuk pemegang saham", amount: 0, owner: "Direksi/Finance" }] : []),
       ],
       recentAuditTrail,
@@ -468,6 +488,7 @@ export async function GET(req: NextRequest) {
         overdueCompliance.length ? "Tindaklanjuti compliance overdue dan upload bukti setelah selesai." : dueSoonCompliance.length ? "Follow-up compliance due soon (H-7/H-3/H-1) dan siapkan proof URL sebelum status submitted/paid." : completedComplianceMissingProof.length ? "Lengkapi proof URL untuk compliance yang sudah marked submitted/paid/complete." : "Pantau compliance due soon dan jangan menandai submitted tanpa bukti.",
         vendorExceptions.length ? "Lengkapi benchmark vendor dan deklarasi related-party sebelum transaksi besar." : "Vendor register tidak menunjukkan exception dari data terbaca.",
         overduePurchaseOrders.length ? "Review PO/vendor payable yang melewati expected date; update status received/cancelled atau catat alasan keterlambatan." : "Tidak ada open PO melewati expected date dari data Purchase_Orders yang terbaca.",
+        humanOnlyAutomationApprovals.length ? "Review ulang approval pajak/legal/termination/COI yang tercatat oleh actor otomatis; prinsip TARIF mewajibkan keputusan human-only." : "Tidak ada approval human-only oleh automation dari Governance_Audit_Log yang terbaca.",
         eventBudgetOverActualWithoutNotes.length + eventsOverBudgetWithoutNotes.length ? "Lengkapi catatan closeout untuk event/budget row yang actual-nya melewati budget." : tenantReceivableRows.length + sponsorReceivableRows.length ? "Follow-up receivable tenant/sponsor sebelum event closeout dinyatakan selesai." : eventsMissingMedia.length ? "Lengkapi Event_Media untuk event yang sudah selesai/berakhir agar closeout siap dibagikan." : "Event closeout tidak menunjukkan exception dari data terbaca.",
         expensesWithoutVendor.length ? "Hubungkan expense Bahan Baku/Packaging/Sewa Booth ke Vendor_Register atau isi vendor name." : "Expense kategori vendor sudah punya vendor link atau belum ada data.",
         personalPaidNotInLedger.length ? "Cocokkan approved Personal Paid expense ke Shareholder_Ledger." : "Approved personal-paid expense sudah cocok atau belum ada data personal-paid approved.",
