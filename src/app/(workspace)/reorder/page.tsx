@@ -1,10 +1,10 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState, useCallback } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
   Package, AlertTriangle, ShoppingCart, ClipboardList, RefreshCw,
-  Plus, CheckCircle, XCircle, Truck, TrendingDown, DollarSign,
-  ArrowDownCircle, Eye, Send
+  Plus, CheckCircle, Truck, TrendingDown, DollarSign,
+  Eye, Send, X
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -301,7 +301,9 @@ export default function ReorderPage() {
   }
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- initial dashboard load; existing pattern in this page.
     loadAll().catch(console.error);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- initial dashboard load only; load helpers are intentionally not memoized in this legacy page.
   }, []);
 
   /* ── Actions ── */
@@ -340,7 +342,10 @@ export default function ReorderPage() {
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Gagal generate PO");
       setMessageType("success");
-      setMessage(`✅ PO ${json.po.id} dibuat untuk ${json.po.itemName} — ${rupiah(json.po.total)}`);
+      const governanceNote = json.governance?.approvalRequired
+        ? ` — ditahan sebagai draft GCG (${(json.governance.flags || []).join(", ")})`
+        : "";
+      setMessage(`✅ PO ${json.po.id} dibuat untuk ${json.po.itemName} — ${rupiah(json.po.total)}${governanceNote}`);
       setShowGeneratePO(false);
       setSelectedAlert(null);
       await Promise.all([loadReorderData(), loadPendingPOs()]);

@@ -53,6 +53,12 @@ export interface GoodsReceiptRow {
   rowNumber: number;
 }
 
+export type ReorderPoGovernance = {
+  approvalRequired: boolean;
+  flags: string[];
+  requirement: string;
+};
+
 export interface InventoryMasterItem {
   id: string;
   sku: string;
@@ -87,6 +93,22 @@ function stockStatus(qty: number, minQty: number) {
   if (qty <= minQty * 0.5) return "critical";
   if (qty <= minQty) return "low";
   return "ok";
+}
+
+export function classifyReorderPoGovernance(total: number, supplierId: string, supplierName: string): ReorderPoGovernance {
+  const flags: string[] = [];
+  const normalizedSupplier = text(supplierName).toLowerCase();
+  if (total > 500000) flags.push("DIRECTOR_APPROVAL_REQUIRED");
+  if (total > 2000000) flags.push("TWO_BENCHMARKS_REQUIRED");
+  if (!text(supplierId) || !normalizedSupplier || normalizedSupplier === "tba") flags.push("SUPPLIER_NOT_CONFIRMED");
+
+  return {
+    approvalRequired: flags.length > 0,
+    flags,
+    requirement: flags.length
+      ? "Auto-reorder PO ditahan sebagai draft sampai review manusia: > Rp500.000 perlu Direktur; > Rp2.000.000 perlu 2 benchmark; supplier harus jelas/Vendor_Register."
+      : "Normal reorder approval",
+  };
 }
 
 // ── Sheet headers ─────────────────────────────────────────────────
@@ -328,6 +350,8 @@ export async function generatePOFromAlert(
     }
   }
 
+  const total = alert.reorderQty * alert.unitCost;
+  const governance = classifyReorderPoGovernance(total, supId, supplierName);
   const poRow: PurchaseOrderRow = {
     id: poId,
     date,
@@ -338,11 +362,15 @@ export async function generatePOFromAlert(
     quantity: alert.reorderQty,
     unit: "unit",
     unitCost: alert.unitCost,
-    total: alert.reorderQty * alert.unitCost,
-    status: "ordered",
+    total,
+    status: governance.approvalRequired ? "draft" : "ordered",
     expectedDate: "",
     proofUrl: "",
-    notes: `Auto-generated from reorder alert ${alertId}`,
+    notes: [
+      `Auto-generated from reorder alert ${alertId}`,
+      governance.flags.length ? `GCG flags: ${governance.flags.join(", ")}` : "",
+      governance.approvalRequired ? "Status forced draft until human approval is confirmed." : "",
+    ].filter(Boolean).join(" | "),
     rowNumber: pos.length + 2,
   };
 

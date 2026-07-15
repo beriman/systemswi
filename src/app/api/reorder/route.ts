@@ -7,7 +7,9 @@ import {
   generateReorderAlerts,
   generatePOFromAlert,
   getInventoryMaster,
+  classifyReorderPoGovernance,
 } from "@/lib/sheets/reorder-sheets";
+import { logGovernanceActionSafe } from "@/lib/governance/audit";
 
 export const runtime = "nodejs";
 
@@ -87,17 +89,34 @@ export async function POST(request: NextRequest) {
       if (!result) {
         return NextResponse.json({ error: "Gagal generate PO" }, { status: 500 });
       }
+      const governance = classifyReorderPoGovernance(result.po.total, result.po.supplierId, result.po.supplierName);
       const auditStatus = await appendReorderAudit({
         action: "Reorder PO Generated",
         target: `Purchase_Orders:${result.po.id}`,
-        summary: `Generated PO ${result.po.id} from alert ${alertId} for ${result.po.itemName}; qty ${result.po.quantity}; total ${result.po.total}`,
+        summary: `Generated PO ${result.po.id} from alert ${alertId} for ${result.po.itemName}; qty ${result.po.quantity}; total ${result.po.total}; status ${result.po.status}; governance ${governance.flags.join(", ") || "normal"}`,
+      });
+      await logGovernanceActionSafe({
+        actor: text(body.actor || body.pic) || "Auto-Reorder System",
+        role: text(body.role) || "Procurement Automation",
+        action: "GENERATE_REORDER_PURCHASE_ORDER",
+        entityType: "Purchase Order",
+        entityId: result.po.id,
+        amount: result.po.total,
+        division: "Procurement",
+        before: `Reorder alert ${alertId}`,
+        after: result.po.status,
+        reason: `Generated from reorder alert for ${result.po.itemName}; supplier ${result.po.supplierName || "TBA"}. ${governance.requirement} Flags: ${governance.flags.join(", ") || "none"}.`,
+        proofUrl: result.po.proofUrl,
+        sourceModule: "/api/reorder",
       });
       return NextResponse.json({
         success: true,
         action,
         po: result.po,
         alert: result.alert,
+        governance,
         auditStatus,
+        governanceAudit: "Governance_Audit_Log",
         syncedSheets: ["Purchase_Orders", "Reorder_Alerts"],
       }, { status: 201 });
     }
