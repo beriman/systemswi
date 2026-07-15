@@ -130,7 +130,9 @@ export async function GET(req: NextRequest) {
     const vendorRelatedParty = expenses.filter((e) => e.vendorRelatedParty === "Yes");
 
     const currentMonth = today().slice(0, 7);
-    const approvedThisMonth = approved.filter((e) => e.date.startsWith(currentMonth));
+    const reviewedMonth = (e: ExpenseSubmission) => (e.reviewedDate || e.date || "").slice(0, 7);
+    const approvedThisMonth = approved.filter((e) => reviewedMonth(e) === currentMonth);
+    const rejectedThisMonth = rejected.filter((e) => reviewedMonth(e) === currentMonth);
 
     const eventMap: Record<string, { budget: number; actual: number }> = {};
     for (const exp of expenses) {
@@ -184,6 +186,8 @@ export async function GET(req: NextRequest) {
         approvedThisMonthAmount: approvedThisMonth.reduce((sum, e) => sum + e.amount, 0),
         rejectedCount: rejected.length,
         rejectedAmount: rejected.reduce((sum, e) => sum + e.amount, 0),
+        rejectedThisMonthCount: rejectedThisMonth.length,
+        rejectedThisMonthAmount: rejectedThisMonth.reduce((sum, e) => sum + e.amount, 0),
         needsProofCount: needsProof.length,
         needsProofAmount: needsProof.reduce((sum, e) => sum + e.amount, 0),
         withoutDivisionCount: withoutDivision.length,
@@ -205,7 +209,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({
         ...googleWorkspaceDegradedSource(EXPENSES_SOURCE, error),
         expenses: [],
-        stats: { total: 0, pendingCount: 0, pendingAmount: 0, approvedCount: 0, approvedAmount: 0, approvedThisMonthCount: 0, approvedThisMonthAmount: 0, rejectedCount: 0, rejectedAmount: 0, needsProofCount: 0, needsProofAmount: 0, withoutDivisionCount: 0, approvedWithoutDivisionOrCoaCount: 0, withoutPaymentMethodCount: 0, approvedWithoutPaymentMethodCount: 0, personalPaidCount: 0, personalPaidAmount: 0, personalPaidNotInLedgerCount: 0, personalPaidNotInLedgerAmount: 0, vendorRequiredCount: 0, withoutVendorCount: 0, vendorRelatedPartyCount: 0 },
+        stats: { total: 0, pendingCount: 0, pendingAmount: 0, approvedCount: 0, approvedAmount: 0, approvedThisMonthCount: 0, approvedThisMonthAmount: 0, rejectedCount: 0, rejectedAmount: 0, rejectedThisMonthCount: 0, rejectedThisMonthAmount: 0, needsProofCount: 0, needsProofAmount: 0, withoutDivisionCount: 0, approvedWithoutDivisionOrCoaCount: 0, withoutPaymentMethodCount: 0, approvedWithoutPaymentMethodCount: 0, personalPaidCount: 0, personalPaidAmount: 0, personalPaidNotInLedgerCount: 0, personalPaidNotInLedgerAmount: 0, vendorRequiredCount: 0, withoutVendorCount: 0, vendorRelatedPartyCount: 0 },
         budgetVsActual: {},
       });
     }

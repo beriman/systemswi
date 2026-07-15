@@ -45,6 +45,8 @@ interface ExpenseStats {
   approvedThisMonthAmount: number;
   rejectedCount: number;
   rejectedAmount: number;
+  rejectedThisMonthCount?: number;
+  rejectedThisMonthAmount?: number;
   needsProofCount?: number;
   needsProofAmount?: number;
   withoutDivisionCount?: number;
@@ -605,7 +607,7 @@ export default function ExpensesPage() {
       ) : tab === "dashboard" ? (
         <>
           {/* Stats KPI */}
-          <div className="grid gap-4 md:grid-cols-4">
+          <div className="grid gap-4 md:grid-cols-5">
             <Card>
               <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Total Pending</CardTitle></CardHeader>
               <CardContent>
@@ -625,6 +627,13 @@ export default function ExpensesPage() {
               <CardContent>
                 <div className="text-2xl font-bold">{stats?.approvedCount || 0}</div>
                 <div className="text-xs text-muted-foreground">{formatCurrency(stats?.approvedAmount || 0)}</div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Rejected Bulan Ini</CardTitle></CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-red-600">{stats?.rejectedThisMonthCount || 0}</div>
+                <div className="text-xs text-muted-foreground">{formatCurrency(stats?.rejectedThisMonthAmount || 0)}</div>
               </CardContent>
             </Card>
             <Card>
