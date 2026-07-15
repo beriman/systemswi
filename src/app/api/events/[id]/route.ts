@@ -221,6 +221,29 @@ export async function GET(
       .map(([category, amount]) => ({ category, amount: Number(amount) || 0 }))
       .sort((a, b) => b.amount - a.amount);
 
+    const closeoutBlockers = [
+      plannedTotal <= 0 ? "Budget/RAB belum dicatat" : "",
+      actualExpenseTotal <= 0 ? "Actual expense belum tercatat" : "",
+      expensesWithoutProof > 0 ? `${expensesWithoutProof} expense belum punya proof URL` : "",
+      expensesNeedsProof > 0 ? `${expensesNeedsProof} expense masih Needs Proof` : "",
+      tenantReceivable + sponsorReceivable > 0 ? `Receivable belum tertagih ${tenantReceivable + sponsorReceivable}` : "",
+      eventMedia.length === 0 ? "Dokumentasi media belum dicatat" : "",
+      !event.notes ? "Lessons learned/catatan closeout belum dicatat" : "",
+      governanceAuditTrail.length === 0 && eventExpenses.length > 0 ? "Governance_Audit_Log belum terhubung ke expense/event ini" : "",
+    ].filter(Boolean);
+
+    const closeoutReadinessChecks = [
+      plannedTotal > 0,
+      actualExpenseTotal > 0,
+      expensesWithoutProof === 0,
+      expensesNeedsProof === 0,
+      tenantReceivable + sponsorReceivable === 0,
+      eventMedia.length > 0,
+      Boolean(event.notes),
+      eventExpenses.length === 0 || governanceAuditTrail.length > 0,
+    ];
+    const closeoutReadinessScore = Math.round((closeoutReadinessChecks.filter(Boolean).length / closeoutReadinessChecks.length) * 100);
+
     const closeout = {
       plannedBudget: plannedTotal,
       actualExpense: actualExpenseTotal,
@@ -238,6 +261,8 @@ export async function GET(
       payableFromPurchaseOrders: payablePurchaseOrderTotal,
       purchaseOrderPayableCount: eventPurchaseOrders.filter((item) => isOpenPoStatus(item.status)).length,
       finalProfitLoss: revenuePaidTotal - actualExpenseTotal,
+      closeoutReadinessScore,
+      closeoutBlockers,
       expensesWithoutProof,
       expensesNeedsProof,
       personalPaidExpenses: eventExpenses.filter((item) => item.paymentMethod === "Personal Paid" || item.shareholderDebtFlag).length,

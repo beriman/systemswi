@@ -136,6 +136,8 @@ interface CloseoutSummary {
   payableFromPurchaseOrders?: number;
   purchaseOrderPayableCount?: number;
   finalProfitLoss: number;
+  closeoutReadinessScore?: number;
+  closeoutBlockers?: string[];
   expensesWithoutProof: number;
   expensesNeedsProof: number;
   personalPaidExpenses: number;
@@ -1032,6 +1034,30 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
                   </CardContent>
                 </Card>
               </div>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Closeout Readiness</CardTitle>
+                  <CardDescription>Checklist kesiapan laporan final event sebelum dibagikan ke direksi/pemegang saham.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-muted-foreground">Skor kesiapan</span>
+                    <Badge className={(closeout.closeoutReadinessScore || 0) >= 80 ? "bg-green-100 text-green-700" : (closeout.closeoutReadinessScore || 0) >= 60 ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-700"}>
+                      {closeout.closeoutReadinessScore ?? 0}/100
+                    </Badge>
+                  </div>
+                  {closeout.closeoutBlockers?.length ? (
+                    <ul className="space-y-1 text-sm text-amber-800">
+                      {closeout.closeoutBlockers.map((item) => (
+                        <li key={item}>• {item}</li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-sm text-green-700">Tidak ada blocker utama. Tetap lakukan review manusia sebelum publikasi laporan.</p>
+                  )}
+                </CardContent>
+              </Card>
 
               <div className="grid gap-4 lg:grid-cols-2">
                 <Card>
