@@ -39,6 +39,8 @@ type SheetContext = {
   eventCloseoutSummary?: Array<{
     id: string;
     name: string;
+    actualExpense: number;
+    payable: number;
     tenantExpected: number;
     tenantPaid: number;
     sponsorExpected: number;
@@ -99,6 +101,7 @@ async function readContext(): Promise<SheetContext> {
     vendorRegister,
     governanceAuditLog,
     eventMedia,
+    purchaseOrders,
   ] = await Promise.all([
     readRange("Laporan_Bulanan!A1:P16").catch(emptyOnAuthError),
     readEventSheet(EVENT_SHEETS.Tenants).catch(emptyOnAuthError),
@@ -113,6 +116,7 @@ async function readContext(): Promise<SheetContext> {
     readRange("Vendor_Register!A1:L1000").catch(emptyOnAuthError),
     readRange("Governance_Audit_Log!A1:N1000").catch(emptyOnAuthError),
     readRange("Event_Media!A1:K1000").catch(emptyOnAuthError),
+    readRange("Purchase_Orders!A1:N1000").catch(emptyOnAuthError),
   ]);
 
   const unpaidTenants = tenants.slice(1).filter((row) => {
@@ -249,8 +253,25 @@ async function readContext(): Promise<SheetContext> {
   const eventCloseoutSummary = events.slice(1).filter((row) => text(row[0])).map((row) => {
     const eventId = text(row[0]);
     const eventName = text(row[1]) || eventId;
+    const eventSlug = text(row[2]);
     const tenantRowsForEvent = tenants.slice(1).filter((tenant) => text(tenant[1]) === eventId || text(tenant[1]) === eventName);
     const sponsorRowsForEvent = sponsors.slice(1).filter((sponsor) => text(sponsor[1]) === eventId || text(sponsor[1]) === eventName);
+    const expenseRowsForEvent = expenseSubmissions.slice(1).filter((expense) => text(expense[3]) === eventId || text(expense[3]) === eventName);
+    const actualExpense = expenseRowsForEvent
+      .filter((expense) => ["approved", "paid", "lunas", "settled", "completed", "submitted"].includes(text(expense[8]).toLowerCase()))
+      .reduce((sum, expense) => sum + amount(expense[6]), 0);
+    const payableFromExpenses = expenseRowsForEvent
+      .filter((expense) => ["pending", "needs proof", "butuh bukti", "approved"].includes(text(expense[8]).toLowerCase()) && text(expense[14]) !== "Personal Paid")
+      .reduce((sum, expense) => sum + amount(expense[6]), 0);
+    const matchTokens = [eventId, eventName, eventSlug].map((value) => value.toLowerCase()).filter(Boolean);
+    const payableFromPurchaseOrders = purchaseOrders.slice(1)
+      .filter((po) => {
+        const status = text(po[10]).toLowerCase();
+        if (!["draft", "ordered", "partial"].includes(status)) return false;
+        const haystack = [po[0], po[3], po[4], po[5], po[13]].map((value) => text(value).toLowerCase()).join(" ");
+        return matchTokens.some((token) => haystack.includes(token));
+      })
+      .reduce((sum, po) => sum + amount(po[9]), 0);
     const tenantExpected = tenantRowsForEvent.reduce((sum, tenant) => sum + amount(tenant[9]), 0);
     const tenantPaid = tenantRowsForEvent.reduce((sum, tenant) => sum + amount(tenant[11]), 0);
     const sponsorExpected = sponsorRowsForEvent.reduce((sum, sponsor) => sum + amount(sponsor[7]) + amount(sponsor[10]), 0);
@@ -261,6 +282,8 @@ async function readContext(): Promise<SheetContext> {
     return {
       id: eventId,
       name: eventName,
+      actualExpense,
+      payable: payableFromExpenses + payableFromPurchaseOrders,
       tenantExpected,
       tenantPaid,
       sponsorExpected,

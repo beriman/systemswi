@@ -51,6 +51,8 @@ export type RabContext = {
   eventCloseoutSummary?: Array<{
     id: string;
     name: string;
+    actualExpense: number;
+    payable: number;
     tenantExpected: number;
     tenantPaid: number;
     sponsorExpected: number;
@@ -391,6 +393,7 @@ function generateEventCloseoutReport(data: Record<string, string>, letterNumber:
     const revenuePaid = tenantPaid + sponsorPaid;
     const revenueExpected = tenantExpected + sponsorExpected;
     const receivable = eventCommercial?.receivable ?? (context?.tenantOutstanding || 0) + (context?.sponsorPipelineValue || 0);
+    const payable = eventCommercial?.payable ?? 0;
     const mediaRows = eventCommercial?.mediaRows ?? context?.eventMediaRows ?? 0;
     const eventTable = rows.length
         ? `| Event | Budget | Actual | Remaining | Status |\n|---|---:|---:|---:|---|\n${rows.map((event) => `| ${event.name || "TBA"} | ${rupiah(event.budget)} | ${rupiah(event.actual)} | ${rupiah(event.remaining)} | ${event.status || "TBA"} |`).join("\n")}`
@@ -411,6 +414,7 @@ ${eventTable}
 
 - Total budget terbaca: **${rupiah(budget)}**
 - Total actual terbaca: **${rupiah(actual)}**
+- Actual expense dari Expense_Submissions: **${rupiah(eventCommercial?.actualExpense ?? 0)}**${eventCommercial ? "" : " (pilih event yang cocok untuk angka per-event)"}
 - Remaining / variance: **${rupiah(remaining)}**
 
 ## 2. Revenue, Receivable, Payable
@@ -418,7 +422,7 @@ ${eventTable}
 - Sponsor revenue paid / expected: **${rupiah(sponsorPaid)} / ${rupiah(sponsorExpected)}**
 - Total revenue paid / expected: **${rupiah(revenuePaid)} / ${rupiah(revenueExpected)}**
 - Receivable event: **${rupiah(receivable)}**${eventCommercial ? "" : " (fallback global tenant/sponsor outstanding; pilih event yang cocok untuk angka per-event)"}
-- Payable yang belum tercatat di Sheets: **TBA** — jangan diisi manual tanpa source.
+- Payable event dari Expense_Submissions + Purchase_Orders: **${rupiah(payable)}**${eventCommercial ? "" : " (0/TBA karena event belum cocok ke data closeout)"}
 
 ## 3. Dokumentasi Media
 - Media rows tercatat di Event_Media: **${mediaRows}**.
