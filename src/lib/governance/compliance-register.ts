@@ -98,9 +98,13 @@ function daysUntil(date: string): number | null {
   return Math.ceil((due.getTime() - today.getTime()) / 86400000);
 }
 
+function isCompletedStatus(status: string): boolean {
+  return ["submitted", "paid", "complete", "completed"].includes(status.toLowerCase());
+}
+
 function badgeFor(status: string, days: number | null): ComplianceRegisterEntry["riskBadge"] {
   const normalized = status.toLowerCase();
-  if (["submitted", "paid", "complete", "completed"].includes(normalized)) return "green";
+  if (isCompletedStatus(normalized)) return "green";
   if (normalized === "tba") return "gray";
   if (normalized === "overdue") return "red";
   if (days !== null && days < 0) return "red";
@@ -164,15 +168,22 @@ export async function listComplianceRegister(): Promise<ComplianceRegisterEntry[
 export async function appendComplianceRegisterEntry(entry: Partial<NewComplianceRegisterEntry>): Promise<ComplianceRegisterEntry> {
   await ensureComplianceRegisterSheet();
   const area = text(entry.area) || "GCG";
+  const status = text(entry.status) || "Not Started";
+  const sourceProof = text(entry.sourceProof);
+
+  if (isCompletedStatus(status) && !sourceProof) {
+    throw new Error("Source Proof wajib diisi sebelum compliance ditandai Submitted/Paid/Complete.");
+  }
+
   const row = [
     text(entry.id) || makeComplianceId(area),
     area,
     text(entry.obligation) || "Belum dicatat",
     text(entry.period) || "TBA",
     text(entry.dueDate),
-    text(entry.status) || "Not Started",
+    status,
     text(entry.owner) || "Belum dicatat",
-    text(entry.sourceProof),
+    sourceProof,
     text(entry.riskLevel) || "Medium",
     text(entry.notes),
   ];
@@ -193,9 +204,8 @@ export async function updateComplianceRegisterEntry(
   const before = parseComplianceRegisterRows([COMPLIANCE_REGISTER_HEADERS, existingRow])[0];
   const nextStatus = text(patch.status) || before.status || "Not Started";
   const nextProof = patch.sourceProof !== undefined ? text(patch.sourceProof) : before.sourceProof;
-  const completedStatuses = new Set(["submitted", "paid", "complete", "completed"]);
 
-  if (completedStatuses.has(nextStatus.toLowerCase()) && !nextProof) {
+  if (isCompletedStatus(nextStatus) && !nextProof) {
     throw new Error("Source Proof wajib diisi sebelum compliance ditandai Submitted/Paid/Complete.");
   }
 
@@ -242,13 +252,13 @@ export async function seedKnownComplianceRegisterItems(): Promise<{ seeded: numb
 }
 
 export function summarizeComplianceRegister(entries: ComplianceRegisterEntry[]) {
-  const open = entries.filter((entry) => !["submitted", "paid", "complete", "completed"].includes(entry.status.toLowerCase()));
+  const open = entries.filter((entry) => !isCompletedStatus(entry.status));
   return {
     total: entries.length,
     open: open.length,
     overdue: entries.filter((entry) => entry.riskBadge === "red").length,
     dueSoon: entries.filter((entry) => entry.riskBadge === "yellow").length,
     completed: entries.filter((entry) => entry.riskBadge === "green").length,
-    missingProof: entries.filter((entry) => !entry.sourceProof && ["submitted", "paid", "complete", "completed"].includes(entry.status.toLowerCase())).length,
+    missingProof: entries.filter((entry) => !entry.sourceProof && isCompletedStatus(entry.status)).length,
   };
 }

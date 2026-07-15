@@ -40,6 +40,28 @@ function text(value: unknown): string {
   return String(value ?? "").trim();
 }
 
+function isCompletedStatus(value: unknown): boolean {
+  return ["submitted", "paid", "complete", "completed"].includes(text(value).toLowerCase());
+}
+
+function isAutomationActor(value: unknown): boolean {
+  const normalized = text(value).toLowerCase();
+  return ["agent", "system", "systemswi", "hermes", "hemuhemu", "automation", "cron", "etika tarif"].some((marker) => normalized.includes(marker));
+}
+
+function isHumanOnlyArea(value: unknown): boolean {
+  const normalized = text(value).toLowerCase();
+  return ["lkpm", "pajak", "tax", "bpjs", "bpjskt", "bpjsks", "legal", "bpom", "halal"].some((marker) => normalized.includes(marker));
+}
+
+function validateHumanCompletion(body: Record<string, unknown>) {
+  if (!isCompletedStatus(body.status)) return null;
+  const area = body.area || body.obligation || body.id || body.complianceId;
+  if (!isHumanOnlyArea(area)) return null;
+  if (!isAutomationActor(body.actor)) return null;
+  return "Compliance LKPM/BPJS/Pajak/legal/BPOM/Halal hanya boleh ditandai Submitted/Paid/Complete oleh aktor manusia dengan Source Proof; agent/cron hanya boleh membuat draft/reminder.";
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -70,6 +92,11 @@ export async function POST(req: NextRequest) {
 
     if (!body.area || !body.obligation) {
       return NextResponse.json({ error: "area and obligation are required" }, { status: 400 });
+    }
+
+    const humanCompletionError = validateHumanCompletion(body);
+    if (humanCompletionError) {
+      return NextResponse.json({ error: humanCompletionError }, { status: 422 });
     }
 
     const entry = await appendComplianceRegisterEntry({
@@ -119,6 +146,18 @@ export async function PUT(req: NextRequest) {
     const body = await req.json();
     const id = text(body.id || body.complianceId);
     if (!id) return NextResponse.json({ error: "id/complianceId wajib diisi" }, { status: 400 });
+
+    const currentEntries = await listComplianceRegister();
+    const current = currentEntries.find((entry) => entry.id === id);
+    if (!current) return NextResponse.json({ error: `Compliance item not found: ${id}` }, { status: 404 });
+    const humanCompletionError = validateHumanCompletion({
+      ...body,
+      area: body.area ?? current.area,
+      obligation: body.obligation ?? current.obligation,
+    });
+    if (humanCompletionError) {
+      return NextResponse.json({ error: humanCompletionError }, { status: 422 });
+    }
 
     const result = await updateComplianceRegisterEntry(id, {
       area: body.area,
