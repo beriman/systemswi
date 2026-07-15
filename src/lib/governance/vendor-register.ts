@@ -62,10 +62,13 @@ function classifyVendor(entry: Omit<VendorRegisterEntry, "riskFlags" | "approval
   if (isYes(entry.relatedParty) && !entry.relationshipDetail) riskFlags.push("MISSING_RELATIONSHIP_DETAIL");
   if (!entry.priceBenchmark1 || !entry.priceBenchmark2) riskFlags.push("BENCHMARK_INCOMPLETE");
   if (!entry.selectedReason) riskFlags.push("MISSING_SELECTED_REASON");
+  if (!entry.paymentTerm || ["tba", "belum dicatat"].includes(entry.paymentTerm.toLowerCase())) riskFlags.push("MISSING_PAYMENT_TERM");
   if (!entry.lastReview) riskFlags.push("NEEDS_REVIEW_DATE");
 
   const approvalRequirement = isYes(entry.relatedParty)
     ? "Direktur approve + catatan konflik kepentingan + minimal 2 pembanding"
+    : (!entry.paymentTerm || ["tba", "belum dicatat"].includes(entry.paymentTerm.toLowerCase()))
+      ? "Lengkapi payment term (DP/Lunas/Net 7/dll) sebelum PO/expense material"
     : (!entry.priceBenchmark1 || !entry.priceBenchmark2)
       ? "Lengkapi minimal 2 pembanding sebelum transaksi besar (> Rp2.000.000)"
       : "Normal procurement approval";
@@ -185,6 +188,7 @@ export function summarizeVendorRegister(entries: VendorRegisterEntry[]) {
     trial: entries.filter((entry) => entry.status.toLowerCase() === "trial").length,
     relatedParty: entries.filter((entry) => isYes(entry.relatedParty)).length,
     benchmarkIncomplete: entries.filter((entry) => entry.riskFlags.includes("BENCHMARK_INCOMPLETE")).length,
+    missingPaymentTerm: entries.filter((entry) => entry.riskFlags.includes("MISSING_PAYMENT_TERM")).length,
     needsReview: entries.filter((entry) => entry.riskFlags.includes("NEEDS_REVIEW_DATE")).length,
     exceptions: entries.filter((entry) => entry.riskFlags.length > 0).length,
   };
