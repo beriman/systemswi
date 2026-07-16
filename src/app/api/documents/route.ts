@@ -411,7 +411,11 @@ export async function POST(req: NextRequest) {
       eventMediaRows: context.eventMediaRows,
       closeoutCandidateEvents: context.closeoutCandidateEvents,
       eventMissingMediaCount: context.eventMissingMediaCount,
+      eventOverBudgetRows: context.eventOverBudgetRows,
+      eventOverBudgetWithoutNotes: context.eventOverBudgetWithoutNotes,
       eventCloseoutSummary: context.eventCloseoutSummary,
+      sourceStatus: context.sourceStatus,
+      warning: context.warning,
     };
     const content = appendContext(generateDocumentContent(rawType, data, text(body.letterNumber), rabContext), context);
     const template = getTemplateByType(rawType);
