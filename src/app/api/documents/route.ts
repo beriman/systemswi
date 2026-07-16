@@ -36,6 +36,8 @@ type SheetContext = {
   eventMediaRows?: number;
   closeoutCandidateEvents?: number;
   eventMissingMediaCount?: number;
+  eventOverBudgetRows?: number;
+  eventOverBudgetWithoutNotes?: number;
   eventCloseoutSummary?: Array<{
     id: string;
     name: string;
@@ -157,6 +159,8 @@ async function readContext(): Promise<SheetContext> {
   const budgetByCategory: Record<string, number> = {};
   let totalBudget = 0;
   let totalActual = 0;
+  let eventOverBudgetRows = 0;
+  let eventOverBudgetWithoutNotes = 0;
   const eventBudgetSummary: Array<{ name: string; budget: number; actual: number; remaining: number; status: string }> = [];
 
   const eventNames = new Map<string, string>();
@@ -189,6 +193,10 @@ async function readContext(): Promise<SheetContext> {
       existing.budget += evtBudget;
       existing.actual += evtActual;
       const note = text(row[notesIdx]);
+      if (evtBudget > 0 && evtActual > evtBudget) {
+        eventOverBudgetRows += 1;
+        if (!note) eventOverBudgetWithoutNotes += 1;
+      }
       if (note) existing.notes.push(note);
       byEvent.set(eventId, existing);
     }
@@ -334,6 +342,8 @@ async function readContext(): Promise<SheetContext> {
     eventMediaRows: Math.max(eventMedia.length - 1, 0),
     closeoutCandidateEvents: closeoutCandidateRows.length,
     eventMissingMediaCount,
+    eventOverBudgetRows,
+    eventOverBudgetWithoutNotes,
     eventCloseoutSummary,
     notes: [
       `Finance source: Laporan_Bulanan (${Math.max(finance.length - 1, 0)} data rows).`,
