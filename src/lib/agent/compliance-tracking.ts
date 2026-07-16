@@ -50,7 +50,7 @@ export interface ComplianceRegisterReminder {
   riskLevel: string;
   notes: string;
   daysUntilDue: number;
-  reminderStage: "overdue" | "H-1" | "H-3" | "H-7";
+  reminderStage: "overdue" | "H-1" | "H-3" | "H-7" | "missing_proof";
 }
 
 // ── Helpers ────────────────────────────────────────────────────────
@@ -175,10 +175,16 @@ async function readComplianceRegisterReminders(): Promise<ComplianceRegisterRemi
     const id = text(row[0]);
     const dueDate = text(row[4]);
     const status = text(row[5]) || "Not Started";
-    if (!id || !dueDate || closedStatuses.has(status.toLowerCase())) continue;
+    const sourceProof = text(row[7]);
+    if (!id) continue;
 
-    const days = daysUntil(dueDate);
-    const stage = registerReminderStage(days);
+    const days = dueDate ? daysUntil(dueDate) : 9999;
+    const isClosed = closedStatuses.has(status.toLowerCase());
+    const stage = isClosed && !sourceProof
+      ? "missing_proof"
+      : dueDate
+        ? registerReminderStage(days)
+        : null;
     if (!stage) continue;
 
     reminders.push({
@@ -189,7 +195,7 @@ async function readComplianceRegisterReminders(): Promise<ComplianceRegisterRemi
       dueDate,
       status,
       owner: text(row[6]) || "Compliance/Finance",
-      sourceProof: text(row[7]),
+      sourceProof,
       riskLevel: text(row[8]) || "TBA",
       notes: text(row[9]),
       daysUntilDue: days,
@@ -257,8 +263,10 @@ export function formatComplianceForTelegram(report: ComplianceReport): string {
     for (const item of report.register.slice(0, 8)) {
       const timing = item.reminderStage === "overdue"
         ? `${Math.abs(item.daysUntilDue)} hari overdue`
-        : item.reminderStage;
-      text += `   • ${item.area} — ${item.obligation} (${item.period}) due ${item.dueDate} / ${timing}; owner ${item.owner}; proof ${item.sourceProof ? "ada" : "Belum dicatat"}\n`;
+        : item.reminderStage === "missing_proof"
+          ? "selesai tanpa proof URL"
+          : item.reminderStage;
+      text += `   • ${item.area} — ${item.obligation} (${item.period}) due ${item.dueDate || "TBA"} / ${timing}; owner ${item.owner}; proof ${item.sourceProof ? "ada" : "Belum dicatat"}\n`;
     }
     text += `\n`;
   }

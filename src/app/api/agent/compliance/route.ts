@@ -20,6 +20,7 @@ export async function GET() {
       expired: report.expired,
       expiringSoon: report.expiringSoon,
       registerReminders: report.register.length,
+      registerMissingProof: report.register.filter((item) => item.reminderStage === "missing_proof").length,
       valid: report.valid,
     });
   } catch (error) {
@@ -41,7 +42,7 @@ export async function POST() {
       target: "Compliance_Checks + Legal_Compliance + Compliance_Register",
       status: report.totalAlerts === 0 ? "success" : "success",
       humanApproved: "n/a",
-      notes: `Expired: ${report.expired}, Expiring: ${report.expiringSoon}, Register reminders: ${report.register.length}, Valid: ${report.valid}`,
+      notes: `Expired: ${report.expired}, Expiring: ${report.expiringSoon}, Register reminders: ${report.register.length}, Missing proof: ${report.register.filter((item) => item.reminderStage === "missing_proof").length}, Valid: ${report.valid}`,
     });
 
     let telegramSent = false;
