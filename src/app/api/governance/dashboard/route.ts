@@ -445,7 +445,13 @@ export async function GET(req: NextRequest) {
     const complianceOnTimeScore = percent(complianceRegister.length - overdueCompliance.length, complianceRegister.length);
     const complianceProofScore = percent(completedCompliance.length - completedComplianceMissingProof.length, completedCompliance.length);
     const responsibilityScore = Math.round((complianceOnTimeScore + complianceProofScore) / 2);
-    const independencyScore = Math.round((percent(vendorWithBenchmark.length, vendorRegister.length) + percent(expenseVendorRequired.length - expensesWithoutVendor.length, expenseVendorRequired.length)) / 2);
+    const vendorGovernanceComplete = activeVendorRows.filter((row) =>
+      Boolean(text(row[6])) && Boolean(text(row[7])) && Boolean(text(row[8])) && !isMissingVendorPaymentTerm(text(row[9]))
+    );
+    const independencyScore = Math.round((
+      percent(vendorGovernanceComplete.length, activeVendorRows.length)
+      + percent(expenseVendorRequired.length - expensesWithoutVendor.length, expenseVendorRequired.length)
+    ) / 2);
     const fairnessScore = Math.round((
       percent(approvedPersonalPaidExpenses.length - personalPaidNotInLedger.length, approvedPersonalPaidExpenses.length)
       + percent(openPurchaseOrders.length - overduePurchaseOrders.length, openPurchaseOrders.length)

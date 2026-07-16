@@ -243,7 +243,9 @@ async function readContext(): Promise<ReportContext> {
   const vendorRelatedParty = vendorRows.filter((row) => ["yes", "ya", "true", "1"].includes(text(row[4]).toLowerCase()));
   const vendorExceptionCount = vendorRows.filter((row) => {
     const related = ["yes", "ya", "true", "1"].includes(text(row[4]).toLowerCase());
-    return related || !text(row[6]) || !text(row[7]) || !text(row[8]);
+    const missingBenchmark = !text(row[6]) || !text(row[7]) || !text(row[8]);
+    const missingPaymentTerm = !text(row[9]) || ["tba", "belum dicatat", "belum tersedia"].some((marker) => text(row[9]).toLowerCase().includes(marker));
+    return related || missingBenchmark || missingPaymentTerm;
   }).length;
 
   const degraded = googleAuthError ? googleWorkspaceDegradedSource("Google Sheets report context", googleAuthError) : null;
