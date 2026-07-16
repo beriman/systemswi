@@ -30,6 +30,7 @@ type SheetContext = {
   shareholderDebtOutstanding?: number;
   complianceOpenCount?: number;
   complianceOverdueCount?: number;
+  complianceCompletedWithoutProofCount?: number;
   vendorExceptionCount?: number;
   vendorRelatedPartyCount?: number;
   governanceAuditRows?: number;
@@ -233,6 +234,10 @@ async function readContext(): Promise<SheetContext> {
     const status = text(row[5]).toLowerCase();
     return text(row[0]) && !["submitted", "paid", "complete", "completed"].includes(status);
   });
+  const complianceCompletedWithoutProof = complianceRegister.slice(1).filter((row) => {
+    const status = text(row[5]).toLowerCase();
+    return text(row[0]) && ["submitted", "paid", "complete", "completed"].includes(status) && !text(row[7]);
+  });
   const today = new Date(`${new Date().toISOString().slice(0, 10)}T00:00:00Z`).getTime();
   const complianceOverdue = complianceOpen.filter((row) => {
     const due = text(row[4]);
@@ -336,6 +341,7 @@ async function readContext(): Promise<SheetContext> {
     shareholderDebtOutstanding,
     complianceOpenCount: complianceOpen.length,
     complianceOverdueCount: complianceOverdue.length,
+    complianceCompletedWithoutProofCount: complianceCompletedWithoutProof.length,
     vendorExceptionCount: vendorException.length,
     vendorRelatedPartyCount: vendorRelatedParty.length,
     governanceAuditRows: Math.max(governanceAuditLog.length - 1, 0),
@@ -352,6 +358,7 @@ async function readContext(): Promise<SheetContext> {
       `Inventory source: Inventory_Master ${Math.max(inventory.length - 1, 0)} rows; ${lowStock} item low/critical.`,
       `Budget source: ${eventBudgetSummary.length} event budgets, total budget ${totalBudget.toLocaleString("id-ID")}.`,
       `GCG source: ${expenseRows.length} expenses, ${Math.max(governanceAuditLog.length - 1, 0)} governance audit rows, ${complianceOpen.length} open compliance items.`,
+      `GCG compliance proof source: ${complianceCompletedWithoutProof.length} completed compliance items belum punya Source Proof.`,
       `Event closeout source: Event_Media ${Math.max(eventMedia.length - 1, 0)} rows; ${eventMissingMediaCount}/${closeoutCandidateRows.length} closeout candidate events belum punya media.`,
       ...(degraded ? [degraded.warning] : []),
     ],
@@ -405,6 +412,7 @@ export async function POST(req: NextRequest) {
       shareholderDebtOutstanding: context.shareholderDebtOutstanding,
       complianceOpenCount: context.complianceOpenCount,
       complianceOverdueCount: context.complianceOverdueCount,
+      complianceCompletedWithoutProofCount: context.complianceCompletedWithoutProofCount,
       vendorExceptionCount: context.vendorExceptionCount,
       vendorRelatedPartyCount: context.vendorRelatedPartyCount,
       governanceAuditRows: context.governanceAuditRows,

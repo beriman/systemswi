@@ -42,6 +42,7 @@ export type RabContext = {
   shareholderDebtOutstanding?: number;
   complianceOpenCount?: number;
   complianceOverdueCount?: number;
+  complianceCompletedWithoutProofCount?: number;
   vendorExceptionCount?: number;
   vendorRelatedPartyCount?: number;
   governanceAuditRows?: number;
@@ -495,6 +496,8 @@ ${sourceLine}
 ## Responsibility
 - Compliance open: **${context?.complianceOpenCount || 0}** item.
 - Compliance overdue: **${context?.complianceOverdueCount || 0}** item.
+- Compliance selesai tanpa Source Proof: **${context?.complianceCompletedWithoutProofCount || 0}** item.
+- Status compliance yang sudah submitted/paid tetap belum layak dibagikan ke pemegang saham jika proof URL belum tercatat.
 
 ## Independency
 - Vendor exception/benchmark/COI perlu review: **${context?.vendorExceptionCount || 0}** vendor.
