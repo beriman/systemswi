@@ -74,7 +74,7 @@ type DashboardPayload = {
     };
     compliance?: { total: number; open: number; overdue: number; dueSoon: number; completedWithoutProof: number };
     vendor?: { total: number; relatedParty: number; exceptions: number; benchmarkComplete: number; openPo?: number; overduePo?: number; overduePoValue?: number; missingPaymentTerm?: number };
-    audit?: { governanceAuditRows: number; humanOnlyAutomationApprovalCount?: number };
+    audit?: { governanceAuditRows: number; humanOnlyAutomationApprovalCount?: number; expenseClosedMissingAuditCount?: number };
     monthlyGcgReport?: { total: number; currentPeriod?: string; isCurrentPeriodRecorded?: boolean; latestPeriod: string; latestGeneratedAt: string; latestStatus: string };
     event?: {
       events: number;
@@ -320,6 +320,7 @@ export default function GovernancePage() {
               <div className="flex justify-between text-red-600"><span>Approved missing division/COA</span><b>{expenses?.approvedWithoutDivisionOrCoaCount || 0}</b></div>
               <div className="flex justify-between text-red-600"><span>Approved missing payment method</span><b>{expenses?.approvedWithoutPaymentMethodCount || 0}</b></div>
               <div className="flex justify-between text-red-600"><span>Human-only by automation</span><b>{audit?.humanOnlyAutomationApprovalCount || 0}</b></div>
+              <div className="flex justify-between text-red-600"><span>Closed expense missing audit</span><b>{audit?.expenseClosedMissingAuditCount || 0}</b></div>
               <div className="flex justify-between"><span>Personal paid not in ledger</span><b>{expenses?.personalPaidNotInLedgerCount || 0}</b></div>
             </CardContent>
           </Card>
