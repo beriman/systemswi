@@ -189,6 +189,8 @@ interface ShareholderLedgerData {
     over60DaysCount?: number;
     over60DaysAmount?: number;
     unagedCount?: number;
+    overpaidCount?: number;
+    overpaidAmount?: number;
     personalPaidCount: number;
     personalPaidAmount: number;
   };
@@ -804,6 +806,10 @@ export default function FinancePage() {
                       <div className="rounded-lg border bg-background p-3">
                         <div className="text-xs text-muted-foreground">Tanggal TBA</div>
                         <div className="text-lg font-bold">{shareholderLedger.stats.unagedCount || 0}</div>
+                      </div>
+                      <div className="rounded-lg border bg-background p-3">
+                        <div className="text-xs text-muted-foreground">Credit melebihi debit</div>
+                        <div className="text-lg font-bold text-amber-700">{shareholderLedger.stats.overpaidCount || 0} • {formatCurrency(shareholderLedger.stats.overpaidAmount || 0)}</div>
                       </div>
                     </div>
                     <div className="rounded-md border bg-background overflow-auto">

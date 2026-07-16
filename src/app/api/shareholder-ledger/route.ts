@@ -44,6 +44,9 @@ export async function GET() {
     const over30Days = outstandingEntries.filter((entry) => entry.ageDays !== null && entry.ageDays > 30);
     const over60Days = outstandingEntries.filter((entry) => entry.ageDays !== null && entry.ageDays > 60);
     const unaged = outstandingEntries.filter((entry) => entry.ageDays === null);
+    const overpaidEntries = entries
+      .map((entry) => ({ ...entry, overpaid: entry.credit - entry.debit }))
+      .filter((entry) => entry.overpaid > 0 && !isClosed(entry.approvalStatus));
     const outstandingDebt = outstandingEntries.reduce((sum, entry) => sum + entry.outstanding, 0);
     const personalPaid = entries.filter((entry) => entry.type === "Hutang Pemegang Saham" || entry.type === "Reimbursement");
 
@@ -60,6 +63,8 @@ export async function GET() {
         over60DaysCount: over60Days.length,
         over60DaysAmount: over60Days.reduce((sum, entry) => sum + entry.outstanding, 0),
         unagedCount: unaged.length,
+        overpaidCount: overpaidEntries.length,
+        overpaidAmount: overpaidEntries.reduce((sum, entry) => sum + entry.overpaid, 0),
         personalPaidCount: personalPaid.length,
         personalPaidAmount: personalPaid.reduce((sum, entry) => sum + entry.debit - entry.credit, 0),
       },
@@ -67,6 +72,7 @@ export async function GET() {
         over60Days.length ? "Review hutang pemegang saham >60 hari: putuskan reimburse, konversi modal, atau jadwal pembayaran." : "Tidak ada hutang pemegang saham >60 hari dari data terbaca.",
         over30Days.length ? "Review hutang pemegang saham >30 hari agar fairness pemegang saham tetap jelas." : "Tidak ada hutang pemegang saham >30 hari dari data terbaca.",
         unaged.length ? "Lengkapi tanggal ledger agar aging hutang pemegang saham bisa dihitung." : "Tanggal ledger cukup untuk aging dari data terbaca.",
+        overpaidEntries.length ? "Review credit Shareholder_Ledger yang melebihi debit; jangan tutup reimburse tanpa koreksi/notes manusia." : "Tidak ada over-credit Shareholder_Ledger dari data terbaca.",
       ],
       endpoint: {
         post: "POST JSON { description, debit/credit, shareholder, type, proofUrl, notes } untuk menambah ledger row.",
@@ -78,7 +84,7 @@ export async function GET() {
       return NextResponse.json({
         ...googleWorkspaceDegradedSource(SOURCE, error),
         entries: [],
-        stats: { totalEntries: 0, outstandingDebt: 0, outstandingRows: 0, over30DaysCount: 0, over30DaysAmount: 0, over60DaysCount: 0, over60DaysAmount: 0, unagedCount: 0, personalPaidCount: 0, personalPaidAmount: 0 },
+        stats: { totalEntries: 0, outstandingDebt: 0, outstandingRows: 0, over30DaysCount: 0, over30DaysAmount: 0, over60DaysCount: 0, over60DaysAmount: 0, unagedCount: 0, overpaidCount: 0, overpaidAmount: 0, personalPaidCount: 0, personalPaidAmount: 0 },
         nextActions: ["Re-auth Google Workspace agar Shareholder_Ledger bisa dibaca dari source of truth."],
       });
     }

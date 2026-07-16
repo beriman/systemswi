@@ -71,6 +71,8 @@ type DashboardPayload = {
       over60DaysCount?: number;
       over60DaysAmount?: number;
       unagedCount?: number;
+      overpaidCount?: number;
+      overpaidAmount?: number;
     };
     compliance?: { total: number; open: number; overdue: number; dueSoon: number; completedWithoutProof: number };
     vendor?: { total: number; relatedParty: number; exceptions: number; benchmarkComplete: number; openPo?: number; overduePo?: number; overduePoValue?: number; missingPaymentTerm?: number };
@@ -334,6 +336,7 @@ export default function GovernancePage() {
               <div className="flex justify-between"><span>Total outstanding</span><b>{rupiah(shareholder?.outstandingDebt)}</b></div>
               <div className="flex justify-between text-amber-600"><span>&gt;30 hari</span><b>{shareholder?.over30DaysCount || 0} • {rupiah(shareholder?.over30DaysAmount)}</b></div>
               <div className="flex justify-between text-red-600"><span>&gt;60 hari</span><b>{shareholder?.over60DaysCount || 0} • {rupiah(shareholder?.over60DaysAmount)}</b></div>
+              <div className="flex justify-between text-amber-600"><span>Credit melebihi debit</span><b>{shareholder?.overpaidCount || 0} • {rupiah(shareholder?.overpaidAmount)}</b></div>
               <div className="flex justify-between"><span>Tanggal belum tercatat</span><b>{shareholder?.unagedCount || 0}</b></div>
             </CardContent>
           </Card>
