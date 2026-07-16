@@ -48,6 +48,10 @@ export type RabContext = {
   eventMediaRows?: number;
   closeoutCandidateEvents?: number;
   eventMissingMediaCount?: number;
+  sourceStatus?: "live" | "degraded";
+  warning?: string;
+  eventOverBudgetRows?: number;
+  eventOverBudgetWithoutNotes?: number;
   eventCloseoutSummary?: Array<{
     id: string;
     name: string;
@@ -457,6 +461,14 @@ Draft internal systemswi — semua angka berasal dari Google Sheets context dan 
 }
 
 function generateMonthlyGcgReport(data: Record<string, string>, letterNumber: string = "", date: string, context?: RabContext): string {
+    const closeoutSummaries = context?.eventCloseoutSummary || [];
+    const eventReceivable = closeoutSummaries.reduce((sum, event) => sum + event.receivable, 0);
+    const eventPayable = closeoutSummaries.reduce((sum, event) => sum + event.payable, 0);
+    const eventActualExpense = closeoutSummaries.reduce((sum, event) => sum + event.actualExpense, 0);
+    const sourceLine = context?.sourceStatus === "degraded"
+        ? `Source status: **degraded** — ${context.warning || "Google Sheets belum bisa dibaca lengkap; angka 0/TBA tidak boleh dianggap aman."}`
+        : "Source status: **live** — Google Sheets terbaca oleh systemswi API.";
+
     return `
 # MONTHLY GCG / TARIF REPORT
 **Periode: ${data.period || "TBA"}**
@@ -468,6 +480,8 @@ function generateMonthlyGcgReport(data: Record<string, string>, letterNumber: st
 
 ## Executive Summary TARIF
 Dokumen ini memakai Google Sheets sebagai source of truth. Jika angka belum tersedia, tampil **0/TBA** dan tidak boleh diganti dengan estimasi tanpa bukti.
+
+${sourceLine}
 
 ## Transparency
 - Expense pending: **${context?.expensePendingCount || 0}** item / **${rupiah(context?.expensePendingAmount || 0)}**.
@@ -491,11 +505,18 @@ Dokumen ini memakai Google Sheets sebagai source of truth. Jika angka belum ters
 - Personal-paid expense terdeteksi: **${rupiah(context?.personalPaidExpenseAmount || 0)}**.
 - Personal-paid yang approved harus direkonsiliasi ke Shareholder_Ledger; jangan dianggap lunas tanpa bukti pembayaran.
 
+## Event Closeout & Commercial Control
+- Event closeout candidate: **${context?.closeoutCandidateEvents || 0}** event; kandidat tanpa Event_Media: **${context?.eventMissingMediaCount || 0}**.
+- Event/budget row over-budget: **${context?.eventOverBudgetRows || 0}**; over-budget tanpa notes/closeout: **${context?.eventOverBudgetWithoutNotes || 0}**.
+- Actual expense event terbaca dari closeout context: **${rupiah(eventActualExpense)}**.
+- Receivable/payable event terbaca: **${rupiah(eventReceivable)} / ${rupiah(eventPayable)}**.
+- Revenue tenant/sponsor tetap dianggap receivable/pipeline sampai payment proof/status paid tersedia.
+
 ## Catatan Direksi
 ${data.director_notes || "TBA"}
 
 ## Follow-up / Keputusan
-${data.follow_up || "1. Review expense pending dan needs-proof.\n2. Lengkapi division/COA untuk expense material.\n3. Follow-up compliance overdue.\n4. Lengkapi vendor benchmark dan deklarasi conflict-of-interest."}
+${data.follow_up || "1. Review expense pending dan needs-proof.\n2. Lengkapi division/COA untuk expense material.\n3. Follow-up compliance overdue.\n4. Lengkapi vendor benchmark dan deklarasi conflict-of-interest.\n5. Lengkapi event closeout: media, receivable/payable, dan notes untuk over-budget."}
 
 ---
 Draft internal systemswi — review Direksi/Finance sebelum dibagikan ke pemegang saham.
