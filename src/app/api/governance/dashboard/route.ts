@@ -4,7 +4,7 @@ import { readRange, readSheet } from "@/lib/sheets/sheets-real";
 
 export const runtime = "nodejs";
 
-const SOURCE = "Google Sheets: Expense_Submissions + Shareholder_Ledger + Compliance_Register + Vendor_Register + Governance_Audit_Log + Monthly_GCG_Report + Events + Event_Budget + Event_Tenants + Event_Sponsors + Event_Media + Purchase_Orders";
+const SOURCE = "Google Sheets: Expense_Submissions + Shareholder_Ledger + Compliance_Register + Vendor_Register + Governance_Audit_Log + Monthly_GCG_Report + Events + Event_Budget + Event_Tenants + Event_Sponsors + Event_Media + Purchase_Orders + Rekening_Koran";
 
 type SourceStatus = "live" | "degraded";
 type ScoreKey = "transparency" | "accountability" | "responsibility" | "independency" | "fairness";
@@ -91,6 +91,47 @@ function isApprovalAction(value: string): boolean {
   return normalized.includes("approve") || normalized.includes("approval") || normalized.includes("submit") || normalized.includes("settle");
 }
 
+function parseBankPosition(rekeningKoran: string[][]) {
+  const accounts: Array<{ bank: string; noRek: string; nama: string; saldoAwal: number; saldoAkhir: number }> = [];
+  let totalSaldoAwal = 0;
+  let totalSaldoAkhir = 0;
+  let mutasiDebet = 0;
+  let mutasiKredit = 0;
+  let mutasiCount = 0;
+
+  for (const row of rekeningKoran) {
+    const first = text(row[0]);
+    const second = text(row[1]);
+    const third = text(row[2]);
+    const type = text(row[3]);
+
+    if (!first && third.toLowerCase() === "total") {
+      totalSaldoAwal = amount(row[3]);
+      totalSaldoAkhir = amount(row[4]);
+      continue;
+    }
+
+    const isHeader = ["nama bank", "tanggal", "rekening koran", "mutasi rekening"].includes(first.toLowerCase()) || first.toLowerCase().startsWith("per ");
+    if (row.length >= 5 && first && !isHeader && !second.startsWith("SA")) {
+      const saldoAwal = amount(row[3]);
+      const saldoAkhir = amount(row[4]);
+      if (saldoAwal || saldoAkhir || third) accounts.push({ bank: first, noRek: second, nama: third || "Belum dicatat", saldoAwal, saldoAkhir });
+    }
+
+    if (type === "Debet" || type === "Kredit") {
+      const value = amount(row[5] || row[4]);
+      if (type === "Debet") mutasiDebet += value;
+      if (type === "Kredit") mutasiKredit += value;
+      mutasiCount += 1;
+    }
+  }
+
+  if (!totalSaldoAkhir && accounts.length) totalSaldoAkhir = accounts.reduce((sum, account) => sum + account.saldoAkhir, 0);
+  if (!totalSaldoAwal && accounts.length) totalSaldoAwal = accounts.reduce((sum, account) => sum + account.saldoAwal, 0);
+
+  return { accounts, totalSaldoAwal, totalSaldoAkhir, mutasiDebet, mutasiKredit, mutasiCount };
+}
+
 function isOverdue(dueDate: string): boolean {
   if (!dueDate) return false;
   const due = new Date(`${dueDate}T00:00:00Z`).getTime();
@@ -164,7 +205,7 @@ async function readRows(): Promise<{ rows: Record<string, string[][]>; sourceSta
     return [];
   };
 
-  const [expenses, shareholderLedger, complianceRegister, vendorRegister, governanceAuditLog, monthlyGcgReport, tasks, events, eventBudget, eventTenants, eventSponsors, eventMedia, purchaseOrders] = await Promise.all([
+  const [expenses, shareholderLedger, complianceRegister, vendorRegister, governanceAuditLog, monthlyGcgReport, tasks, events, eventBudget, eventTenants, eventSponsors, eventMedia, purchaseOrders, rekeningKoran] = await Promise.all([
     readRange("Expense_Submissions!A1:V1000").catch(emptyOnReadError),
     readSheet("ShareholderLedger").catch(emptyOnReadError),
     readSheet("ComplianceRegister").catch(emptyOnReadError),
@@ -178,11 +219,12 @@ async function readRows(): Promise<{ rows: Record<string, string[][]>; sourceSta
     readRange("Event_Sponsors!A1:O1000").catch(emptyOnReadError),
     readRange("Event_Media!A1:K1000").catch(emptyOnReadError),
     readRange("Purchase_Orders!A1:N1000").catch(emptyOnReadError),
+    readSheet("RekeningKoran").catch(emptyOnReadError),
   ]);
 
   const degraded = googleReadError ? googleWorkspaceDegradedSource(SOURCE, googleReadError) : null;
   return {
-    rows: { expenses, shareholderLedger, complianceRegister, vendorRegister, governanceAuditLog, monthlyGcgReport, tasks, events, eventBudget, eventTenants, eventSponsors, eventMedia, purchaseOrders },
+    rows: { expenses, shareholderLedger, complianceRegister, vendorRegister, governanceAuditLog, monthlyGcgReport, tasks, events, eventBudget, eventTenants, eventSponsors, eventMedia, purchaseOrders, rekeningKoran },
     sourceStatus: degraded ? "degraded" : "live",
     warning: degraded?.warning,
     details: degraded?.details,
@@ -251,6 +293,8 @@ export async function GET(req: NextRequest) {
     const eventSponsors = rows.eventSponsors.slice(1).filter((row) => text(row[0]));
     const eventMedia = rows.eventMedia.slice(1).filter((row) => text(row[0]));
     const purchaseOrders = rows.purchaseOrders.slice(1).filter((row) => text(row[0]));
+    const bankPosition = parseBankPosition(rows.rekeningKoran || []);
+    const bankPositionMissing = bankPosition.accounts.length === 0 && bankPosition.totalSaldoAkhir === 0 && bankPosition.mutasiCount === 0;
 
     const expenseWithProof = expenses.filter((row) => amount(row[6]) <= 0 || Boolean(text(row[7])));
     const expenseWithDivision = expenses.filter((row) => Boolean(text(row[12])) && !isMissingCoa(text(row[13] || row[4])));
@@ -396,7 +440,7 @@ export async function GET(req: NextRequest) {
       .sort((a, b) => b.timestamp.localeCompare(a.timestamp))
       .slice(0, 10);
 
-    const transparencyScore = Math.round((percent(expenseWithProof.length, expenses.length) + percent(expenseWithDivision.length, expenses.length) + percent(hasCurrentMonthlyGcgReport ? 1 : 0, 1)) / 3);
+    const transparencyScore = Math.round((percent(expenseWithProof.length, expenses.length) + percent(expenseWithDivision.length, expenses.length) + percent(hasCurrentMonthlyGcgReport ? 1 : 0, 1) + percent(bankPositionMissing ? 0 : 1, 1)) / 4);
     const accountabilityScore = Math.round((percent(approvedWithReviewer.length, approvedExpenses.length) + percent(taskWithOwner.length, tasks.length) + percent(governanceAuditLog.length > 0 ? 1 : 0, 1)) / 3);
     const complianceOnTimeScore = percent(complianceRegister.length - overdueCompliance.length, complianceRegister.length);
     const complianceProofScore = percent(completedCompliance.length - completedComplianceMissingProof.length, completedCompliance.length);
@@ -408,7 +452,7 @@ export async function GET(req: NextRequest) {
     ) / 2);
 
     const scores = [
-      makeScore("transparency", "Transparency", transparencyScore, `${expenseWithProof.length}/${expenses.length} expense punya bukti atau amount 0; ${expenseWithDivision.length}/${expenses.length} punya division/COA; Monthly_GCG_Report periode ${currentPeriod} ${hasCurrentMonthlyGcgReport ? "sudah dicatat" : "belum dicatat"}.`),
+      makeScore("transparency", "Transparency", transparencyScore, `${expenseWithProof.length}/${expenses.length} expense punya bukti atau amount 0; ${expenseWithDivision.length}/${expenses.length} punya division/COA; saldo bank ${bankPositionMissing ? "belum terbaca" : bankPosition.totalSaldoAkhir.toLocaleString("id-ID")} dari ${bankPosition.accounts.length} rekening; Monthly_GCG_Report periode ${currentPeriod} ${hasCurrentMonthlyGcgReport ? "sudah dicatat" : "belum dicatat"}.`),
       makeScore("accountability", "Accountability", accountabilityScore, `${approvedWithReviewer.length}/${approvedExpenses.length} approved expense punya reviewer; ${governanceAuditLog.length} governance audit rows.`),
       makeScore("responsibility", "Responsibility", responsibilityScore, `${overdueCompliance.length} overdue dari ${complianceRegister.length} compliance item; ${completedComplianceMissingProof.length}/${completedCompliance.length} completed compliance belum punya proof URL.`),
       makeScore("independency", "Independency", independencyScore, `${vendorWithBenchmark.length}/${vendorRegister.length} vendor punya benchmark + selected reason; ${expenseVendorRequired.length - expensesWithoutVendor.length}/${expenseVendorRequired.length} expense vendor-category punya vendor link.`),
@@ -426,6 +470,14 @@ export async function GET(req: NextRequest) {
       overallScore,
       scores,
       summary: {
+        finance: {
+          bankAccountCount: bankPosition.accounts.length,
+          totalSaldoAwal: bankPosition.totalSaldoAwal,
+          totalSaldoAkhir: bankPosition.totalSaldoAkhir,
+          mutasiDebet: bankPosition.mutasiDebet,
+          mutasiKredit: bankPosition.mutasiKredit,
+          mutasiCount: bankPosition.mutasiCount,
+        },
         expenses: {
           total: expenses.length,
           pendingCount: expensePending.length,
@@ -501,6 +553,7 @@ export async function GET(req: NextRequest) {
         },
       },
       exceptions: [
+        ...(bankPositionMissing ? [{ type: "BANK_POSITION_NOT_READABLE", severity: "medium", entityId: "Rekening_Koran", description: "Saldo kas/bank belum terbaca dari Rekening_Koran; dashboard tidak boleh menyimpulkan posisi cash dari 0/TBA.", amount: 0, owner: "Finance" }] : []),
         ...expenseNeedsProof.slice(0, 10).map((row) => ({ type: "EXPENSE_NEEDS_PROOF", severity: "high", entityId: text(row[0]), description: text(row[5]) || "Expense tanpa bukti", amount: amount(row[6]), owner: text(row[2]) || "Belum dicatat" })),
         ...expenseLargeWithoutApproval.slice(0, 10).map((row) => ({ type: "LARGE_EXPENSE_PENDING_APPROVAL", severity: "high", entityId: text(row[0]), description: text(row[5]) || "Expense besar belum closed approval", amount: amount(row[6]), owner: text(row[2]) || "Belum dicatat" })),
         ...approvedWithoutDivisionOrCoa.slice(0, 10).map((row) => ({ type: "APPROVED_EXPENSE_MISSING_DIVISION_OR_COA", severity: "high", entityId: text(row[0]), description: text(row[5]) || "Expense approved tanpa division/COA lengkap", amount: amount(row[6]), owner: text(row[2]) || "Belum dicatat" })),
@@ -541,6 +594,7 @@ export async function GET(req: NextRequest) {
       ],
       recentAuditTrail,
       nextActions: [
+        bankPositionMissing ? "Perbaiki/cek range Rekening_Koran agar saldo kas/bank terbaca sebelum Monthly GCG Report dipakai untuk keputusan." : `Review saldo kas/bank Rekening_Koran: ${bankPosition.totalSaldoAkhir.toLocaleString("id-ID")} dari ${bankPosition.accounts.length} rekening.`,
         expenseNeedsProof.length ? "Lengkapi proof URL untuk expense berstatus Needs Proof/tanpa bukti." : "Pertahankan disiplin bukti expense.",
         approvedWithoutDivisionOrCoa.length ? "Perbaiki approved expense yang belum punya division/COA; acceptance GCG melarang approved expense tanpa klasifikasi." : approvedWithoutPaymentMethod.length ? "Perbaiki approved expense yang belum punya payment method agar sumber dana perusahaan/pribadi dapat ditelusuri." : expensePending.length ? "Review dan approve/reject expense pending; semua keputusan harus masuk Governance_Audit_Log." : "Tidak ada expense pending dari data yang terbaca.",
         overdueCompliance.length ? "Tindaklanjuti compliance overdue dan upload bukti setelah selesai." : dueSoonCompliance.length ? "Follow-up compliance due soon (H-7/H-3/H-1) dan siapkan proof URL sebelum status submitted/paid." : completedComplianceMissingProof.length ? "Lengkapi proof URL untuk compliance yang sudah marked submitted/paid/complete." : "Pantau compliance due soon dan jangan menandai submitted tanpa bukti.",

@@ -47,6 +47,14 @@ type DashboardPayload = {
   overallScore?: number;
   scores?: Score[];
   summary?: {
+    finance?: {
+      bankAccountCount: number;
+      totalSaldoAwal: number;
+      totalSaldoAkhir: number;
+      mutasiDebet: number;
+      mutasiKredit: number;
+      mutasiCount: number;
+    };
     expenses?: {
       total: number;
       pendingCount: number;
@@ -152,6 +160,7 @@ export default function GovernancePage() {
   }, []);
 
   const summary = data?.summary || {};
+  const finance = summary.finance;
   const expenses = summary.expenses;
   const compliance = summary.compliance;
   const vendor = summary.vendor;
@@ -231,7 +240,7 @@ export default function GovernancePage() {
         {monthlyGcgMessage && <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">✅ {monthlyGcgMessage}</div>}
         {data?.sourceStatus === "degraded" && <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">⚠️ {data.warning || "Google Sheets source degraded. Angka ditampilkan sebagai 0/TBA sampai auth pulih."}</div>}
 
-        <div className="grid gap-4 md:grid-cols-5">
+        <div className="grid gap-4 md:grid-cols-6">
           <Card className="md:col-span-1">
             <CardHeader>
               <CardTitle>Overall GCG Score</CardTitle>
@@ -241,6 +250,11 @@ export default function GovernancePage() {
               {loading ? <Skeleton className="h-14 w-28" /> : <div className="text-5xl font-bold">{data?.overallScore ?? 0}<span className="text-lg text-muted-foreground">/100</span></div>}
               <p className="mt-2 text-xs text-muted-foreground">Generated: {data?.generatedAt ? new Date(data.generatedAt).toLocaleString("id-ID") : "TBA"}</p>
             </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2"><CardTitle className="text-sm">Saldo Bank</CardTitle></CardHeader>
+            <CardContent>{loading ? <Skeleton className="h-8" /> : <><div className="text-xl font-bold">{rupiah(finance?.totalSaldoAkhir)}</div><p className="text-sm text-muted-foreground">{finance?.bankAccountCount || 0} rekening • {finance?.mutasiCount || 0} mutasi</p></>}</CardContent>
           </Card>
 
           <Card>
