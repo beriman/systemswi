@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, type FormEvent } from "react";
+import { useState, useEffect, useCallback, type FormEvent } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -68,6 +68,17 @@ interface EventBreakdown {
   status: string;
 }
 
+interface VendorGovernanceSummary {
+  total: number;
+  active: number;
+  trial: number;
+  relatedParty: number;
+  benchmarkIncomplete: number;
+  missingPaymentTerm: number;
+  needsReview: number;
+  exceptions: number;
+}
+
 // ── Helpers ──
 function formatRp(amount: number): string {
   if (!amount && amount !== 0) return "Rp 0";
@@ -130,6 +141,7 @@ export default function BudgetPage() {
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
   const [categories, setCategories] = useState<CategoryBreakdown[]>([]);
   const [events, setEvents] = useState<EventBreakdown[]>([]);
+  const [vendorGovernance, setVendorGovernance] = useState<VendorGovernanceSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -149,17 +161,18 @@ export default function BudgetPage() {
   const [submitting, setSubmitting] = useState(false);
   const [formMessage, setFormMessage] = useState<string | null>(null);
 
-  const fetchAll = async () => {
+  const fetchAll = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
 
-      const [budgetRes, summaryRes, alertsRes, catRes, evtRes] = await Promise.all([
+      const [budgetRes, summaryRes, alertsRes, catRes, evtRes, vendorRes] = await Promise.all([
         fetch(`/api/budget?year=${filterYear}`),
         fetch("/api/budget/summary"),
         fetch("/api/budget/alerts"),
         fetch("/api/budget/by-category"),
         fetch("/api/budget/by-event"),
+        fetch("/api/governance/vendor-register"),
       ]);
 
       if (budgetRes.ok) {
@@ -182,16 +195,25 @@ export default function BudgetPage() {
         const json = await evtRes.json();
         setEvents(json.events || []);
       }
+      if (vendorRes.ok) {
+        const json = await vendorRes.json();
+        setVendorGovernance(json.summary || null);
+      } else {
+        setVendorGovernance(null);
+      }
     } catch (err) {
       setError(String(err));
     } finally {
       setLoading(false);
     }
-  };
+  }, [filterYear]);
 
   useEffect(() => {
-    fetchAll();
-  }, [filterYear]);
+    const timer = window.setTimeout(() => {
+      void fetchAll();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [fetchAll]);
 
   // Client-side filters
   const filteredRows = budgetRows.filter((r) => {
@@ -425,6 +447,46 @@ export default function BudgetPage() {
               </CardContent>
             </Card>
           )}
+
+          {/* GCG vendor/procurement control */}
+          <Card>
+            <CardHeader>
+              <CardTitle>⚖️ Kontrol Vendor & COI</CardTitle>
+              <CardDescription>
+                Budget kategori Bahan Baku, Packaging, Venue, Dokumentasi, dan Sewa Booth harus bisa ditelusuri ke Vendor_Register sebelum approval material.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {vendorGovernance ? (
+                <div className="grid gap-3 text-sm md:grid-cols-4">
+                  <div className="rounded-lg border bg-muted/40 p-3">
+                    <p className="text-muted-foreground">Total vendor</p>
+                    <p className="text-2xl font-bold">{vendorGovernance.total}</p>
+                    <p className="text-xs text-muted-foreground">Active {vendorGovernance.active} • Trial {vendorGovernance.trial}</p>
+                  </div>
+                  <div className="rounded-lg border bg-muted/40 p-3">
+                    <p className="text-muted-foreground">Related party</p>
+                    <p className="text-2xl font-bold text-amber-600">{vendorGovernance.relatedParty}</p>
+                    <p className="text-xs text-muted-foreground">Wajib alasan objektif + 2 benchmark.</p>
+                  </div>
+                  <div className="rounded-lg border bg-muted/40 p-3">
+                    <p className="text-muted-foreground">Benchmark/payment gap</p>
+                    <p className="text-2xl font-bold text-red-600">{vendorGovernance.benchmarkIncomplete + vendorGovernance.missingPaymentTerm}</p>
+                    <p className="text-xs text-muted-foreground">Benchmark incomplete {vendorGovernance.benchmarkIncomplete} • Payment term missing {vendorGovernance.missingPaymentTerm}</p>
+                  </div>
+                  <div className="rounded-lg border bg-muted/40 p-3">
+                    <p className="text-muted-foreground">TARIF exceptions</p>
+                    <p className="text-2xl font-bold text-red-600">{vendorGovernance.exceptions}</p>
+                    <p className="text-xs text-muted-foreground">Needs review {vendorGovernance.needsReview}</p>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  Vendor_Register belum terbaca. Jangan asumsi vendor sudah bebas konflik; tampilkan TBA/Belum dicatat sampai Google Sheets live.
+                </p>
+              )}
+            </CardContent>
+          </Card>
 
           {/* Progress bars per category */}
           <Card>
