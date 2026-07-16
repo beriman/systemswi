@@ -3,6 +3,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { readEventSheet, EVENT_SHEETS } from "@/lib/event/sheets";
 import { readExpenseSheet, EXPENSE_SHEETS } from "@/lib/expense/sheets";
 import { readSheet } from "@/lib/sheets/sheets-real";
+import { googleWorkspaceDegradedSource, isGoogleWorkspaceAuthError } from "@/lib/api/google-workspace-error";
+
+const SOURCE = "Google Sheets: Events + Event_Budget + Event_Tenants + Event_Sponsors + Event_Media + Expense_Submissions + Governance_Audit_Log + Purchase_Orders";
 
 function parseAmount(value: unknown): number {
   if (typeof value === "number") return Number.isFinite(value) ? value : 0;
@@ -38,22 +41,43 @@ export async function GET(
   try {
     const { id } = await params;
 
-    // Fetch all related data in parallel
+    let googleReadError: unknown = null;
+    const emptyOnReadError = (error: unknown): string[][] => {
+      googleReadError ||= error;
+      return [];
+    };
+
+    // Fetch all related data in parallel. If Google Sheets is degraded, do not
+    // mistake empty fallback rows for a real "event not found" state.
     const [events, budget, tenants, sponsors, timeline, media, expenses, governanceAuditLog, purchaseOrders] = await Promise.all([
-      readEventSheet(EVENT_SHEETS.Events).catch(() => []),
-      readEventSheet(EVENT_SHEETS.Budget).catch(() => []),
-      readEventSheet(EVENT_SHEETS.Tenants).catch(() => []),
-      readEventSheet(EVENT_SHEETS.Sponsors).catch(() => []),
-      readEventSheet(EVENT_SHEETS.Timeline).catch(() => []),
-      readEventSheet(EVENT_SHEETS.Media).catch(() => []),
-      readExpenseSheet(EXPENSE_SHEETS.Submissions).catch(() => []),
-      readSheet("GovernanceAuditLog").catch(() => []),
-      readSheet("PurchaseOrders").catch(() => []),
+      readEventSheet(EVENT_SHEETS.Events).catch(emptyOnReadError),
+      readEventSheet(EVENT_SHEETS.Budget).catch(emptyOnReadError),
+      readEventSheet(EVENT_SHEETS.Tenants).catch(emptyOnReadError),
+      readEventSheet(EVENT_SHEETS.Sponsors).catch(emptyOnReadError),
+      readEventSheet(EVENT_SHEETS.Timeline).catch(emptyOnReadError),
+      readEventSheet(EVENT_SHEETS.Media).catch(emptyOnReadError),
+      readExpenseSheet(EXPENSE_SHEETS.Submissions).catch(emptyOnReadError),
+      readSheet("GovernanceAuditLog").catch(emptyOnReadError),
+      readSheet("PurchaseOrders").catch(emptyOnReadError),
     ]);
+    const degraded = googleReadError ? googleWorkspaceDegradedSource(SOURCE, googleReadError) : null;
 
     // Find the event
     const eventRow = events.slice(1).find((r) => r[0] === id);
     if (!eventRow) {
+      if (degraded) {
+        return NextResponse.json({
+          ...degraded,
+          event: null,
+          budget: [],
+          tenants: [],
+          sponsors: [],
+          timeline: [],
+          media: [],
+          closeout: null,
+          message: "Event detail ditahan karena source Google Sheets degraded; tidak mengubah data kosong/TBA menjadi 404 palsu.",
+        });
+      }
       return NextResponse.json({ error: "Event not found" }, { status: 404 });
     }
 
@@ -278,6 +302,10 @@ export async function GET(
     };
 
     return NextResponse.json({
+      source: SOURCE,
+      sourceStatus: degraded ? "degraded" : "live",
+      warning: degraded?.warning,
+      details: degraded?.details,
       event,
       budget: eventBudget,
       tenants: eventTenants,
@@ -287,6 +315,18 @@ export async function GET(
       closeout,
     });
   } catch (error) {
+    if (isGoogleWorkspaceAuthError(error)) {
+      return NextResponse.json({
+        ...googleWorkspaceDegradedSource(SOURCE, error),
+        event: null,
+        budget: [],
+        tenants: [],
+        sponsors: [],
+        timeline: [],
+        media: [],
+        closeout: null,
+      });
+    }
     return NextResponse.json({ error: "Failed to fetch event details", details: String(error) }, { status: 500 });
   }
 }
