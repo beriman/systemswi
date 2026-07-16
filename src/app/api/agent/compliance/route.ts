@@ -4,14 +4,17 @@ import { NextResponse } from "next/server";
 import { runComplianceCheck, formatComplianceForTelegram } from "@/lib/agent/compliance-tracking";
 import { sendTelegramMessage, isTelegramConfigured } from "@/lib/agent/telegram";
 import { logAgentActionSafe } from "@/lib/agent/audit";
+import { googleWorkspaceDegradedSource, isGoogleWorkspaceAuthError } from "@/lib/api/google-workspace-error";
 
 export const runtime = "nodejs";
+
+const SOURCE = "Google Sheets: Compliance_Checks + Legal_Compliance + Compliance_Register";
 
 export async function GET() {
   try {
     const report = await runComplianceCheck();
     return NextResponse.json({
-      source: "Google Sheets: Compliance_Checks + Legal_Compliance + Compliance_Register",
+      source: SOURCE,
       status: report.totalAlerts === 0 ? "all_valid" : report.expired > 0 ? "expired" : "expiring_soon",
       bpom: report.bpom,
       halal: report.halal,
@@ -24,6 +27,21 @@ export async function GET() {
       valid: report.valid,
     });
   } catch (error) {
+    if (isGoogleWorkspaceAuthError(error)) {
+      return NextResponse.json({
+        ...googleWorkspaceDegradedSource(SOURCE, error),
+        status: "blocked",
+        bpom: [],
+        halal: [],
+        register: [],
+        totalAlerts: 0,
+        expired: 0,
+        expiringSoon: 0,
+        registerReminders: 0,
+        registerMissingProof: 0,
+        valid: 0,
+      });
+    }
     return NextResponse.json(
       { error: "Failed to run compliance check", details: String(error) },
       { status: 500 }
@@ -57,6 +75,14 @@ export async function POST() {
       telegramConfigured: isTelegramConfigured(),
     });
   } catch (error) {
+    if (isGoogleWorkspaceAuthError(error)) {
+      return NextResponse.json({
+        ...googleWorkspaceDegradedSource(SOURCE, error),
+        status: "blocked",
+        telegramSent: false,
+        telegramConfigured: isTelegramConfigured(),
+      }, { status: 503 });
+    }
     return NextResponse.json(
       { error: "Failed to run compliance check", details: String(error) },
       { status: 500 }
