@@ -1,7 +1,7 @@
 // Compliance Register — LKPM, BPJS, tax, legal, BPOM/Halal governance obligations
 // Schema: Compliance ID | Area | Obligation | Period | Due Date | Status | Owner | Source Proof | Risk Level | Notes
 
-import { appendRows, getAuth, readSheet, SPREADSHEET_ID, updateRow } from "@/lib/sheets/sheets-real";
+import { appendRows, getAuth, readRange, readSheet, SPREADSHEET_ID, updateRow } from "@/lib/sheets/sheets-real";
 import { google } from "googleapis";
 
 export const COMPLIANCE_REGISTER_SHEET = "Compliance_Register";
@@ -99,6 +99,91 @@ function makeComplianceId(area: string): string {
   const d = new Date();
   const ymd = d.toISOString().slice(0, 10).replace(/-/g, "");
   return `CMP-${area.toUpperCase().replace(/[^A-Z0-9]+/g, "-").replace(/^-|-$/g, "") || "GCG"}-${ymd}-${d.getTime().toString().slice(-5)}`;
+}
+
+function stableComplianceId(prefix: string, ...parts: string[]): string {
+  const slug = parts
+    .map((part) => text(part).toUpperCase().replace(/[^A-Z0-9]+/g, "-").replace(/^-|-$/g, ""))
+    .filter(Boolean)
+    .join("-")
+    .slice(0, 80);
+  return `${prefix}-${slug || "TBA"}`;
+}
+
+function normalizeComplianceStatus(value: string): string {
+  const normalized = value.toLowerCase();
+  if (["paid", "lunas"].some((marker) => normalized.includes(marker))) return "Paid";
+  if (["submitted", "lapor", "terlapor", "done", "complete", "completed", "selesai"].some((marker) => normalized.includes(marker))) return "Submitted";
+  if (["progress", "proses"].some((marker) => normalized.includes(marker))) return "In Progress";
+  if (["overdue", "terlambat"].some((marker) => normalized.includes(marker))) return "Overdue";
+  if (!value) return "Not Started";
+  return value;
+}
+
+function buildPajakTrackingSeedItems(rows: string[][]): NewComplianceRegisterEntry[] {
+  // Pajak_Tracking columns: Jenis Pajak, Keterangan, Nominal, Jatuh Tempo, Status, Bukti Bayar, Deadline, Notes.
+  // Only convert real rows that exist in Google Sheets; never infer missing tax obligations.
+  return rows.slice(1).flatMap((row): NewComplianceRegisterEntry[] => {
+    if (!row.some((cell) => text(cell))) return [];
+    const jenisPajak = text(row[0]);
+    const keterangan = text(row[1]);
+    const nominal = text(row[2]);
+    const jatuhTempo = text(row[3]);
+    const status = normalizeComplianceStatus(text(row[4]));
+    const buktiBayar = text(row[5]);
+    const deadline = text(row[6]) || jatuhTempo;
+    const notes = text(row[7]);
+    const obligation = [jenisPajak, keterangan].filter(Boolean).join(" — ") || "Pajak — Belum dicatat";
+
+    return [{
+      id: stableComplianceId("CMP-PAJAK", obligation, deadline || jatuhTempo),
+      area: "Pajak",
+      obligation,
+      period: jatuhTempo || keterangan || "TBA",
+      dueDate: ["Bertahap", "Sesuai event", "Sesuai periode"].includes(deadline) ? "" : deadline,
+      status,
+      owner: "Finance/Tax",
+      sourceProof: buktiBayar,
+      riskLevel: status === "Paid" || status === "Submitted" ? "Medium" : "High",
+      notes: [
+        "Seeded from Pajak_Tracking; source of truth tetap Google Sheets pajak.",
+        nominal ? `Nominal: ${nominal}.` : "Nominal: 0/Belum dicatat.",
+        notes,
+      ].filter(Boolean).join(" "),
+    }];
+  });
+}
+
+function buildTaxCalendarSeedItems(rows: string[][]): NewComplianceRegisterEntry[] {
+  // Tax_Calendar columns: ID, Tax Type, Period, Due Date, Status, Amount, Notes, Created.
+  return rows.slice(1).flatMap((row): NewComplianceRegisterEntry[] => {
+    if (!row.some((cell) => text(cell))) return [];
+    const sourceId = text(row[0]);
+    const taxType = text(row[1]);
+    const period = text(row[2]);
+    const dueDate = text(row[3]);
+    const status = normalizeComplianceStatus(text(row[4]));
+    const amountValue = text(row[5]);
+    const notes = text(row[6]);
+    const obligation = taxType || "Tax Calendar — Belum dicatat";
+
+    return [{
+      id: sourceId ? stableComplianceId("CMP-TAXCAL", sourceId) : stableComplianceId("CMP-TAXCAL", obligation, period, dueDate),
+      area: "Pajak",
+      obligation,
+      period: period || "TBA",
+      dueDate,
+      status,
+      owner: "Finance/Tax",
+      sourceProof: "",
+      riskLevel: status === "Paid" || status === "Submitted" ? "Medium" : "High",
+      notes: [
+        "Seeded from Tax_Calendar; proof URL harus diisi manual saat pelaporan/pembayaran selesai.",
+        amountValue ? `Amount: ${amountValue}.` : "Amount: 0/Belum dicatat.",
+        notes,
+      ].filter(Boolean).join(" "),
+    }];
+  });
 }
 
 function daysUntil(date: string): number | null {
@@ -242,7 +327,23 @@ export async function seedKnownComplianceRegisterItems(): Promise<{ seeded: numb
   await ensureComplianceRegisterSheet();
   const existing = parseComplianceRegisterRows(await readSheet("ComplianceRegister"));
   const existingIds = new Set(existing.map((entry) => entry.id));
-  const rows = DEFAULT_KNOWN_ITEMS
+
+  const [pajakTrackingRows, taxCalendarRows] = await Promise.all([
+    readRange("Pajak_Tracking!A1:H500").catch(() => [] as string[][]),
+    readRange("Tax_Calendar!A1:H1000").catch(() => [] as string[][]),
+  ]);
+
+  const seedItems = [
+    ...DEFAULT_KNOWN_ITEMS,
+    ...buildPajakTrackingSeedItems(pajakTrackingRows),
+    ...buildTaxCalendarSeedItems(taxCalendarRows),
+  ];
+
+  const uniqueSeedItems = Array.from(
+    new Map(seedItems.map((entry) => [entry.id, entry])).values(),
+  );
+
+  const rows = uniqueSeedItems
     .filter((entry) => !existingIds.has(entry.id))
     .map((entry) => [
       entry.id,
@@ -259,7 +360,7 @@ export async function seedKnownComplianceRegisterItems(): Promise<{ seeded: numb
 
   if (rows.length) await appendRows("ComplianceRegister", rows);
   const entries = parseComplianceRegisterRows(await readSheet("ComplianceRegister"));
-  return { seeded: rows.length, skipped: DEFAULT_KNOWN_ITEMS.length - rows.length, entries };
+  return { seeded: rows.length, skipped: uniqueSeedItems.length - rows.length, entries };
 }
 
 export function summarizeComplianceRegister(entries: ComplianceRegisterEntry[]) {
