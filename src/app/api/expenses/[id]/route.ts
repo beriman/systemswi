@@ -45,6 +45,22 @@ function isMissingVendorPaymentTerm(value: string): boolean {
   return !value || normalized.includes("tba") || normalized.includes("belum dicatat") || normalized.includes("belum tersedia");
 }
 
+const PAYMENT_METHODS = ["Cash", "Bank", "Personal Paid", "Company Paid"] as const;
+
+function normalizePaymentMethod(value: unknown): string {
+  const normalized = String(value ?? "").trim().toLowerCase().replace(/[\s_-]+/g, " ");
+  if (!normalized) return "";
+  if (["cash", "tunai", "kas"].includes(normalized)) return "Cash";
+  if (["bank", "transfer", "bank transfer", "rekening"].includes(normalized)) return "Bank";
+  if (["personal paid", "paid personally", "dibayar pribadi", "pribadi"].includes(normalized)) return "Personal Paid";
+  if (["company paid", "company", "perusahaan", "paid by company"].includes(normalized)) return "Company Paid";
+  return "";
+}
+
+function isPersonalPaidMethod(value: string): boolean {
+  return normalizePaymentMethod(value) === "Personal Paid";
+}
+
 function parseExpense(row: string[]) {
   return {
     id: s(row, 0),
@@ -91,6 +107,7 @@ async function approvalBlockers(row: string[]): Promise<string[]> {
   if (!division) blockers.push("Division wajib diisi sebelum approve.");
   if (isMissingCoa(coaCategory)) blockers.push("COA Category valid wajib diisi dari sheet COA sebelum approve; TBA/Belum dicatat tidak cukup untuk approval.");
   if (isMissingPaymentMethod(paymentMethod)) blockers.push("Payment Method wajib diisi sebelum approve agar sumber pembayaran perusahaan/pribadi bisa ditelusuri.");
+  if (!isMissingPaymentMethod(paymentMethod) && !normalizePaymentMethod(paymentMethod)) blockers.push(`Payment Method harus salah satu: ${PAYMENT_METHODS.join(", ")}.`);
   if ((category === "Sewa Booth" || category === "Venue" || division === "Event") && !relatedEvent) blockers.push("Expense event/venue/sewa booth wajib dikaitkan ke related event/project sebelum approve.");
   if (vendorRequiredCategories.has(category) && !vendorId && !vendorName) blockers.push("Kategori vendor (Bahan Baku/Packaging/Venue/Dokumentasi/Sewa Booth) wajib punya Vendor ID atau Vendor Name sebelum approve.");
   if (amount > 2_000_000 && vendorRequiredCategories.has(category) && !vendorBenchmarkNotes) blockers.push("Expense vendor > Rp2.000.000 wajib mencatat minimal 2 benchmark/alasan pemilihan sebelum approve.");
@@ -239,7 +256,7 @@ export async function PUT(
     });
 
     if (status === "Approved") {
-      const isPersonalPaid = s(existing, 14) === "Personal Paid" || s(existing, 17) === "Yes";
+      const isPersonalPaid = isPersonalPaidMethod(s(existing, 14)) || s(existing, 17) === "Yes";
       if (isPersonalPaid) {
         try {
           const ledgerResult = await appendShareholderLedgerEntryOnce(`expense:${id}`, {

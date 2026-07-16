@@ -38,6 +38,22 @@ function isMissingPaymentMethod(value: string): boolean {
   return !value || normalized.includes("tba") || normalized.includes("belum dicatat") || normalized.includes("belum tersedia");
 }
 
+const PAYMENT_METHODS = ["Cash", "Bank", "Personal Paid", "Company Paid"] as const;
+
+function normalizePaymentMethod(value: unknown): string {
+  const normalized = String(value ?? "").trim().toLowerCase().replace(/[\s_-]+/g, " ");
+  if (!normalized) return "Company Paid";
+  if (["cash", "tunai", "kas"].includes(normalized)) return "Cash";
+  if (["bank", "transfer", "bank transfer", "rekening"].includes(normalized)) return "Bank";
+  if (["personal paid", "paid personally", "dibayar pribadi", "pribadi"].includes(normalized)) return "Personal Paid";
+  if (["company paid", "company", "perusahaan", "paid by company"].includes(normalized)) return "Company Paid";
+  return "";
+}
+
+function isPersonalPaidMethod(value: string): boolean {
+  return normalizePaymentMethod(value) === "Personal Paid";
+}
+
 interface ExpenseSubmission {
   id: string;
   date: string;
@@ -121,7 +137,7 @@ export async function GET(req: NextRequest) {
     const approvedWithoutDivisionOrCoa = approved.filter((e) => !e.division || isMissingCoa(e.coaCategory));
     const withoutPaymentMethod = expenses.filter((e) => isMissingPaymentMethod(e.paymentMethod));
     const approvedWithoutPaymentMethod = approved.filter((e) => isMissingPaymentMethod(e.paymentMethod));
-    const personalPaid = expenses.filter((e) => e.paymentMethod === "Personal Paid" || e.shareholderDebtFlag === "Yes");
+    const personalPaid = expenses.filter((e) => isPersonalPaidMethod(e.paymentMethod) || e.shareholderDebtFlag === "Yes");
     const approvedPersonalPaid = personalPaid.filter((e) => e.status === "Approved");
     let personalPaidNotInLedger = approvedPersonalPaid;
     const vendorRequiredCategories = new Set(["Bahan Baku", "Packaging", "Venue", "Dokumentasi", "Sewa Booth"]);
@@ -230,7 +246,14 @@ export async function POST(req: NextRequest) {
     const finalCategory = validCategories.includes(category) ? category : "Lainnya";
     const amount = n(body.amount);
     const proofUrl = body.proofUrl || "";
-    const paymentMethod = body.paymentMethod || "Company Paid";
+    const paymentMethod = normalizePaymentMethod(body.paymentMethod);
+    if (!paymentMethod) {
+      return NextResponse.json({
+        error: "Payment Method tidak valid",
+        allowedPaymentMethods: PAYMENT_METHODS,
+        policy: "Gunakan Cash, Bank, Personal Paid, atau Company Paid agar sumber dana bisa ditelusuri dan personal-paid otomatis masuk Shareholder_Ledger setelah approved.",
+      }, { status: 400 });
+    }
     const shareholderDebtFlag = paymentMethod === "Personal Paid" || body.shareholderDebtFlag === true || body.shareholderDebtFlag === "Yes" ? "Yes" : "No";
     const proofRequired = amount > 0 ? "Yes" : "No";
     const status = proofRequired === "Yes" && !proofUrl ? "Needs Proof" : "Pending";
