@@ -3,7 +3,7 @@ import { googleWorkspaceDegradedSource, googleWorkspaceWriteBlockedSource, isGoo
 import { appendRows, readRange, updateRow, deleteRow } from "@/lib/sheets/sheets-real";
 import { appendSwiMemoryLog } from "@/lib/google/audit-log";
 import { logGovernanceActionSafe } from "@/lib/governance/audit";
-import { appendVendorRegisterEntry, parseVendorRegisterRows, type VendorRegisterEntry } from "@/lib/governance/vendor-register";
+import { appendVendorRegisterEntry, parseVendorRegisterRows, updateVendorRegisterEntry, type VendorRegisterEntry } from "@/lib/governance/vendor-register";
 
 export const runtime = "nodejs";
 
@@ -613,10 +613,48 @@ export async function POST(request: NextRequest) {
         text(body.notes) || supplier.notes,
       ];
       await updateRow("SupplierMaster", supplier.rowNumber, row);
+
+      let vendorRegisterStatus: "updated" | "created_trial" | "warning" = "warning";
+      let governanceVendorId = "Belum dicatat";
+      try {
+        const existingVendor = parseVendorRegisterRows(vendorRows).find((vendor) =>
+          vendor.id.toLowerCase() === supplier.id.toLowerCase()
+          || vendor.name.toLowerCase() === supplier.name.toLowerCase()
+          || vendor.name.toLowerCase() === text(body.name).toLowerCase()
+        );
+        const vendorPayload = {
+          id: supplier.id,
+          name: text(body.name) || supplier.name,
+          category: text(body.category) || supplier.category,
+          contact: text(body.contact) || supplier.contact,
+          relatedParty: text(body.relatedParty) || existingVendor?.relatedParty || "No",
+          relationshipDetail: text(body.relationshipDetail) || existingVendor?.relationshipDetail || "",
+          priceBenchmark1: text(body.priceBenchmark1) || existingVendor?.priceBenchmark1 || "",
+          priceBenchmark2: text(body.priceBenchmark2) || existingVendor?.priceBenchmark2 || "",
+          selectedReason: text(body.selectedReason) || existingVendor?.selectedReason || "",
+          paymentTerm: text(body.paymentTerm) || existingVendor?.paymentTerm || "TBA",
+          status: existingVendor?.status || "Trial",
+          lastReview: text(body.lastReview) || new Date().toISOString().slice(0, 10),
+        };
+
+        if (existingVendor) {
+          const result = await updateVendorRegisterEntry(existingVendor.id, vendorPayload);
+          governanceVendorId = result.after.id;
+          vendorRegisterStatus = "updated";
+        } else {
+          const vendor = await appendVendorRegisterEntry(vendorPayload);
+          governanceVendorId = vendor.id;
+          vendorRegisterStatus = "created_trial";
+        }
+      } catch (error) {
+        governanceVendorId = `Belum dicatat — ${String(error).slice(0, 120)}`;
+        vendorRegisterStatus = "warning";
+      }
+
       const auditStatus = await appendProcurementAudit({
         action: "Procurement Supplier Updated",
         target: `Supplier_Master:${supplier.id}`,
-        summary: `Updated supplier ${text(body.name) || supplier.name}. Status: ${text(body.status) || supplier.status}.`,
+        summary: `Updated supplier ${text(body.name) || supplier.name}. Status: ${text(body.status) || supplier.status}. Vendor_Register ${vendorRegisterStatus}: ${governanceVendorId}.`,
       });
       await appendProcurementGovernanceAudit({
         actor: text(body.actor) || text(body.pic),
@@ -626,9 +664,16 @@ export async function POST(request: NextRequest) {
         entityId: supplier.id,
         before: supplier.status,
         after: text(body.status) || supplier.status,
-        reason: `Updated supplier ${text(body.name) || supplier.name}. Category ${text(body.category) || supplier.category}; contact ${text(body.contact) || supplier.contact || "TBA"}.`,
+        reason: `Updated supplier ${text(body.name) || supplier.name}. Category ${text(body.category) || supplier.category}; contact ${text(body.contact) || supplier.contact || "TBA"}. Vendor_Register ${vendorRegisterStatus}: ${governanceVendorId}. COI/benchmark/payment-term fields synced for GCG review.`,
       });
-      return NextResponse.json({ success: true, action, supplier: { id: supplier.id, name: text(body.name) || supplier.name }, auditStatus, governanceAudit: "Governance_Audit_Log" }, { status: 200 });
+      return NextResponse.json({
+        success: true,
+        action,
+        supplier: { id: supplier.id, name: text(body.name) || supplier.name },
+        vendorRegister: { id: governanceVendorId, status: vendorRegisterStatus },
+        auditStatus,
+        governanceAudit: "Governance_Audit_Log",
+      }, { status: 200 });
     }
 
     if (action === "delete-supplier") {
