@@ -291,7 +291,24 @@ function complianceRegisterAlerts(rows: string[][]): AlertItem[] {
     const closed = ["submitted", "paid", "complete", "completed", "done", "closed"].includes(status);
     const days = daysUntil(dueDate);
 
-    if (!complianceId || closed || days === null || days > 7) return [];
+    if (!complianceId) return [];
+
+    if (closed) {
+      if (proofUrl) return [];
+      return [{
+        id: `compliance-register-proof-${complianceId}`,
+        category: "compliance" as const,
+        severity: riskLevel === "high" ? "high" as const : "medium" as const,
+        title: `Compliance selesai tanpa proof: ${obligation}`,
+        detail: `${area}${period ? ` ${period}` : ""}; status ${status}; Source Proof masih Belum dicatat. Jangan anggap siap audit/shareholder report sebelum bukti lapor/bayar diisi. ${notes || "Upload proof URL atau koreksi status jika belum selesai."}`,
+        owner,
+        dueDate: dueDate || undefined,
+        source: "Compliance_Register",
+        actionUrl: "/compliance",
+      }];
+    }
+
+    if (days === null || days > 7) return [];
 
     const overdue = days < 0 || status === "overdue";
     const severity: Severity = overdue || riskLevel === "high" ? "critical" : days <= 3 ? "high" : "medium";
