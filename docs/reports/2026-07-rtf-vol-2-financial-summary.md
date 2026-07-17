@@ -187,6 +187,23 @@ Rp 22.050.000 - Rp 20.568.177 = Rp 1.481.823 expected kembalian
 
 Status settlement/kembalian Wapiq: **needs confirmation**.
 
+### Bukti transfer TIM
+
+Pada 17 Juli 2026, SWI melakukan transfer pembayaran bagian TIM 30% atas RTF Vol. II:
+
+| Field | Nilai |
+|---|---:|
+| Transaction ID | `110108212844311` |
+| Rekening sumber | `**********6304 - SENSASI WANGI INDONE` |
+| Tujuan | Mandiri `1150076011370 - JAKARTA PROPERTINDO` |
+| Berita | `RTF vol 2` |
+| Nominal pokok | Rp 11.240.383 |
+| Admin bank | Rp 6.500 |
+| Total debit rekening | Rp 11.246.883 |
+| Ref SystemSWI | `BRI-110108212844311-RTF2-TIM` |
+
+Catatan: pembayaran ini adalah settlement bagian partner TIM, bukan beban operasional tambahan SWI dalam P&L event. Dalam cashflow bank tetap dicatat sebagai cash-out.
+
 ### Status Google Sheets
 
 Sinkronisasi ke Google Sheets source-of-truth masih **blocked** karena OAuth token lokal mengembalikan:
@@ -195,7 +212,7 @@ Sinkronisasi ke Google Sheets source-of-truth masih **blocked** karena OAuth tok
 invalid_grant
 ```
 
-Setelah Google OAuth re-auth selesai, row yang perlu disinkronkan adalah dua transaksi di atas plus catatan rekonsiliasi kasbon/kembalian Wapiq.
+Setelah Google OAuth re-auth selesai, row yang perlu disinkronkan adalah dua transaksi pemasukan/pengeluaran closeout, bukti transfer TIM, dan catatan rekonsiliasi kasbon/kembalian Wapiq.
 
 ---
 
