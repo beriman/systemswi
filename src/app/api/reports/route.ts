@@ -114,6 +114,33 @@ function isShareholderRow(row: string[]) {
   return /^\d+$/.test(text(row[0])) && Boolean(text(row[1]));
 }
 
+function parseRekeningKoranBalance(rows: string[][]): number {
+  let explicitTotal = 0;
+  const accountBalances: number[] = [];
+
+  for (const row of rows) {
+    const first = text(row[0]).toLowerCase();
+    const second = text(row[1]);
+    const third = text(row[2]).toLowerCase();
+    const saldoAwal = amount(row[3]);
+    const saldoAkhir = amount(row[4]);
+
+    // Rekening_Koran contains a summary row where column C is "Total" and
+    // column E is total ending balance. Prefer it when present so the report
+    // does not depend on a fixed row count.
+    if ((!first || first === "total") && third === "total" && saldoAkhir) {
+      explicitTotal = saldoAkhir;
+      continue;
+    }
+
+    const isHeader = ["nama bank", "tanggal", "rekening koran", "mutasi rekening"].includes(first) || first.startsWith("per ");
+    const looksLikeAccountRow = row.length >= 5 && Boolean(row[0]) && !isHeader && !second.startsWith("SA") && (saldoAwal || saldoAkhir || text(row[2]));
+    if (looksLikeAccountRow && saldoAkhir) accountBalances.push(saldoAkhir);
+  }
+
+  return explicitTotal || accountBalances.reduce((sum, value) => sum + value, 0);
+}
+
 async function readContext(): Promise<ReportContext> {
   let googleAuthError: unknown = null;
   const emptyOnAuthError = (error: unknown): string[][] => {
@@ -159,7 +186,7 @@ async function readContext(): Promise<ReportContext> {
     readSheet("GovernanceAuditLog").catch(emptyOnAuthError),
   ]);
 
-  const bankBalance = rekeningKoran.slice(0, 3).reduce((sum, row) => sum + amount(row[4]), 0);
+  const bankBalance = parseRekeningKoranBalance(rekeningKoran);
   const shareholders = pemegangSaham.filter(isShareholderRow);
   const paidInCapital = shareholders.reduce((sum, row) => sum + amount(row[6]), 0);
   const outstandingCapital = shareholders.reduce((sum, row) => {
