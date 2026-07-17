@@ -119,6 +119,21 @@ interface CloseoutPurchaseOrder {
   notes: string;
 }
 
+interface CloseoutShareholderLedger {
+  id: string;
+  date: string;
+  shareholder: string;
+  type: string;
+  division: string;
+  description: string;
+  debit: number;
+  credit: number;
+  status: string;
+  approvedBy: string;
+  proofUrl: string;
+  notes: string;
+}
+
 interface CloseoutSummary {
   plannedBudget: number;
   actualExpense: number;
@@ -141,6 +156,10 @@ interface CloseoutSummary {
   expensesWithoutProof: number;
   expensesNeedsProof: number;
   personalPaidExpenses: number;
+  shareholderLedgerRows?: number;
+  shareholderLedgerOutstanding?: number;
+  personalPaidNotInLedger?: number;
+  shareholderLedger?: CloseoutShareholderLedger[];
   documentationStatus: string;
   mediaCount: number;
   mediaProofUrls: string[];
@@ -1090,6 +1109,9 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
                     <div className="flex justify-between"><span>Expense tanpa proof URL</span><Badge className={closeout.expensesWithoutProof ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"}>{closeout.expensesWithoutProof}</Badge></div>
                     <div className="flex justify-between"><span>Status Needs Proof</span><Badge className={closeout.expensesNeedsProof ? "bg-amber-100 text-amber-700" : "bg-green-100 text-green-700"}>{closeout.expensesNeedsProof}</Badge></div>
                     <div className="flex justify-between"><span>Personal Paid / Shareholder Debt</span><Badge className={closeout.personalPaidExpenses ? "bg-amber-100 text-amber-700" : "bg-green-100 text-green-700"}>{closeout.personalPaidExpenses}</Badge></div>
+                    <div className="flex justify-between"><span>Ledger terhubung event</span><Badge className={(closeout.personalPaidNotInLedger || 0) > 0 ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"}>{closeout.shareholderLedgerRows || 0}</Badge></div>
+                    <div className="flex justify-between"><span>Outstanding Shareholder_Ledger</span><span>{formatCurrency(closeout.shareholderLedgerOutstanding || 0)}</span></div>
+                    <div className="flex justify-between"><span>Personal-paid belum cocok ledger</span><Badge className={(closeout.personalPaidNotInLedger || 0) > 0 ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"}>{closeout.personalPaidNotInLedger || 0}</Badge></div>
                     <div className="flex justify-between"><span>Governance audit trail</span><Badge className={closeout.governanceAuditCount ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}>{closeout.governanceAuditCount || 0}</Badge></div>
                     <div className="flex justify-between"><span>Dokumentasi media</span><span>{closeout.documentationStatus || "Belum dicatat"}</span></div>
                     {closeout.mediaProofUrls?.length > 0 && (

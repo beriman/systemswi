@@ -53,7 +53,7 @@ export async function GET(
 
     // Fetch all related data in parallel. If Google Sheets is degraded, do not
     // mistake empty fallback rows for a real "event not found" state.
-    const [events, budget, tenants, sponsors, timeline, media, expenses, governanceAuditLog, purchaseOrders] = await Promise.all([
+    const [events, budget, tenants, sponsors, timeline, media, expenses, governanceAuditLog, purchaseOrders, shareholderLedger] = await Promise.all([
       readEventSheet(EVENT_SHEETS.Events).catch(emptyOnReadError),
       readEventSheet(EVENT_SHEETS.Budget).catch(emptyOnReadError),
       readEventSheet(EVENT_SHEETS.Tenants).catch(emptyOnReadError),
@@ -63,6 +63,7 @@ export async function GET(
       readExpenseSheet(EXPENSE_SHEETS.Submissions).catch(emptyOnReadError),
       readSheet("GovernanceAuditLog").catch(emptyOnReadError),
       readSheet("PurchaseOrders").catch(emptyOnReadError),
+      readSheet("ShareholderLedger").catch(emptyOnReadError),
     ]);
     const degraded = googleReadError ? googleWorkspaceDegradedSource(SOURCE, googleReadError) : null;
 
@@ -181,6 +182,24 @@ export async function GET(
       proofUrl: r[12] || "",
       notes: r[13] || "",
     }));
+    const eventShareholderLedger = shareholderLedger.slice(1).filter((r) => {
+      const ledgerText = [r[0], r[3], r[4], r[5], r[11], r[12]].map((value) => text(value).toLowerCase()).join(" ");
+      return eventMatchTokens.some((token) => ledgerText.includes(token))
+        || Array.from(eventExpenseIds).some((expenseId) => expenseId && ledgerText.includes(String(expenseId).toLowerCase()));
+    }).map((r) => ({
+      id: r[0] || "",
+      date: r[1] || "",
+      shareholder: r[2] || "Belum dicatat",
+      type: r[3] || "TBA",
+      division: r[4] || "Belum dicatat",
+      description: r[5] || "Belum dicatat",
+      debit: parseAmount(r[6]),
+      credit: parseAmount(r[7]),
+      status: r[9] || "Belum dicatat",
+      approvedBy: r[10] || "Belum dicatat",
+      proofUrl: r[11] || "",
+      notes: r[12] || "",
+    }));
     const governanceAuditTrail = governanceAuditLog.slice(1)
       .filter((r) => {
         const entityType = String(r[5] || "").toLowerCase().trim();
@@ -240,6 +259,11 @@ export async function GET(
     );
     const expensesWithoutProof = eventExpenses.filter((item) => item.amount > 0 && !item.proofUrl).length;
     const expensesNeedsProof = eventExpenses.filter((item) => ["needs proof", "butuh bukti"].includes(item.status.toLowerCase())).length;
+    const personalPaidExpenseCount = eventExpenses.filter((item) => isPersonalPaidPaymentMethod(item.paymentMethod) || item.shareholderDebtFlag).length;
+    const shareholderLedgerOutstanding = eventShareholderLedger
+      .filter((item) => !["rejected", "cancelled"].includes(item.status.toLowerCase()))
+      .reduce((sum, item) => sum + item.debit - item.credit, 0);
+    const personalPaidNotInLedger = Math.max(personalPaidExpenseCount - eventShareholderLedger.length, 0);
     const categoryTotals = eventExpenses.reduce<Record<string, number>>((acc, item) => {
       const key = item.category || "Belum dicatat";
       acc[key] = (acc[key] || 0) + item.amount;
@@ -258,6 +282,7 @@ export async function GET(
       eventMedia.length === 0 ? "Dokumentasi media belum dicatat" : "",
       !event.notes ? "Lessons learned/catatan closeout belum dicatat" : "",
       governanceAuditTrail.length === 0 && eventExpenses.length > 0 ? "Governance_Audit_Log belum terhubung ke expense/event ini" : "",
+      personalPaidNotInLedger > 0 ? `${personalPaidNotInLedger} personal-paid expense belum cocok ke Shareholder_Ledger event` : "",
     ].filter(Boolean);
 
     const closeoutReadinessChecks = [
@@ -269,6 +294,7 @@ export async function GET(
       eventMedia.length > 0,
       Boolean(event.notes),
       eventExpenses.length === 0 || governanceAuditTrail.length > 0,
+      personalPaidNotInLedger === 0,
     ];
     const closeoutReadinessScore = Math.round((closeoutReadinessChecks.filter(Boolean).length / closeoutReadinessChecks.length) * 100);
 
@@ -293,7 +319,11 @@ export async function GET(
       closeoutBlockers,
       expensesWithoutProof,
       expensesNeedsProof,
-      personalPaidExpenses: eventExpenses.filter((item) => item.paymentMethod === "Personal Paid" || item.shareholderDebtFlag).length,
+      personalPaidExpenses: personalPaidExpenseCount,
+      shareholderLedgerRows: eventShareholderLedger.length,
+      shareholderLedgerOutstanding,
+      personalPaidNotInLedger,
+      shareholderLedger: eventShareholderLedger,
       documentationStatus: eventMedia.length > 0 ? `${eventMedia.length} media tercatat` : "Belum dicatat",
       mediaCount: eventMedia.length,
       mediaProofUrls: eventMedia.filter((item) => item.url).slice(0, 5).map((item) => item.url),
