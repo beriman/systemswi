@@ -31,6 +31,20 @@ function isClosed(status: string): boolean {
   return ["rejected", "cancelled", "canceled", "settled", "paid", "converted to capital"].includes(status.toLowerCase().trim());
 }
 
+function text(value: unknown): string {
+  return String(value ?? "").trim();
+}
+
+function isMissingHumanActor(value: unknown): boolean {
+  const normalized = text(value).toLowerCase();
+  return !normalized || ["system", "systemswi", "agent", "hermes", "cron", "automation"].some((marker) => normalized.includes(marker));
+}
+
+function isSettlementLikeStatus(value: unknown): boolean {
+  const normalized = text(value).toLowerCase();
+  return ["approved", "paid", "settled", "converted to capital", "converted", "lunas", "dibayar"].includes(normalized);
+}
+
 export async function GET() {
   try {
     const entries = await listShareholderLedger();
@@ -97,8 +111,24 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const debit = n(body.debit ?? body.amount);
     const credit = n(body.credit);
+    const proofUrl = text(body.proofUrl);
+    const notes = text(body.notes);
+    const approvedBy = text(body.approvedBy || body.actor);
+    const approvalStatus = text(body.approvalStatus) || "Draft";
     if (!body.description || (debit <= 0 && credit <= 0)) {
       return NextResponse.json({ error: "description and debit/credit amount are required" }, { status: 400 });
+    }
+    if (credit > 0 && !proofUrl && !notes) {
+      return NextResponse.json({
+        error: "Proof URL atau notes wajib diisi sebelum mencatat credit/pelunasan Shareholder_Ledger.",
+        policy: "Fairness: pembayaran/konversi hutang pemegang saham tidak boleh ditandai lunas tanpa bukti atau catatan keputusan manusia.",
+      }, { status: 422 });
+    }
+    if ((credit > 0 || isSettlementLikeStatus(approvalStatus)) && isMissingHumanActor(approvedBy)) {
+      return NextResponse.json({
+        error: "approvedBy/actor manusia wajib diisi untuk settlement/approval Shareholder_Ledger.",
+        policy: "Gunakan nama reviewer manusia; jangan memakai systemswi/agent/automation sebagai pengambil keputusan hutang pemegang saham.",
+      }, { status: 400 });
     }
 
     const entry = await appendShareholderLedgerEntry({
@@ -109,14 +139,14 @@ export async function POST(req: NextRequest) {
       description: body.description,
       debit,
       credit,
-      approvalStatus: body.approvalStatus || "Draft",
-      approvedBy: body.approvedBy || "",
-      proofUrl: body.proofUrl || "",
-      notes: body.notes || "Manual shareholder ledger entry from /api/shareholder-ledger",
+      approvalStatus,
+      approvedBy: approvedBy || "",
+      proofUrl,
+      notes: notes || "Manual shareholder ledger entry from /api/shareholder-ledger",
     });
 
     await logGovernanceActionSafe({
-      actor: body.actor || body.approvedBy || "systemswi",
+      actor: approvedBy || "systemswi",
       role: body.role || "Finance/Governance",
       action: credit > 0 ? "RECORD_SHAREHOLDER_LEDGER_CREDIT" : "RECORD_SHAREHOLDER_LEDGER_DEBIT",
       entityType: "Shareholder Ledger",
@@ -150,6 +180,24 @@ export async function PUT(req: NextRequest) {
     const id = String(body.id || body.entryId || "").trim();
     if (!id) return NextResponse.json({ error: "id/entryId wajib diisi" }, { status: 400 });
 
+    const nextCredit = body.credit !== undefined ? n(body.credit) : undefined;
+    const nextProofUrl = body.proofUrl !== undefined ? text(body.proofUrl) : "";
+    const nextNotes = body.notes !== undefined ? text(body.notes) : "";
+    const nextStatus = body.approvalStatus || body.status;
+    const humanActor = text(body.actor || body.approvedBy);
+    if (nextCredit !== undefined && nextCredit > 0 && !nextProofUrl && !nextNotes) {
+      return NextResponse.json({
+        error: "Proof URL atau notes wajib diisi sebelum mencatat pelunasan/credit Shareholder_Ledger.",
+        policy: "Fairness: pembayaran/konversi hutang pemegang saham tidak boleh ditandai lunas tanpa bukti atau catatan keputusan manusia.",
+      }, { status: 422 });
+    }
+    if (((nextCredit !== undefined && nextCredit > 0) || isSettlementLikeStatus(nextStatus)) && isMissingHumanActor(humanActor)) {
+      return NextResponse.json({
+        error: "actor/approvedBy manusia wajib diisi untuk update settlement/approval Shareholder_Ledger.",
+        policy: "Gunakan nama reviewer manusia; systemswi/agent/automation hanya boleh mencatat, bukan mengambil keputusan hutang pemegang saham.",
+      }, { status: 400 });
+    }
+
     const result = await updateShareholderLedgerEntry(id, {
       date: body.date,
       shareholder: body.shareholder,
@@ -168,7 +216,7 @@ export async function PUT(req: NextRequest) {
     const beforeOutstanding = result.before.debit - result.before.credit;
     const afterOutstanding = result.after.debit - result.after.credit;
     await logGovernanceActionSafe({
-      actor: body.actor || body.approvedBy || "Beriman Juliano",
+      actor: humanActor || result.after.approvedBy || "Beriman Juliano",
       role: body.role || "Finance/Governance",
       action: afterOutstanding < beforeOutstanding ? "SETTLE_SHAREHOLDER_LEDGER" : "UPDATE_SHAREHOLDER_LEDGER",
       entityType: "Shareholder Ledger",
