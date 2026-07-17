@@ -45,6 +45,11 @@ function isMissingVendorPaymentTerm(value: string): boolean {
   return !value || normalized.includes("tba") || normalized.includes("belum dicatat") || normalized.includes("belum tersedia");
 }
 
+function isMissingReviewer(value: unknown): boolean {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  return !normalized || normalized.includes("tba") || normalized.includes("belum dicatat") || normalized.includes("system");
+}
+
 const PAYMENT_METHODS = ["Cash", "Bank", "Personal Paid", "Company Paid"] as const;
 
 function normalizePaymentMethod(value: unknown): string {
@@ -179,6 +184,15 @@ export async function PUT(
     const body = await req.json();
     const { status, reviewedBy, notes } = body;
 
+    if (isMissingReviewer(reviewedBy)) {
+      return NextResponse.json({
+        error: "Reviewed By wajib diisi dengan aktor manusia untuk approval/rejection expense.",
+        policy: "Governance_Audit_Log tidak boleh memakai aktor default/fiktif; isi nama reviewer seperti Beriman Juliano agar jejak audit valid.",
+      }, { status: 400 });
+    }
+
+    const reviewerName = String(reviewedBy).trim();
+
     if (!status || !["Approved", "Rejected"].includes(status)) {
       return NextResponse.json({ error: "Status must be 'Approved' or 'Rejected'" }, { status: 400 });
     }
@@ -223,7 +237,7 @@ export async function PUT(
       n(existing[6]),
       s(existing, 7),
       status,
-      reviewedBy || "",
+      reviewerName,
       now,
       notes || s(existing, 11),
       s(existing, 12),
@@ -241,7 +255,7 @@ export async function PUT(
     await updateExpenseRow(EXPENSE_SHEETS.Submissions, rowNum, updatedRow);
 
     await logGovernanceActionSafe({
-      actor: reviewedBy || "Beriman Juliano",
+      actor: reviewerName,
       role: "Direktur",
       action: status === "Approved" ? "APPROVE_EXPENSE" : "REJECT_EXPENSE",
       entityType: "Expense",
@@ -268,14 +282,14 @@ export async function PUT(
             debit: n(existing[6]),
             credit: 0,
             approvalStatus: "Approved",
-            approvedBy: reviewedBy || "Beriman Juliano",
+            approvedBy: reviewerName,
             proofUrl: s(existing, 7),
             notes: `Auto-created from approved personal-paid expense:${id}. ${notes || s(existing, 11) || ""}`,
           });
 
           if (ledgerResult.created && ledgerResult.entry) {
             await logGovernanceActionSafe({
-              actor: reviewedBy || "Beriman Juliano",
+              actor: reviewerName,
               role: "Direktur",
               action: "AUTO_CREATE_SHAREHOLDER_LEDGER_FROM_EXPENSE",
               entityType: "Shareholder Ledger",
@@ -318,7 +332,7 @@ export async function PUT(
       success: true,
       id,
       status,
-      reviewedBy: reviewedBy || "",
+      reviewedBy: reviewerName,
       reviewedDate: now,
       audit: "Governance_Audit_Log",
       message: `Expense ${status.toLowerCase()} successfully.`,
