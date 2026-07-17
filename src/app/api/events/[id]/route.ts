@@ -26,6 +26,10 @@ function isPayableExpenseStatus(value: string): boolean {
   return ["pending", "needs proof", "butuh bukti", "approved"].includes(value.toLowerCase().trim());
 }
 
+function isPersonalPaidPaymentMethod(value: string): boolean {
+  return ["personal paid", "dibayar pribadi", "pribadi", "shareholder paid"].includes(value.toLowerCase().trim());
+}
+
 function isOpenPoStatus(value: string): boolean {
   return ["draft", "ordered", "partial"].includes(value.toLowerCase().trim());
 }
@@ -214,7 +218,7 @@ export async function GET(
       .filter((item) => isApprovedExpenseStatus(item.status))
       .reduce((sum, item) => sum + item.amount, 0);
     const payableExpenseTotal = eventExpenses
-      .filter((item) => isPayableExpenseStatus(item.status) && item.amount > 0 && item.paymentMethod !== "Personal Paid")
+      .filter((item) => isPayableExpenseStatus(item.status) && item.amount > 0 && !isPersonalPaidPaymentMethod(item.paymentMethod))
       .reduce((sum, item) => sum + item.amount, 0);
     const payablePurchaseOrderTotal = eventPurchaseOrders
       .filter((item) => isOpenPoStatus(item.status))

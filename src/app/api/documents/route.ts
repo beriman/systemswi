@@ -72,6 +72,10 @@ function columnIndex(headers: string[], names: string[], fallback: number): numb
   return fallback;
 }
 
+function isPersonalPaidPaymentMethod(value: unknown): boolean {
+  return ["personal paid", "dibayar pribadi", "pribadi", "shareholder paid"].includes(text(value).toLowerCase());
+}
+
 function isDocumentType(value: string): value is DocumentType {
   return Boolean(getTemplateByType(value as DocumentType));
 }
@@ -222,7 +226,7 @@ async function readContext(): Promise<SheetContext> {
   const expensePending = expenseRows.filter((row) => text(row[8]).toLowerCase() === "pending");
   const expenseNeedsProof = expenseRows.filter((row) => text(row[8]).toLowerCase() === "needs proof" || (amount(row[6]) > 0 && !text(row[7])));
   const expenseWithoutDivision = expenseRows.filter((row) => !text(row[12]));
-  const personalPaidExpenses = expenseRows.filter((row) => text(row[14]).toLowerCase() === "personal paid" || ["yes", "true", "1"].includes(text(row[17]).toLowerCase()));
+  const personalPaidExpenses = expenseRows.filter((row) => isPersonalPaidPaymentMethod(row[14]) || ["yes", "ya", "true", "1"].includes(text(row[17]).toLowerCase()));
 
   const shareholderDebtOutstanding = shareholderLedger.slice(1).reduce((sum, row) => {
     const status = text(row[9]).toLowerCase();
@@ -275,12 +279,12 @@ async function readContext(): Promise<SheetContext> {
     const expenseRowsForEvent = expenseSubmissions.slice(1).filter((expense) => text(expense[3]) === eventId || text(expense[3]) === eventName);
     const expensesWithoutProof = expenseRowsForEvent.filter((expense) => amount(expense[6]) > 0 && !text(expense[7])).length;
     const expensesNeedsProof = expenseRowsForEvent.filter((expense) => ["needs proof", "butuh bukti"].includes(text(expense[8]).toLowerCase())).length;
-    const personalPaidExpenses = expenseRowsForEvent.filter((expense) => text(expense[14]).toLowerCase() === "personal paid" || ["yes", "ya", "true", "1"].includes(text(expense[17]).toLowerCase())).length;
+    const personalPaidExpenses = expenseRowsForEvent.filter((expense) => isPersonalPaidPaymentMethod(expense[14]) || ["yes", "ya", "true", "1"].includes(text(expense[17]).toLowerCase())).length;
     const actualExpense = expenseRowsForEvent
       .filter((expense) => ["approved", "paid", "lunas", "settled", "completed", "submitted"].includes(text(expense[8]).toLowerCase()))
       .reduce((sum, expense) => sum + amount(expense[6]), 0);
     const payableFromExpenses = expenseRowsForEvent
-      .filter((expense) => ["pending", "needs proof", "butuh bukti", "approved"].includes(text(expense[8]).toLowerCase()) && text(expense[14]) !== "Personal Paid")
+      .filter((expense) => ["pending", "needs proof", "butuh bukti", "approved"].includes(text(expense[8]).toLowerCase()) && !isPersonalPaidPaymentMethod(expense[14]))
       .reduce((sum, expense) => sum + amount(expense[6]), 0);
     const matchTokens = [eventId, eventName, eventSlug].map((value) => value.toLowerCase()).filter(Boolean);
     const payableFromPurchaseOrders = purchaseOrders.slice(1)
