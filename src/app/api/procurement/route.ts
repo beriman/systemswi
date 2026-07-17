@@ -236,6 +236,27 @@ function classifyPoApproval(total: number, supplier: Supplier) {
   };
 }
 
+function isHumanApprovalActor(value: unknown): boolean {
+  const actor = text(value).toLowerCase();
+  return Boolean(actor) && !["system", "agent", "hemuhemu", "owl", "automation"].some((marker) => actor.includes(marker));
+}
+
+function poApprovalBlockers(total: number, supplier: Supplier, approvalConfirmed: boolean, actor: unknown): string[] {
+  const blockers: string[] = [];
+  const riskFlags = supplier.riskFlags || [];
+  if (!approvalConfirmed) return blockers;
+  if (!isHumanApprovalActor(actor)) blockers.push("approvalConfirmed untuk PO harus menyertakan actor manusia; System/agent tidak boleh mengonfirmasi approval vendor/PO.");
+  if (!supplier.governanceVendorId) blockers.push("Supplier belum terhubung ke Vendor_Register; PO hanya boleh draft sampai vendor register tersedia.");
+  if (riskFlags.includes("MISSING_PAYMENT_TERM")) blockers.push("Payment term Vendor_Register wajib jelas sebelum PO dapat berstatus ordered/received.");
+  if ((supplier.relatedParty || "").toLowerCase() === "yes") {
+    if (riskFlags.includes("MISSING_RELATIONSHIP_DETAIL")) blockers.push("Related-party vendor wajib detail relasi sebelum approval PO.");
+    if (riskFlags.includes("MISSING_SELECTED_REASON")) blockers.push("Related-party vendor wajib alasan objektif pemilihan sebelum approval PO.");
+    if (riskFlags.includes("BENCHMARK_INCOMPLETE")) blockers.push("Related-party vendor wajib 2 benchmark sebelum approval PO.");
+  }
+  if (total > 2_000_000 && !supplier.benchmarkComplete) blockers.push("PO > Rp2.000.000 wajib 2 benchmark lengkap di Vendor_Register sebelum approval.");
+  return blockers;
+}
+
 async function appendProcurementAudit(entry: { action: string; target: string; summary: string }) {
   try {
     await appendSwiMemoryLog(entry);
@@ -344,6 +365,20 @@ export async function POST(request: NextRequest) {
       const governance = classifyPoApproval(total, supplier);
       const requestedStatus = text(body.status) || "ordered";
       const approvalConfirmed = ["yes", "true", "1", "approved"].includes(text(body.approvalConfirmed || body.directorApproved).toLowerCase());
+      const blockers = poApprovalBlockers(total, supplier, approvalConfirmed, body.actor || body.pic);
+      if (blockers.length && requestedStatus !== "draft" && requestedStatus !== "cancelled") {
+        return NextResponse.json({
+          error: "PO belum memenuhi aturan GCG untuk human approval.",
+          blockers,
+          policy: {
+            humanApproval: "approvalConfirmed/directorApproved harus berasal dari aktor manusia, bukan System/agent.",
+            vendorRegister: "Supplier harus terhubung ke Vendor_Register sebelum PO ordered/received.",
+            highValue: "> Rp2.000.000 wajib 2 benchmark lengkap.",
+            relatedParty: "Related-party wajib detail relasi, alasan objektif, dan 2 benchmark.",
+            paymentTerm: "Payment term vendor wajib jelas agar payable/fairness bisa diaudit.",
+          },
+        }, { status: 422 });
+      }
       const status = governance.approvalRequired && !approvalConfirmed && requestedStatus !== "cancelled" ? "draft" : requestedStatus;
       const row = [
         poId,
