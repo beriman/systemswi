@@ -67,6 +67,7 @@ export type RabContext = {
     expensesWithoutProof: number;
     expensesNeedsProof: number;
     personalPaidExpenses: number;
+    governanceAuditRows?: number;
   }>;
 };
 
@@ -406,7 +407,8 @@ function generateEventCloseoutReport(data: Record<string, string>, letterNumber:
     const expensesWithoutProof = eventCommercial?.expensesWithoutProof ?? 0;
     const expensesNeedsProof = eventCommercial?.expensesNeedsProof ?? 0;
     const personalPaidExpenses = eventCommercial?.personalPaidExpenses ?? 0;
-    const closeoutReady = expensesWithoutProof === 0 && expensesNeedsProof === 0 && receivable === 0 && payable === 0 && mediaRows > 0;
+    const governanceAuditRows = eventCommercial?.governanceAuditRows ?? 0;
+    const closeoutReady = expensesWithoutProof === 0 && expensesNeedsProof === 0 && receivable === 0 && payable === 0 && mediaRows > 0 && (governanceAuditRows > 0 || !eventCommercial);
     const eventTable = rows.length
         ? `| Event | Budget | Actual | Remaining | Status |\n|---|---:|---:|---:|---|\n${rows.map((event) => `| ${event.name || "TBA"} | ${rupiah(event.budget)} | ${rupiah(event.actual)} | ${rupiah(event.remaining)} | ${event.status || "TBA"} |`).join("\n")}`
         : "Belum ada data Event_Budget yang cocok. Isi TBA/0 sampai Sheets dilengkapi.";
@@ -448,7 +450,8 @@ Jika media rows masih 0/TBA, closeout belum boleh dianggap lengkap untuk pemegan
 - Expense status Needs Proof: **${expensesNeedsProof}** item.
 - Personal-paid expense yang harus direkonsiliasi ke Shareholder_Ledger: **${personalPaidExpenses}** item.
 - Receivable/payable tersisa: **${rupiah(receivable)} / ${rupiah(payable)}**.
-- Status siap closeout: **${closeoutReady ? "Siap review manusia" : "Belum siap — lengkapi proof, receivable/payable, media, dan ledger sebelum ditutup"}**.
+- Governance_Audit_Log terkait event/expense: **${governanceAuditRows}** baris${eventCommercial ? "" : " (pilih event yang cocok untuk validasi audit trail per-event)"}.
+- Status siap closeout: **${closeoutReady ? "Siap review manusia" : "Belum siap — lengkapi proof, receivable/payable, media, ledger, dan audit trail sebelum ditutup"}**.
 
 ## 5. Lessons Learned
 ${data.lessons_learned || "TBA — isi setelah post-event review bersama PIC."}

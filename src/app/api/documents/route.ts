@@ -53,6 +53,7 @@ type SheetContext = {
     expensesWithoutProof: number;
     expensesNeedsProof: number;
     personalPaidExpenses: number;
+    governanceAuditRows: number;
   }>;
 };
 
@@ -277,6 +278,7 @@ async function readContext(): Promise<SheetContext> {
     const tenantRowsForEvent = tenants.slice(1).filter((tenant) => text(tenant[1]) === eventId || text(tenant[1]) === eventName);
     const sponsorRowsForEvent = sponsors.slice(1).filter((sponsor) => text(sponsor[1]) === eventId || text(sponsor[1]) === eventName);
     const expenseRowsForEvent = expenseSubmissions.slice(1).filter((expense) => text(expense[3]) === eventId || text(expense[3]) === eventName);
+    const expenseIdsForEvent = new Set(expenseRowsForEvent.map((expense) => text(expense[0])).filter(Boolean));
     const expensesWithoutProof = expenseRowsForEvent.filter((expense) => amount(expense[6]) > 0 && !text(expense[7])).length;
     const expensesNeedsProof = expenseRowsForEvent.filter((expense) => ["needs proof", "butuh bukti"].includes(text(expense[8]).toLowerCase())).length;
     const personalPaidExpenses = expenseRowsForEvent.filter((expense) => isPersonalPaidPaymentMethod(expense[14]) || ["yes", "ya", "true", "1"].includes(text(expense[17]).toLowerCase())).length;
@@ -302,6 +304,17 @@ async function readContext(): Promise<SheetContext> {
       const status = text(sponsor[11]).toLowerCase();
       return sum + (["paid", "lunas", "settled", "received"].includes(status) ? amount(sponsor[7]) + amount(sponsor[10]) : 0);
     }, 0);
+    const governanceAuditRows = governanceAuditLog.slice(1).filter((audit) => {
+      const entityId = text(audit[6]);
+      const entityType = text(audit[5]).toLowerCase();
+      const reason = text(audit[11]).toLowerCase();
+      const sourceModule = text(audit[13]).toLowerCase();
+      return entityId === eventId
+        || entityId === eventName
+        || expenseIdsForEvent.has(entityId)
+        || (entityType === "event" && (reason.includes(eventId.toLowerCase()) || reason.includes(eventName.toLowerCase())))
+        || (sourceModule.includes("/events") && (reason.includes(eventId.toLowerCase()) || reason.includes(eventName.toLowerCase())));
+    }).length;
     return {
       id: eventId,
       name: eventName,
@@ -316,6 +329,7 @@ async function readContext(): Promise<SheetContext> {
       expensesWithoutProof,
       expensesNeedsProof,
       personalPaidExpenses,
+      governanceAuditRows,
     };
   });
 
