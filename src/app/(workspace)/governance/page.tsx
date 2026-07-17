@@ -85,7 +85,7 @@ type DashboardPayload = {
     compliance?: { total: number; open: number; overdue: number; dueSoon: number; completedWithoutProof: number; missingDueDate?: number; missingOwner?: number };
     vendor?: { total: number; relatedParty: number; exceptions: number; benchmarkComplete: number; openPo?: number; overduePo?: number; overduePoValue?: number; missingPaymentTerm?: number };
     audit?: { governanceAuditRows: number; humanOnlyAutomationApprovalCount?: number; expenseClosedMissingAuditCount?: number };
-    monthlyGcgReport?: { total: number; currentPeriod?: string; isCurrentPeriodRecorded?: boolean; latestPeriod: string; latestGeneratedAt: string; latestStatus: string };
+    monthlyGcgReport?: { total: number; currentPeriod?: string; isCurrentPeriodRecorded?: boolean; latestPeriod: string; latestGeneratedAt: string; latestStatus: string; latestOverallGcgScore?: number; latestTarifExceptionCount?: number };
     event?: {
       events: number;
       budgetRows: number;
@@ -272,7 +272,7 @@ export default function GovernancePage() {
           <Card>
             <CardHeader className="pb-2"><CardTitle className="text-sm">Monthly GCG Report</CardTitle></CardHeader>
             <CardContent>
-              {loading ? <Skeleton className="h-8" /> : <><div className="text-2xl font-bold">{monthlyGcgReport?.total || 0}</div><p className="text-sm text-muted-foreground">{monthlyGcgReport?.currentPeriod || monthlyGcgReport?.latestPeriod || "TBA"} • {monthlyGcgReport?.isCurrentPeriodRecorded ? "Periode berjalan tercatat" : "Periode berjalan belum dicatat"}</p><p className="text-xs text-muted-foreground">Latest: {monthlyGcgReport?.latestPeriod || "TBA"} • {monthlyGcgReport?.latestStatus || "Belum dicatat"}</p></>}
+              {loading ? <Skeleton className="h-8" /> : <><div className="text-2xl font-bold">{monthlyGcgReport?.total || 0}</div><p className="text-sm text-muted-foreground">{monthlyGcgReport?.currentPeriod || monthlyGcgReport?.latestPeriod || "TBA"} • {monthlyGcgReport?.isCurrentPeriodRecorded ? "Periode berjalan tercatat" : "Periode berjalan belum dicatat"}</p><p className="text-xs text-muted-foreground">Latest: {monthlyGcgReport?.latestPeriod || "TBA"} • {monthlyGcgReport?.latestStatus || "Belum dicatat"}</p><p className="text-xs text-muted-foreground">Score: {monthlyGcgReport?.latestOverallGcgScore ?? 0}/100 • Exceptions: {monthlyGcgReport?.latestTarifExceptionCount ?? 0}</p></>}
             </CardContent>
           </Card>
         </div>

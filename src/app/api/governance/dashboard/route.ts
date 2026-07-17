@@ -415,12 +415,17 @@ export async function GET(req: NextRequest) {
     const currentPeriod = currentMonthlyGcgPeriod();
     const hasCurrentMonthlyGcgReport = monthlyGcgReport.some((row) => normalizePeriod(text(row[1])) === normalizePeriod(currentPeriod));
     const latestMonthlyGcg = monthlyGcgReport
-      .map((row) => ({
-        id: text(row[0]),
-        period: text(row[1]) || "TBA",
-        generatedAt: text(row[2]) || text(row[3]) || "TBA",
-        status: text(row[4]) || text(row[5]) || "Belum dicatat",
-      }))
+      .map((row) => {
+        const hasScoreColumns = row.length >= 14;
+        return {
+          id: text(row[0]),
+          period: text(row[1]) || "TBA",
+          generatedAt: text(row[2]) || text(row[3]) || "TBA",
+          status: text(row[4]) || "Belum dicatat",
+          overallGcgScore: hasScoreColumns ? amount(row[5]) : 0,
+          tarifExceptionCount: hasScoreColumns ? amount(row[6]) : 0,
+        };
+      })
       .sort((a, b) => b.generatedAt.localeCompare(a.generatedAt))[0] || null;
     const hasMonthlyGcgReport = monthlyGcgReport.length > 0;
     const humanOnlyAutomationApprovals = governanceAuditLog.filter((row) =>
@@ -571,6 +576,8 @@ export async function GET(req: NextRequest) {
           latestPeriod: latestMonthlyGcg?.period || "TBA",
           latestGeneratedAt: latestMonthlyGcg?.generatedAt || "TBA",
           latestStatus: latestMonthlyGcg?.status || "Belum dicatat",
+          latestOverallGcgScore: latestMonthlyGcg?.overallGcgScore || 0,
+          latestTarifExceptionCount: latestMonthlyGcg?.tarifExceptionCount || 0,
         },
         event: {
           events: events.length,

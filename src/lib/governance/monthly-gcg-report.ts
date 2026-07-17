@@ -1,5 +1,5 @@
 // Monthly GCG Report log — readiness snapshot for shareholder TARIF reporting
-// Schema: Report ID | Period | Generated At | Created By | Status | Expense Pending | Needs Proof | Shareholder Debt | Compliance Overdue | Vendor Exceptions | Governance Audit Rows | Notes/Source
+// Schema: Report ID | Period | Generated At | Created By | Status | Overall GCG Score | TARIF Exceptions | Expense Pending | Needs Proof | Shareholder Debt | Compliance Overdue | Vendor Exceptions | Governance Audit Rows | Notes/Source
 
 import { google } from "googleapis";
 import { appendRows, getAuth, SPREADSHEET_ID } from "@/lib/sheets/sheets-real";
@@ -11,6 +11,8 @@ export const MONTHLY_GCG_REPORT_HEADERS = [
   "Generated At",
   "Created By",
   "Status",
+  "Overall GCG Score",
+  "TARIF Exceptions",
   "Expense Pending",
   "Needs Proof",
   "Shareholder Debt",
@@ -25,6 +27,8 @@ export type MonthlyGcgReportSnapshot = {
   generatedAt?: string;
   createdBy?: string;
   status?: string;
+  overallGcgScore?: number;
+  tarifExceptionCount?: number;
   expensePendingCount: number;
   expenseNeedsProofCount: number;
   shareholderDebtOutstanding: number;
@@ -59,7 +63,7 @@ export async function ensureMonthlyGcgReportSheet(): Promise<void> {
 
   await sheets.spreadsheets.values.update({
     spreadsheetId: SPREADSHEET_ID,
-    range: `${MONTHLY_GCG_REPORT_SHEET}!A1:L1`,
+    range: `${MONTHLY_GCG_REPORT_SHEET}!A1:N1`,
     valueInputOption: "USER_ENTERED",
     requestBody: { values: [MONTHLY_GCG_REPORT_HEADERS] },
   });
@@ -72,6 +76,8 @@ export function formatMonthlyGcgReportRow(snapshot: MonthlyGcgReportSnapshot): (
     snapshot.generatedAt || new Date().toISOString(),
     snapshot.createdBy || "systemswi",
     snapshot.status || "Draft - Needs Human Review",
+    snapshot.overallGcgScore ?? 0,
+    snapshot.tarifExceptionCount ?? 0,
     snapshot.expensePendingCount,
     snapshot.expenseNeedsProofCount,
     snapshot.shareholderDebtOutstanding,
