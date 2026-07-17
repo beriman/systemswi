@@ -82,7 +82,7 @@ type DashboardPayload = {
       overpaidCount?: number;
       overpaidAmount?: number;
     };
-    compliance?: { total: number; open: number; overdue: number; dueSoon: number; completedWithoutProof: number };
+    compliance?: { total: number; open: number; overdue: number; dueSoon: number; completedWithoutProof: number; missingDueDate?: number; missingOwner?: number };
     vendor?: { total: number; relatedParty: number; exceptions: number; benchmarkComplete: number; openPo?: number; overduePo?: number; overduePoValue?: number; missingPaymentTerm?: number };
     audit?: { governanceAuditRows: number; humanOnlyAutomationApprovalCount?: number; expenseClosedMissingAuditCount?: number };
     monthlyGcgReport?: { total: number; currentPeriod?: string; isCurrentPeriodRecorded?: boolean; latestPeriod: string; latestGeneratedAt: string; latestStatus: string };
@@ -305,6 +305,8 @@ export default function GovernancePage() {
               <div className="flex justify-between"><span>Total register</span><b>{compliance?.total || 0}</b></div>
               <div className="flex justify-between"><span>Open</span><b>{compliance?.open || 0}</b></div>
               <div className="flex justify-between"><span>Due soon</span><b>{compliance?.dueSoon || 0}</b></div>
+              <div className="flex justify-between text-amber-600"><span>Missing due date</span><b>{compliance?.missingDueDate || 0}</b></div>
+              <div className="flex justify-between text-amber-600"><span>Missing owner</span><b>{compliance?.missingOwner || 0}</b></div>
               <div className="flex justify-between text-amber-600"><span>Completed no proof</span><b>{compliance?.completedWithoutProof || 0}</b></div>
               <div className="flex justify-between text-red-600"><span>Overdue</span><b>{compliance?.overdue || 0}</b></div>
             </CardContent>

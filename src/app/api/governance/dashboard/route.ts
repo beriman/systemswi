@@ -319,6 +319,11 @@ export async function GET(req: NextRequest) {
     const completedCompliance = complianceRegister.filter((row) => isApproved(text(row[5])));
     const completedComplianceMissingProof = completedCompliance.filter((row) => !text(row[7]));
     const openCompliance = complianceRegister.filter((row) => !isApproved(text(row[5])));
+    const complianceMissingDueDate = openCompliance.filter((row) => !text(row[4]));
+    const complianceMissingOwner = complianceRegister.filter((row) => {
+      const owner = text(row[6]).toLowerCase();
+      return !owner || owner.includes("tba") || owner.includes("belum dicatat") || owner.includes("belum tersedia");
+    });
     const overdueCompliance = openCompliance.filter((row) => isOverdue(text(row[4])) || text(row[5]).toLowerCase() === "overdue");
     const dueSoonCompliance = openCompliance.filter((row) => {
       const due = text(row[4]);
@@ -444,7 +449,9 @@ export async function GET(req: NextRequest) {
     const accountabilityScore = Math.round((percent(approvedWithReviewer.length, approvedExpenses.length) + percent(taskWithOwner.length, tasks.length) + percent(governanceAuditLog.length > 0 ? 1 : 0, 1)) / 3);
     const complianceOnTimeScore = percent(complianceRegister.length - overdueCompliance.length, complianceRegister.length);
     const complianceProofScore = percent(completedCompliance.length - completedComplianceMissingProof.length, completedCompliance.length);
-    const responsibilityScore = Math.round((complianceOnTimeScore + complianceProofScore) / 2);
+    const complianceOwnerScore = percent(complianceRegister.length - complianceMissingOwner.length, complianceRegister.length);
+    const complianceDueDateScore = percent(openCompliance.length - complianceMissingDueDate.length, openCompliance.length);
+    const responsibilityScore = Math.round((complianceOnTimeScore + complianceProofScore + complianceOwnerScore + complianceDueDateScore) / 4);
     const vendorGovernanceComplete = activeVendorRows.filter((row) =>
       Boolean(text(row[6])) && Boolean(text(row[7])) && Boolean(text(row[8])) && !isMissingVendorPaymentTerm(text(row[9]))
     );
@@ -460,7 +467,7 @@ export async function GET(req: NextRequest) {
     const scores = [
       makeScore("transparency", "Transparency", transparencyScore, `${expenseWithProof.length}/${expenses.length} expense punya bukti atau amount 0; ${expenseWithDivision.length}/${expenses.length} punya division/COA; saldo bank ${bankPositionMissing ? "belum terbaca" : bankPosition.totalSaldoAkhir.toLocaleString("id-ID")} dari ${bankPosition.accounts.length} rekening; Monthly_GCG_Report periode ${currentPeriod} ${hasCurrentMonthlyGcgReport ? "sudah dicatat" : "belum dicatat"}.`),
       makeScore("accountability", "Accountability", accountabilityScore, `${approvedWithReviewer.length}/${approvedExpenses.length} approved expense punya reviewer; ${governanceAuditLog.length} governance audit rows.`),
-      makeScore("responsibility", "Responsibility", responsibilityScore, `${overdueCompliance.length} overdue dari ${complianceRegister.length} compliance item; ${completedComplianceMissingProof.length}/${completedCompliance.length} completed compliance belum punya proof URL.`),
+      makeScore("responsibility", "Responsibility", responsibilityScore, `${overdueCompliance.length} overdue dari ${complianceRegister.length} compliance item; ${completedComplianceMissingProof.length}/${completedCompliance.length} completed compliance belum punya proof URL; ${complianceMissingDueDate.length} open item tanpa due date; ${complianceMissingOwner.length} item tanpa owner valid.`),
       makeScore("independency", "Independency", independencyScore, `${vendorWithBenchmark.length}/${vendorRegister.length} vendor punya benchmark + selected reason; ${expenseVendorRequired.length - expensesWithoutVendor.length}/${expenseVendorRequired.length} expense vendor-category punya vendor link.`),
       makeScore("fairness", "Fairness", fairnessScore, `${personalPaidNotInLedger.length}/${approvedPersonalPaidExpenses.length} approved personal-paid expense belum terlacak ke ledger; ${overduePurchaseOrders.length}/${openPurchaseOrders.length} open PO melewati expected date.`),
     ];
@@ -520,6 +527,8 @@ export async function GET(req: NextRequest) {
           overdue: overdueCompliance.length,
           dueSoon: dueSoonCompliance.length,
           completedWithoutProof: completedComplianceMissingProof.length,
+          missingDueDate: complianceMissingDueDate.length,
+          missingOwner: complianceMissingOwner.length,
         },
         vendor: {
           total: vendorRegister.length,
@@ -565,6 +574,8 @@ export async function GET(req: NextRequest) {
         ...approvedWithoutDivisionOrCoa.slice(0, 10).map((row) => ({ type: "APPROVED_EXPENSE_MISSING_DIVISION_OR_COA", severity: "high", entityId: text(row[0]), description: text(row[5]) || "Expense approved tanpa division/COA lengkap", amount: amount(row[6]), owner: text(row[2]) || "Belum dicatat" })),
         ...approvedWithoutPaymentMethod.slice(0, 10).map((row) => ({ type: "APPROVED_EXPENSE_MISSING_PAYMENT_METHOD", severity: "high", entityId: text(row[0]), description: text(row[5]) || "Expense approved tanpa payment method", amount: amount(row[6]), owner: text(row[2]) || "Belum dicatat" })),
         ...overdueCompliance.slice(0, 10).map((row) => ({ type: "COMPLIANCE_OVERDUE", severity: "high", entityId: text(row[0]), description: text(row[2]) || "Compliance overdue", amount: 0, owner: text(row[6]) || "Belum dicatat" })),
+        ...complianceMissingDueDate.slice(0, 10).map((row) => ({ type: "COMPLIANCE_DUE_DATE_MISSING", severity: "medium", entityId: text(row[0]), description: `${text(row[2]) || "Compliance item"} belum punya due date; SOP compliance wajib owner dan due date sebelum bisa dimonitor H-7/H-3/H-1.`, amount: 0, owner: text(row[6]) || "Belum dicatat" })),
+        ...complianceMissingOwner.slice(0, 10).map((row) => ({ type: "COMPLIANCE_OWNER_MISSING", severity: "medium", entityId: text(row[0]), description: `${text(row[2]) || "Compliance item"} belum punya owner valid; accountability compliance belum jelas.`, amount: 0, owner: "Belum dicatat" })),
         ...dueSoonCompliance.slice(0, 10).map((row) => {
           const days = daysUntilDue(text(row[4]));
           return {
@@ -603,7 +614,7 @@ export async function GET(req: NextRequest) {
         bankPositionMissing ? "Perbaiki/cek range Rekening_Koran agar saldo kas/bank terbaca sebelum Monthly GCG Report dipakai untuk keputusan." : `Review saldo kas/bank Rekening_Koran: ${bankPosition.totalSaldoAkhir.toLocaleString("id-ID")} dari ${bankPosition.accounts.length} rekening.`,
         expenseNeedsProof.length ? "Lengkapi proof URL untuk expense berstatus Needs Proof/tanpa bukti." : "Pertahankan disiplin bukti expense.",
         approvedWithoutDivisionOrCoa.length ? "Perbaiki approved expense yang belum punya division/COA; acceptance GCG melarang approved expense tanpa klasifikasi." : approvedWithoutPaymentMethod.length ? "Perbaiki approved expense yang belum punya payment method agar sumber dana perusahaan/pribadi dapat ditelusuri." : expensePending.length ? "Review dan approve/reject expense pending; semua keputusan harus masuk Governance_Audit_Log." : "Tidak ada expense pending dari data yang terbaca.",
-        overdueCompliance.length ? "Tindaklanjuti compliance overdue dan upload bukti setelah selesai." : dueSoonCompliance.length ? "Follow-up compliance due soon (H-7/H-3/H-1) dan siapkan proof URL sebelum status submitted/paid." : completedComplianceMissingProof.length ? "Lengkapi proof URL untuk compliance yang sudah marked submitted/paid/complete." : "Pantau compliance due soon dan jangan menandai submitted tanpa bukti.",
+        overdueCompliance.length ? "Tindaklanjuti compliance overdue dan upload bukti setelah selesai." : complianceMissingDueDate.length ? "Lengkapi due date Compliance_Register agar reminder H-7/H-3/H-1 bisa berjalan dari data nyata." : complianceMissingOwner.length ? "Lengkapi owner Compliance_Register; setiap kewajiban LKPM/BPJS/Pajak/Legal harus punya PIC." : dueSoonCompliance.length ? "Follow-up compliance due soon (H-7/H-3/H-1) dan siapkan proof URL sebelum status submitted/paid." : completedComplianceMissingProof.length ? "Lengkapi proof URL untuk compliance yang sudah marked submitted/paid/complete." : "Pantau compliance due soon dan jangan menandai submitted tanpa bukti.",
         vendorExceptions.length ? "Lengkapi benchmark vendor dan deklarasi related-party sebelum transaksi besar." : vendorsMissingPaymentTerm.length ? "Lengkapi payment term vendor aktif agar DP/Lunas/Net 7 dan aging payable jelas." : "Vendor register tidak menunjukkan exception dari data terbaca.",
         overduePurchaseOrders.length ? "Review PO/vendor payable yang melewati expected date; update status received/cancelled atau catat alasan keterlambatan." : "Tidak ada open PO melewati expected date dari data Purchase_Orders yang terbaca.",
         humanOnlyAutomationApprovals.length ? "Review ulang approval pajak/legal/termination/COI yang tercatat oleh actor otomatis; prinsip TARIF mewajibkan keputusan human-only." : "Tidak ada approval human-only oleh automation dari Governance_Audit_Log yang terbaca.",
