@@ -224,13 +224,14 @@ function classifyPoApproval(total: number, supplier: Supplier) {
   if (total > 2000000) flags.push("TWO_BENCHMARKS_REQUIRED");
   if ((supplier.relatedParty || "").toLowerCase() === "yes") flags.push("RELATED_PARTY_VENDOR");
   if (!supplier.governanceVendorId) flags.push("VENDOR_REGISTER_MISSING");
+  if ((supplier.riskFlags || []).includes("MISSING_PAYMENT_TERM")) flags.push("PAYMENT_TERM_MISSING");
   if (total > 2000000 && !supplier.benchmarkComplete) flags.push("BENCHMARK_INCOMPLETE_FOR_HIGH_VALUE_PO");
 
   return {
     approvalRequired: flags.length > 0,
     flags,
     requirement: flags.length
-      ? "Human review required before ordering: Direktur approve untuk > Rp500.000; > Rp2.000.000 wajib 2 benchmark; related-party wajib deklarasi konflik kepentingan."
+      ? "Human review required before ordering: Direktur approve untuk > Rp500.000; > Rp2.000.000 wajib 2 benchmark; related-party wajib deklarasi konflik kepentingan; payment term vendor wajib jelas (DP/Lunas/Net 7/dll)."
       : "Normal procurement approval",
   };
 }

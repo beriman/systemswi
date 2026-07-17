@@ -337,6 +337,8 @@ export async function GET(req: NextRequest) {
     const vendorExceptions = vendorRegister.filter((row) => isYes(text(row[4])) || !text(row[6]) || !text(row[7]) || !text(row[8]));
     const activeVendorRows = vendorRegister.filter((row) => !["blacklist", "inactive", "rejected", "cancelled"].includes(text(row[10]).toLowerCase()));
     const vendorsMissingPaymentTerm = activeVendorRows.filter((row) => isMissingVendorPaymentTerm(text(row[9])));
+    const vendorById = new Map<string, string[]>(vendorRegister.map((row): [string, string[]] => [text(row[0]).toLowerCase(), row]).filter(([key]) => Boolean(key)));
+    const vendorByName = new Map<string, string[]>(vendorRegister.map((row): [string, string[]] => [text(row[1]).toLowerCase(), row]).filter(([key]) => Boolean(key)));
 
     const shareholderDebtOutstanding = shareholderLedger.reduce((sum, row) => {
       const status = text(row[9]).toLowerCase();
@@ -395,6 +397,20 @@ export async function GET(req: NextRequest) {
     const openPurchaseOrders = purchaseOrders.filter((row) => ["draft", "ordered", "partial"].includes(text(row[10]).toLowerCase()));
     const overduePurchaseOrders = openPurchaseOrders.filter((row) => isOverdue(text(row[11])));
     const highValueOverduePurchaseOrders = overduePurchaseOrders.filter((row) => amount(row[9]) > 2000000);
+    const openPurchaseOrdersWithVendor = openPurchaseOrders.map((row) => ({
+      row,
+      vendor: vendorById.get(text(row[2]).toLowerCase()) || vendorByName.get(text(row[3]).toLowerCase()) || null,
+    }));
+    const openPoMissingPaymentTerm = openPurchaseOrdersWithVendor.filter((item) => item.vendor && isMissingVendorPaymentTerm(text(item.vendor[9])));
+    const highValuePoBenchmarkIncomplete = openPurchaseOrdersWithVendor.filter((item) => {
+      if (amount(item.row[9]) <= 2000000) return false;
+      if (!item.vendor) return true;
+      return !text(item.vendor[6]) || !text(item.vendor[7]) || !text(item.vendor[8]);
+    });
+    const relatedPartyOpenPoNeedsReview = openPurchaseOrdersWithVendor.filter((item) => {
+      if (!item.vendor || !isYes(text(item.vendor[4]))) return false;
+      return !text(item.vendor[5]) || !text(item.vendor[8]);
+    });
 
     const currentPeriod = currentMonthlyGcgPeriod();
     const hasCurrentMonthlyGcgReport = monthlyGcgReport.some((row) => normalizePeriod(text(row[1])) === normalizePeriod(currentPeriod));
@@ -539,6 +555,9 @@ export async function GET(req: NextRequest) {
           overduePo: overduePurchaseOrders.length,
           overduePoValue: overduePurchaseOrders.reduce((sum, row) => sum + amount(row[9]), 0),
           missingPaymentTerm: vendorsMissingPaymentTerm.length,
+          openPoMissingPaymentTerm: openPoMissingPaymentTerm.length,
+          highValuePoBenchmarkIncomplete: highValuePoBenchmarkIncomplete.length,
+          relatedPartyOpenPoNeedsReview: relatedPartyOpenPoNeedsReview.length,
         },
         audit: {
           governanceAuditRows: governanceAuditLog.length,
@@ -591,6 +610,9 @@ export async function GET(req: NextRequest) {
         ...vendorExceptions.slice(0, 10).map((row) => ({ type: "VENDOR_GOVERNANCE_EXCEPTION", severity: isYes(text(row[4])) ? "high" : "medium", entityId: text(row[0]), description: text(row[1]) || "Vendor perlu review benchmark/COI", amount: 0, owner: text(row[3]) || "Belum dicatat" })),
         ...vendorsMissingPaymentTerm.slice(0, 10).map((row) => ({ type: "VENDOR_PAYMENT_TERM_MISSING", severity: "medium", entityId: text(row[0]), description: `${text(row[1]) || "Vendor"} belum punya payment term; wajib jelas DP/Lunas/Net 7 sebelum PO/expense material.`, amount: 0, owner: text(row[3]) || "Procurement/Finance" })),
         ...overduePurchaseOrders.slice(0, 10).map((row) => ({ type: "VENDOR_PO_OVERDUE", severity: highValueOverduePurchaseOrders.some((po) => text(po[0]) === text(row[0])) ? "high" : "medium", entityId: text(row[0]), description: `${text(row[3]) || "Vendor"} — ${text(row[5]) || "PO open melewati expected date"} due ${text(row[11]) || "TBA"}`, amount: amount(row[9]), owner: text(row[3]) || "Belum dicatat" })),
+        ...openPoMissingPaymentTerm.slice(0, 10).map((item) => ({ type: "OPEN_PO_VENDOR_PAYMENT_TERM_MISSING", severity: "medium", entityId: text(item.row[0]), description: `${text(item.row[3]) || "Vendor"} punya PO open tetapi payment term Vendor_Register masih TBA/Belum dicatat; payable aging belum fair untuk vendor/perusahaan.`, amount: amount(item.row[9]), owner: "Procurement/Finance" })),
+        ...highValuePoBenchmarkIncomplete.slice(0, 10).map((item) => ({ type: "HIGH_VALUE_PO_BENCHMARK_INCOMPLETE", severity: "high", entityId: text(item.row[0]), description: `${text(item.row[3]) || "Vendor"} — PO > Rp2.000.000 belum punya 2 benchmark + selected reason lengkap di Vendor_Register.`, amount: amount(item.row[9]), owner: "Procurement/Finance" })),
+        ...relatedPartyOpenPoNeedsReview.slice(0, 10).map((item) => ({ type: "RELATED_PARTY_PO_REVIEW_INCOMPLETE", severity: "high", entityId: text(item.row[0]), description: `${text(item.row[3]) || "Vendor related-party"} punya PO open tetapi detail relasi/alasan objektif belum lengkap di Vendor_Register.`, amount: amount(item.row[9]), owner: "Direksi/Procurement" })),
         ...expensesWithoutVendor.slice(0, 10).map((row) => ({ type: "EXPENSE_VENDOR_NOT_LINKED", severity: amount(row[6]) > 2000000 ? "high" : "medium", entityId: text(row[0]), description: text(row[5]) || "Expense kategori vendor belum dikaitkan ke Vendor_Register", amount: amount(row[6]), owner: text(row[2]) || "Belum dicatat" })),
         ...personalPaidNotInLedger.slice(0, 10).map((row) => ({ type: "PERSONAL_PAID_NOT_IN_LEDGER", severity: "medium", entityId: text(row[0]), description: text(row[5]) || "Personal paid belum cocok ke Shareholder_Ledger", amount: amount(row[6]), owner: text(row[2]) || "Belum dicatat" })),
         ...shareholderOverpaidRows.slice(0, 10).map((item) => ({ type: "SHAREHOLDER_LEDGER_OVER_CREDIT", severity: "medium", entityId: text(item.row[0]), description: `${item.description} — credit melebihi debit; perlu koreksi/notes manusia sebelum dianggap settled`, amount: item.overpaid, owner: item.shareholder })),
@@ -615,7 +637,7 @@ export async function GET(req: NextRequest) {
         expenseNeedsProof.length ? "Lengkapi proof URL untuk expense berstatus Needs Proof/tanpa bukti." : "Pertahankan disiplin bukti expense.",
         approvedWithoutDivisionOrCoa.length ? "Perbaiki approved expense yang belum punya division/COA; acceptance GCG melarang approved expense tanpa klasifikasi." : approvedWithoutPaymentMethod.length ? "Perbaiki approved expense yang belum punya payment method agar sumber dana perusahaan/pribadi dapat ditelusuri." : expensePending.length ? "Review dan approve/reject expense pending; semua keputusan harus masuk Governance_Audit_Log." : "Tidak ada expense pending dari data yang terbaca.",
         overdueCompliance.length ? "Tindaklanjuti compliance overdue dan upload bukti setelah selesai." : complianceMissingDueDate.length ? "Lengkapi due date Compliance_Register agar reminder H-7/H-3/H-1 bisa berjalan dari data nyata." : complianceMissingOwner.length ? "Lengkapi owner Compliance_Register; setiap kewajiban LKPM/BPJS/Pajak/Legal harus punya PIC." : dueSoonCompliance.length ? "Follow-up compliance due soon (H-7/H-3/H-1) dan siapkan proof URL sebelum status submitted/paid." : completedComplianceMissingProof.length ? "Lengkapi proof URL untuk compliance yang sudah marked submitted/paid/complete." : "Pantau compliance due soon dan jangan menandai submitted tanpa bukti.",
-        vendorExceptions.length ? "Lengkapi benchmark vendor dan deklarasi related-party sebelum transaksi besar." : vendorsMissingPaymentTerm.length ? "Lengkapi payment term vendor aktif agar DP/Lunas/Net 7 dan aging payable jelas." : "Vendor register tidak menunjukkan exception dari data terbaca.",
+        highValuePoBenchmarkIncomplete.length ? "Lengkapi 2 benchmark + selected reason untuk PO > Rp2.000.000 sebelum status ordered/received dianggap siap audit." : relatedPartyOpenPoNeedsReview.length ? "Lengkapi detail relasi dan alasan objektif Vendor_Register untuk related-party PO open." : openPoMissingPaymentTerm.length ? "Lengkapi payment term Vendor_Register untuk PO open agar payable aging adil dan tertelusur." : vendorExceptions.length ? "Lengkapi benchmark vendor dan deklarasi related-party sebelum transaksi besar." : vendorsMissingPaymentTerm.length ? "Lengkapi payment term vendor aktif agar DP/Lunas/Net 7 dan aging payable jelas." : "Vendor register tidak menunjukkan exception dari data terbaca.",
         overduePurchaseOrders.length ? "Review PO/vendor payable yang melewati expected date; update status received/cancelled atau catat alasan keterlambatan." : "Tidak ada open PO melewati expected date dari data Purchase_Orders yang terbaca.",
         humanOnlyAutomationApprovals.length ? "Review ulang approval pajak/legal/termination/COI yang tercatat oleh actor otomatis; prinsip TARIF mewajibkan keputusan human-only." : "Tidak ada approval human-only oleh automation dari Governance_Audit_Log yang terbaca.",
         closedExpensesMissingAudit.length ? "Backfill Governance_Audit_Log untuk approved/rejected expense lama agar semua keputusan punya jejak audit per expense ID." : governanceAuditMissingForApprovals ? "Backfill Governance_Audit_Log untuk expense approved agar jejak approval manusia dapat diaudit." : "Governance_Audit_Log tersedia atau belum ada approved/rejected expense yang perlu diaudit.",
