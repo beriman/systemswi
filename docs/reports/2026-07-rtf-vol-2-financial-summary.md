@@ -159,9 +159,50 @@ Untuk prinsip GCG dan etika keuangan:
 
 ---
 
-## 8. Next Action
+## 8. Status Pencatatan Pemasukan/Pengeluaran SWI
 
-- Import/reflect angka ini ke System SWI Event Closeout untuk RTF Vol. II.
+**Update pencatatan:** 2026-07-17  
+**Instruksi:** BA/laporan RTF Vol. II dicatat di pemasukan dan pengeluaran SWI.
+
+### Transaksi yang dicatat di SQLite lokal SystemSWI
+
+| Ref | Tanggal | Jenis | Kategori | Nilai |
+|---|---|---|---|---:|
+| `RTF2-INCOME-SWI-2026` | 2026-07-05 | pemasukan | Event Revenue / RTF Vol. II | Rp 29.557.561 |
+| `RTF2-OPEX-SWI-2026` | 2026-07-05 | pengeluaran | Beban Operasional Event / RTF Vol. II | Rp 20.568.177 |
+
+Verifikasi net:
+
+```text
+Rp 29.557.561 - Rp 20.568.177 = Rp 8.989.384
+```
+
+### Treatment kasbon/advance Wapiq
+
+Transfer SWI ke Wapiq sebesar **Rp 22.050.000** dicatat sebagai konteks rekonsiliasi **advance/kasbon PIC event**, bukan sebagai beban tambahan, agar pengeluaran tidak double-count terhadap realisasi operasional **Rp 20.568.177**.
+
+```text
+Rp 22.050.000 - Rp 20.568.177 = Rp 1.481.823 expected kembalian
+```
+
+Status settlement/kembalian Wapiq: **needs confirmation**.
+
+### Status Google Sheets
+
+Sinkronisasi ke Google Sheets source-of-truth masih **blocked** karena OAuth token lokal mengembalikan:
+
+```text
+invalid_grant
+```
+
+Setelah Google OAuth re-auth selesai, row yang perlu disinkronkan adalah dua transaksi di atas plus catatan rekonsiliasi kasbon/kembalian Wapiq.
+
+---
+
+## 9. Next Action
+
+- Re-auth Google Sheets token untuk sinkronisasi ke source-of-truth.
+- Sinkronkan `RTF2-INCOME-SWI-2026` dan `RTF2-OPEX-SWI-2026` ke sheet finance yang disetujui.
 - Pastikan bukti transfer dan bukti pengeluaran tersimpan di Drive.
-- Tandai status kasbon Wapiq.
+- Konfirmasi status kembalian/kasbon Wapiq sebesar Rp 1.481.823.
 - Jadikan event ini contoh pertama penerapan `Event Closeout Report` di rencana ETIKA TARIF.
