@@ -8,7 +8,7 @@ import {
   EXPENSE_SHEETS,
 } from "@/lib/expense/sheets";
 import { appendRows } from "@/lib/sheets/sheets-real";
-import { logGovernanceActionSafe } from "@/lib/governance/audit";
+import { ensureGovernanceAuditSheet, logGovernanceAction } from "@/lib/governance/audit";
 import { appendShareholderLedgerEntryOnce } from "@/lib/shareholder/ledger";
 import { listVendorRegister } from "@/lib/governance/vendor-register";
 import { googleWorkspaceDegradedSource, isGoogleWorkspaceAuthError } from "@/lib/api/google-workspace-error";
@@ -227,6 +227,11 @@ export async function PUT(
       }
     }
 
+    // Approval/rejection is a human governance decision. Preflight the audit
+    // sheet before mutating Expense_Submissions so an OAuth/sheet failure does
+    // not silently create an approved/rejected expense without audit trail.
+    await ensureGovernanceAuditSheet();
+
     const updatedRow = [
       s(existing, 0),
       s(existing, 1),
@@ -254,7 +259,7 @@ export async function PUT(
 
     await updateExpenseRow(EXPENSE_SHEETS.Submissions, rowNum, updatedRow);
 
-    await logGovernanceActionSafe({
+    await logGovernanceAction({
       actor: reviewerName,
       role: "Direktur",
       action: status === "Approved" ? "APPROVE_EXPENSE" : "REJECT_EXPENSE",
@@ -288,7 +293,7 @@ export async function PUT(
           });
 
           if (ledgerResult.created && ledgerResult.entry) {
-            await logGovernanceActionSafe({
+            await logGovernanceAction({
               actor: reviewerName,
               role: "Direktur",
               action: "AUTO_CREATE_SHAREHOLDER_LEDGER_FROM_EXPENSE",
